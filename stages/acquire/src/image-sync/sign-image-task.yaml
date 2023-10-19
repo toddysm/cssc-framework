@@ -1,33 +1,23 @@
 version: v1.1.0
 steps:
-  # Task1. Sign the image that was just
+  # Step #1: Install notation AKV plugin
+  - cmd: |                                                                  # install notation-azure-kv plugin
+        ghcr.io/toddysm/cssc-framework/notation-azure-kv-installer:1.0      
+  - cmd: |                                                                  # list all plugins
+        ghcr.io/toddysm/cssc-framework/notation:1.0 ls                      
+
+  # Step #2: Configure the signing key for notation
+  - cmd: >-                                                                 # add a signing key
+      ghcr.io/toddysm/cssc-framework/notation:1.0 key add \
+      --plugin azure-kv \
+      --id {{.Values.SIGNING_KEY_ID}} \
+      --plugin-config self_signed=true \
+      --default acquisition-signing-key
+  - cmd: |                                                                  # list all keys
+        ghcr.io/toddysm/cssc-framework/notation:1.0 key ls                  
+
+  # Step #3: Sign the image
   - cmd: |
-      ghcr.io/aquasecurity/trivy image \
-      {{.Run.Registry}}/{{.Values.INPUT_IMAGE_NAME}}:{{.Values.INPUT_IMAGE_TAG}} \
-      --format sarif \
-      --output ./{{.Values.INPUT_IMAGE_NAME}}_vulnerabilityscan.sarif
-  # Task2. <TBD> Sign the vulnerability scanned sarif image
-  - cmd: |
-      ghcr.io/toddysm/notation sign \
-      {{.Run.Registry}}/{{.Values.INPUT_IMAGE_NAME}}:{{.Values.INPUT_IMAGE_TAG}} \
-      --format sarif \
-      --output ./{{.Values.INPUT_IMAGE_NAME}}_vulnerabilityscan.sarif
-  # Task3. Generate SBOM for the input image and tag
-  - cmd: |
-      ghcr.io/aquasecurity/trivy image \
-      {{.Run.Registry}}/{{.Values.INPUT_IMAGE_NAME}}:{{.Values.INPUT_IMAGE_TAG}} \
-      --format spdx \
-      --output ./{{.Values.INPUT_IMAGE_NAME}}_sbom.spdx
-  # Task4. <TBD> Sign the generated SBOM spdx file
-  # Task5. Push the artifacts to the registry as OCI-referrers
-  - cmd: |
-      ghcr.io/oras-project/oras:v1.1.0 attach \
-      --artifact-type vulnerabilityScanResult/example \
-      {{.Run.Registry}}/{{.Values.INPUT_IMAGE_NAME}}:{{.Values.INPUT_IMAGE_TAG}} \
-      ./{{.Values.INPUT_IMAGE_NAME}}_vulnerabilityscan.sarif
-  # Task6. Push the artifacts to the registry as OCI-referrers
-  - cmd: |
-      ghcr.io/oras-project/oras:v1.1.0 attach \
-      --artifact-type SBOM/example \
-      {{.Run.Registry}}/{{.Values.INPUT_IMAGE_NAME}}:{{.Values.INPUT_IMAGE_TAG}} \
-      ./{{.Values.INPUT_IMAGE_NAME}}_sbom.spdx
+        ghcr.io/toddysm/cssc-framework/notation:1.0 sign \
+        {{.Run.Registry}}/{{.Values.INPUT_IMAGE_NAME}}:{{.Values.INPUT_IMAGE_TAG}}
+
