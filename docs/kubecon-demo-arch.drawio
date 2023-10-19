@@ -1,0 +1,59 @@
+<mxfile host="Electron" modified="2023-10-19T01:02:42.926Z" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/22.0.3 Chrome/114.0.5735.289 Electron/25.8.4 Safari/537.36" etag="bsFKXdT7wP3QRSItpfUs" version="22.0.3" type="device">
+  <diagram name="v1" id="FO_liKp5OqNQBzO2uaic">
+    <mxGraphModel dx="1242" dy="1954" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="Oz3U-4kUaiHSfNU6trIB-14" value="" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/containers/Container_Registries.svg;" vertex="1" parent="1">
+          <mxGeometry x="880" y="379" width="68" height="61" as="geometry" />
+        </mxCell>
+        <mxCell id="Oz3U-4kUaiHSfNU6trIB-12" value="" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/compute/Function_Apps.svg;" vertex="1" parent="1">
+          <mxGeometry x="651" y="380" width="68" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="Oz3U-4kUaiHSfNU6trIB-1" value="" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" vertex="1" parent="1">
+          <mxGeometry x="20" y="411.8" width="70" height="57.4" as="geometry" />
+        </mxCell>
+        <mxCell id="Oz3U-4kUaiHSfNU6trIB-9" value="3. trigger sync for each tag" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;curved=1;strokeColor=#666666;" edge="1" parent="1" source="Oz3U-4kUaiHSfNU6trIB-2" target="Oz3U-4kUaiHSfNU6trIB-5">
+          <mxGeometry x="0.2696" y="-33" relative="1" as="geometry">
+            <mxPoint y="1" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="Oz3U-4kUaiHSfNU6trIB-2" value="ScheduledSyncFunction" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/compute/Function_Apps.svg;" vertex="1" parent="1">
+          <mxGeometry x="210" y="240" width="68" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="Oz3U-4kUaiHSfNU6trIB-3" value="" style="html=1;verticalLabelPosition=bottom;align=center;labelBackgroundColor=#ffffff;verticalAlign=top;strokeWidth=2;strokeColor=#0080F0;shadow=0;dashed=0;shape=mxgraph.ios7.icons.gauge;" vertex="1" parent="1">
+          <mxGeometry x="278" y="240" width="22.11" height="21.5" as="geometry" />
+        </mxCell>
+        <mxCell id="Oz3U-4kUaiHSfNU6trIB-4" value="Storage Blob" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/storage/Storage_Accounts_Classic.svg;" vertex="1" parent="1">
+          <mxGeometry x="400" y="30" width="65" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="Oz3U-4kUaiHSfNU6trIB-13" value="4. trigger tag sync" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#666666;" edge="1" parent="1" source="Oz3U-4kUaiHSfNU6trIB-5" target="Oz3U-4kUaiHSfNU6trIB-11">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="Oz3U-4kUaiHSfNU6trIB-5" value="EventGrid" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/integration/Event_Grid_Domains.svg;" vertex="1" parent="1">
+          <mxGeometry x="390" y="410" width="67" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="Oz3U-4kUaiHSfNU6trIB-6" value="sync-config.json" style="verticalLabelPosition=bottom;html=1;verticalAlign=top;align=center;strokeColor=none;fillColor=#00BEF2;shape=mxgraph.azure.script_file;pointerEvents=1;" vertex="1" parent="1">
+          <mxGeometry x="510" y="-10" width="28.5" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="Oz3U-4kUaiHSfNU6trIB-7" value="1. fetch config" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.577;entryDx=0;entryDy=0;entryPerimeter=0;curved=1;strokeColor=#666666;" edge="1" parent="1" source="Oz3U-4kUaiHSfNU6trIB-2" target="Oz3U-4kUaiHSfNU6trIB-4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="Oz3U-4kUaiHSfNU6trIB-8" value="2. pull manifests" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0.009;entryDx=0;entryDy=0;entryPerimeter=0;curved=1;strokeColor=#666666;" edge="1" parent="1" source="Oz3U-4kUaiHSfNU6trIB-2" target="Oz3U-4kUaiHSfNU6trIB-1">
+          <mxGeometry x="0.3117" y="35" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="Oz3U-4kUaiHSfNU6trIB-10" value="ACR Task" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/containers/Container_Registries.svg;" vertex="1" parent="1">
+          <mxGeometry x="850" y="410" width="68" height="61" as="geometry" />
+        </mxCell>
+        <mxCell id="Oz3U-4kUaiHSfNU6trIB-15" value="5. create sync task" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#666666;" edge="1" parent="1" source="Oz3U-4kUaiHSfNU6trIB-11" target="Oz3U-4kUaiHSfNU6trIB-10">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="Oz3U-4kUaiHSfNU6trIB-11" value="SyncTriggerFunction" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/compute/Function_Apps.svg;" vertex="1" parent="1">
+          <mxGeometry x="621" y="410" width="68" height="60" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
