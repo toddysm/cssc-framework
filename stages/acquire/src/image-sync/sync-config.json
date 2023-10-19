@@ -1,6 +1,6 @@
 [
     {
-        "registry": "docker.io",
+        "registry": "registry.hub.docker.com",
         "repository": "toddysm/python",
         "tags": [
             {
