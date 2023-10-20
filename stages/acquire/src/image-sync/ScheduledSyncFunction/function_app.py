@@ -45,7 +45,7 @@ def ScheduledImageSyncFunction(myTimer: func.TimerRequest) -> None:
                 if digest not in sync_tag['digests']:
                     sync_tag['digests'].append(digest)
                     # TODO: Maybe convert the tag to JSON
-                    publish_eventgrid_event("ImageSync", f"{config['registry']}/{config['repository']}", tag)
+                    publish_eventgrid_event("ImageSync", f"{config['registry']}/{config['repository']}", tag_tuple_to_json(tag))
             else:
                 logging.info(f"Tag {sync_tag['name']} not found.")
 
@@ -83,3 +83,10 @@ def publish_eventgrid_event(event_type, subject, data):
             )
         ]
     )
+
+def tag_tuple_to_json(tuple):
+    tag_tuple = {
+        "name": tuple[0],
+        "digest": tuple[1]
+    }
+    return json.dumps(tag_tuple)
