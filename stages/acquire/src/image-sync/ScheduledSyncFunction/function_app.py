@@ -44,6 +44,7 @@ def ScheduledImageSyncFunction(myTimer: func.TimerRequest) -> None:
                 logging.info(f"Digest for tag {sync_tag['name']}: {digest}")
                 if digest not in sync_tag['digests']:
                     sync_tag['digests'].append(digest)
+                    # TODO: Maybe convert the tag to JSON
                     publish_eventgrid_event("ImageSync", f"{config['registry']}/{config['repository']}", tag)
             else:
                 logging.info(f"Tag {sync_tag['name']} not found.")
@@ -56,11 +57,11 @@ def get_current_tags(registry, repository):
     # Define the URL for the tag list API
     url = f"https://{registry}/v2/repositories/{repository}/tags"
 
-    # Send a GET request to the DockerHub API to retrieve the tags
+    # Send a GET request to the registry to retrieve the tags
     response = requests.get(url)
     tags = response.json()["results"]
 
-    # Extract the tag names from the response
+    # Extract the tag names and digests from the response
     tag_names = [[tag["name"],tag["digest"]] for tag in tags]
 
     return tag_names
