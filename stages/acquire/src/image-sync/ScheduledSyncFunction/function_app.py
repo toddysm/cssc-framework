@@ -84,11 +84,11 @@ def publish_eventgrid_event(event_type, subject, data):
         ]
     )
 
-def create_event(registry, repository, tag):
+def create_event(registry, repository, image):
     event = {
         "registry": registry,
         "repository": repository,
-        "name": tag[0],
-        "digest": tag[1]
+        "tag": image[0],
+        "digest": image[1]
     }
     return json.dumps(event)
