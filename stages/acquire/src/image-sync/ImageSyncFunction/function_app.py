@@ -30,12 +30,11 @@ def ImageSyncFunction(event: func.EventGridEvent):
     result = event.get_json()
      
     # Create a task run request object
-    # {{.Values.SOURCE_REGISTRY}}/{{.Values.SOURCE_REPOSITORY}}/{{.Values.SOURCE_IMAGE_NAME}}:{{.Values.SOURCE_IMAGE_TAG}}
     task_values = [
         SetValue(name='SOURCE_REGISTRY', value=result['registry']),
-        SetValue(name='SOURCE_REPOSITORY', value=result['registry']),
+        SetValue(name='SOURCE_REPOSITORY', value=result['repository']),
         SetValue(name='SOURCE_IMAGE_TAG', value=result['tag']),
-        SetValue(name='SOURCE_IMAGE_NAME', value=result['digest'])
+        SetValue(name='SOURCE_IMAGE_DIGEST', value=result['digest'])
     ]
     task_properties = OverrideTaskStepProperties(values=task_values)
     acr_client = ContainerRegistryManagementClient(credential, subscription_id, api_version="2019-06-01-preview")
