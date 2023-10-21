@@ -3,3 +3,6 @@
 # Manually managing azure-functions-worker may cause unexpected issues
 
 azure-functions
+azure-mgmt-containerregistry
+azure-mgmt-resource>=18.0.0
+azure-identity>=1.5.0
