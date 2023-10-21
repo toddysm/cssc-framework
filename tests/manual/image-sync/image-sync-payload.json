@@ -3,10 +3,10 @@
     "topic": "/subscriptions/50ad1522-5c2c-4d9a-a6c8-67c11ecb75b8/resourcegroups/acse2e/providers/microsoft.communication/communicationservices/{communication-services-resource-name}",
     "subject": "registry.hub.docker.com/toddysm/python",
     "data": {
-      "registry": "registry.hub.docker.com",
+      "registry": "docker.io",
       "repository": "toddysm/python",
       "tag": "3.12",
-      "digest": "1234567890",
+      "digest": "sha256:d452652da7117a14f78b610e13b8544848b2d4eb7a0dcda2c0f70ff088c34a52",
       "ReceivedTimestamp": "2020-09-18T00:27:45.32Z"
     },
     "eventType": "Microsoft.Communication.SMSReceived",
