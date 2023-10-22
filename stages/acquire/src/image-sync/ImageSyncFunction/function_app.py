@@ -2,7 +2,8 @@ import logging
 import azure.functions as func
 import json
 import os
-from azure.identity import AzureCliCredential
+# from azure.identity import AzureCliCredential
+from azure.identity import DefaultAzureCredential
 from azure.mgmt.resource import ResourceManagementClient
 from azure.mgmt.containerregistry import ContainerRegistryManagementClient
 from azure.mgmt.containerregistry.models import OverrideTaskStepProperties, TaskRunRequest, SetValue
@@ -20,7 +21,7 @@ def ImageSyncFunction(event: func.EventGridEvent):
     resource_group_name = os.environ['ResourceGroupName']
 
     # Acquire a credential object using CLI-based authentication.
-    credential = AzureCliCredential()
+    credential = DefaultAzureCredential()
 
     # Obtain the management object for resources and the resources
     # arm_client = ResourceManagementClient(credential, subscription_id)
