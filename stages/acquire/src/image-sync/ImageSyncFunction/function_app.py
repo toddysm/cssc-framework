@@ -28,6 +28,7 @@ def ImageSyncFunction(event: func.EventGridEvent):
     #                                                    "2019-06-01-preview")
     
     result = event.get_json()
+    logging.info(f"Event data: {result}")
      
     # Create a task run request object
     task_values = [
