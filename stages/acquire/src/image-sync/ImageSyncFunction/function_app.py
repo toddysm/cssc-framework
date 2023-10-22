@@ -28,6 +28,7 @@ def ImageSyncFunction(event: func.EventGridEvent):
     #                                                    "2019-06-01-preview")
     
     result = event.get_json()
+    logging.info(f"Event type: {type(event)}")
     result = json.loads(result)
     logging.info(f"Event data: {result} \n Result type: {type(result)}")
 
