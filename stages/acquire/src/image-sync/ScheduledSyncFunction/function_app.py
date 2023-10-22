@@ -10,7 +10,7 @@ from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
 
 app = func.FunctionApp()
 
-@app.schedule(schedule="0 1 * * * *", arg_name="myTimer", run_on_startup=True,
+@app.schedule(schedule="0 */1 * * * *", arg_name="myTimer", run_on_startup=True,
               use_monitor=False) 
 def ScheduledImageSyncFunction(myTimer: func.TimerRequest) -> None:
     if myTimer.past_due:
