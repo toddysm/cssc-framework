@@ -44,6 +44,7 @@ def ScheduledImageSyncFunction(myTimer: func.TimerRequest) -> None:
                 logging.info(f"Digest for tag {sync_tag['name']}: {digest}")
                 if digest not in sync_tag['digests']:
                     sync_tag['digests'].append(digest)
+                    logging.info(f"Synchronizing digest {digest} for tag {sync_tag['name']}.")
                     # TODO: Maybe convert the tag to JSON
                     publish_eventgrid_event("ImageSync", f"{config['registry']}/{config['repository']}", create_event(config["registry"], config["repository"], tag))
             else:
