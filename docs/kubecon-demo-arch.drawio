@@ -1,4 +1,4 @@
-<mxfile host="Electron" modified="2023-10-22T00:16:35.429Z" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/22.0.3 Chrome/114.0.5735.289 Electron/25.8.4 Safari/537.36" etag="B966siZIfU4r7enqsG0p" version="22.0.3" type="device">
+<mxfile host="Electron" modified="2023-10-22T23:10:16.867Z" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/22.0.3 Chrome/114.0.5735.289 Electron/25.8.4 Safari/537.36" etag="zjdJ_-CRLuykBSuYJzPB" version="22.0.3" type="device">
   <diagram name="v1" id="FO_liKp5OqNQBzO2uaic">
     <mxGraphModel dx="1242" dy="1954" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
@@ -58,7 +58,7 @@
         <mxCell id="Oz3U-4kUaiHSfNU6trIB-15" value="5. create sync task" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#666666;" parent="1" source="Oz3U-4kUaiHSfNU6trIB-11" target="Oz3U-4kUaiHSfNU6trIB-10" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="Oz3U-4kUaiHSfNU6trIB-11" value="SyncTriggerFunction" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/compute/Function_Apps.svg;" parent="1" vertex="1">
+        <mxCell id="Oz3U-4kUaiHSfNU6trIB-11" value="ImageSyncFunction" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/compute/Function_Apps.svg;" parent="1" vertex="1">
           <mxGeometry x="621" y="410" width="68" height="60" as="geometry" />
         </mxCell>
         <mxCell id="Oz3U-4kUaiHSfNU6trIB-20" value="8. trigger verification workflow&lt;br&gt;on image push" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=-0.045;entryY=0.517;entryDx=0;entryDy=0;entryPerimeter=0;strokeColor=#666666;" parent="1" source="Oz3U-4kUaiHSfNU6trIB-17" target="Oz3U-4kUaiHSfNU6trIB-19" edge="1">
@@ -81,22 +81,22 @@
         <mxCell id="Oz3U-4kUaiHSfNU6trIB-30" value="9.1 trigger vulnerability scan task" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#666666;" parent="1" source="Oz3U-4kUaiHSfNU6trIB-21" target="Oz3U-4kUaiHSfNU6trIB-29" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="Oz3U-4kUaiHSfNU6trIB-21" value="VulnScanTriggerFunction" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/compute/Function_Apps.svg;" parent="1" vertex="1">
+        <mxCell id="Oz3U-4kUaiHSfNU6trIB-21" value="VulnScanFunction" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/compute/Function_Apps.svg;" parent="1" vertex="1">
           <mxGeometry x="1680" y="201.5" width="68" height="60" as="geometry" />
         </mxCell>
         <mxCell id="Oz3U-4kUaiHSfNU6trIB-22" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.525;entryDx=0;entryDy=0;entryPerimeter=0;curved=1;strokeColor=#666666;" parent="1" source="Oz3U-4kUaiHSfNU6trIB-19" target="Oz3U-4kUaiHSfNU6trIB-21" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="Oz3U-4kUaiHSfNU6trIB-23" value="SBOMGenerationTriggerFunction" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/compute/Function_Apps.svg;" parent="1" vertex="1">
+        <mxCell id="Oz3U-4kUaiHSfNU6trIB-23" value="SBOMGenerationFunction" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/compute/Function_Apps.svg;" parent="1" vertex="1">
           <mxGeometry x="1680" y="319" width="68" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="Oz3U-4kUaiHSfNU6trIB-24" value="ProvenanceGenerationTriggerFunction" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/compute/Function_Apps.svg;" parent="1" vertex="1">
+        <mxCell id="Oz3U-4kUaiHSfNU6trIB-24" value="ProvenanceGenerationFunction" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/compute/Function_Apps.svg;" parent="1" vertex="1">
           <mxGeometry x="1680" y="440" width="68" height="60" as="geometry" />
         </mxCell>
         <mxCell id="Oz3U-4kUaiHSfNU6trIB-36" value="9.4 trigger lifecycle generation&lt;br&gt;task" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#666666;" parent="1" source="Oz3U-4kUaiHSfNU6trIB-25" target="Oz3U-4kUaiHSfNU6trIB-35" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="Oz3U-4kUaiHSfNU6trIB-25" value="LifecycleGenerationTriggerFunction" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/compute/Function_Apps.svg;" parent="1" vertex="1">
+        <mxCell id="Oz3U-4kUaiHSfNU6trIB-25" value="LifecycleGenerationFunction" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/compute/Function_Apps.svg;" parent="1" vertex="1">
           <mxGeometry x="1680" y="560" width="68" height="60" as="geometry" />
         </mxCell>
         <mxCell id="Oz3U-4kUaiHSfNU6trIB-26" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=-0.015;entryY=0.533;entryDx=0;entryDy=0;entryPerimeter=0;strokeColor=#666666;curved=1;" parent="1" source="Oz3U-4kUaiHSfNU6trIB-19" target="Oz3U-4kUaiHSfNU6trIB-23" edge="1">
@@ -154,7 +154,7 @@
         <mxCell id="Oz3U-4kUaiHSfNU6trIB-45" value="9.5 trigger signing task" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#666666;" parent="1" source="Oz3U-4kUaiHSfNU6trIB-42" target="Oz3U-4kUaiHSfNU6trIB-43" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="Oz3U-4kUaiHSfNU6trIB-42" value="SignImageTriggerFunction" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/compute/Function_Apps.svg;" parent="1" vertex="1">
+        <mxCell id="Oz3U-4kUaiHSfNU6trIB-42" value="SignImageFunction" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/compute/Function_Apps.svg;" parent="1" vertex="1">
           <mxGeometry x="1680" y="681" width="68" height="60" as="geometry" />
         </mxCell>
         <mxCell id="Oz3U-4kUaiHSfNU6trIB-43" value="Sign Image&lt;br&gt;Task" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/containers/Container_Registries.svg;" parent="1" vertex="1">
