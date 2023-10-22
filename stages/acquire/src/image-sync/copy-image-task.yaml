@@ -6,6 +6,6 @@ steps:
 
   - id: oras-copy-image
     cmd: |                                                                  
-        ghcr.io/oras-project/oras:v1.1.0 copy -r \
+        ghcr.io/oras-project/oras:v1.1.0 copy \
         {{.Values.SOURCE_REGISTRY}}/{{.Values.SOURCE_REPOSITORY}}@{{.Values.SOURCE_IMAGE_DIGEST}} \
         {{.Run.Registry}}/{{.Values.SOURCE_REPOSITORY}}:{{.Values.SOURCE_IMAGE_TAG}}
