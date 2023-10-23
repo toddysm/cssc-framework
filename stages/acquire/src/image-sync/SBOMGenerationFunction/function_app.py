@@ -11,7 +11,7 @@ from azure.mgmt.containerregistry.models import OverrideTaskStepProperties, Task
 app = func.FunctionApp()
 
 @app.event_grid_trigger(arg_name="event")
-def VulnScanFunction(event: func.EventGridEvent):
+def SBOMGenerationFunction(event: func.EventGridEvent):
     logging.info('Python EventGrid trigger processed an event')
 
     # Get the configuration
@@ -24,7 +24,26 @@ def VulnScanFunction(event: func.EventGridEvent):
     credential = DefaultAzureCredential()
 
     result = event.get_json()
-    logging.info(f"Event type: {type(event)}")
-    result = json.loads(result)
     logging.info(f"Event data: {result} \n Result type: {type(result)}")
 
+    # Create a task run request object
+    task_values = [
+        SetValue(name='SOURCE_REGISTRY', value=result['registry']),
+        SetValue(name='SOURCE_REPOSITORY', value=result['repository']),
+        SetValue(name='SOURCE_IMAGE_TAG', value=result['tag']),
+        SetValue(name='SOURCE_IMAGE_DIGEST', value=result['digest'])
+    ]
+    task_properties = OverrideTaskStepProperties(values=task_values)
+    acr_client = ContainerRegistryManagementClient(credential, subscription_id, api_version="2019-06-01-preview")
+    task = acr_client.tasks.get(resource_group_name, acr_name, acr_task_name)
+
+    # acr_client.task_runs..begin_create(resource_group_name, acr_name, acr_task_name, task_properties)
+    acr_client.registries.begin_schedule_run(
+        resource_group_name, 
+        acr_name, 
+        TaskRunRequest(
+            task_id=task.id,
+            override_task_step_properties=task_properties,
+        ))
+
+    logging.info('Python EventGrid trigger event processing completed')
