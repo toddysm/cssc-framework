@@ -92,4 +92,6 @@ def create_event(registry, repository, image):
         "tag": image[0],
         "digest": image[1]
     }
+    # TODO: Don't convert the event to string here, just use `event`
+    # TODO: This has impact on how the event is read in the ImageSyncFunction
     return json.dumps(event)
