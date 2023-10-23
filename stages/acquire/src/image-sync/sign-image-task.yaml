@@ -1,0 +1,26 @@
+version: v1.1.0
+steps:
+  # Step #1: Install notation AKV plugin
+  - id: install-notation-azure-kv-plugin
+    cmd: |                                                                  
+        ghcr.io/toddysm/cssc-framework/notation-azure-kv-installer:1.0      
+  - cmd: |                                                                  # list all plugins
+        ghcr.io/toddysm/cssc-framework/notation:1.0 ls                      
+
+  # Step #2: Configure the signing key for notation
+  - id: configure-notation-signing-key
+    cmd: >-                                                                 # add a signing key
+      ghcr.io/toddysm/cssc-framework/notation:1.0 key add \
+      --plugin azure-kv \
+      --id {{.Values.SIGNING_KEY_ID}} \
+      --plugin-config self_signed=true \
+      --default acquisition-signing-key
+  - cmd: |                                                                  # list all keys
+        ghcr.io/toddysm/cssc-framework/notation:1.0 key ls                  
+
+  # Step #3: Sign the image
+  - id: sign-image
+    cmd: |
+        ghcr.io/toddysm/cssc-framework/notation:1.0 sign \
+        {{.Run.Registry}}/{{.Values.INPUT_IMAGE_NAME}}:{{.Values.INPUT_IMAGE_TAG}}
+

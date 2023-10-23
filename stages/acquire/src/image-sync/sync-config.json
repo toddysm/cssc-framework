@@ -1,0 +1,20 @@
+[
+    {
+        "registry": "registry.hub.docker.com",
+        "repository": "toddysm/python",
+        "tags": [
+            {
+                "name": "3.12",
+                "digests" : [  ]
+            },
+            {
+                "name": "3.11",
+                "digests" : [  ]
+            },
+            {
+                "name": "3.10",
+                "digests" : [  ]
+            }
+        ]
+    }
+]
