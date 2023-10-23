@@ -1,6 +1,6 @@
 version: v1.1.0
 steps:
-  # Step #1: Copy the image from the source registry to the destination registry
+  # Step #1: Generate the SBOM for the image
   - cmd: |
         bash -c 'echo "Generating SBOM for image {{.Values.SOURCE_REGISTRY}}/{{.Values.SOURCE_REPOSITORY}}:{{.Values.SOURCE_IMAGE_TAG}} with digest {{.Values.SOURCE_IMAGE_DIGEST}}"'
 
@@ -10,6 +10,7 @@ steps:
         {{.Values.SOURCE_REGISTRY}}/{{.Values.SOURCE_REPOSITORY}}@{{.Values.SOURCE_IMAGE_DIGEST}} \
         -o spdx-json > sbom.spdx
 
+  # Step #2: Push the SBOM to the registry as OCI-referrer
   - id: push-sbom-as-referrer
     cmd: |                                                                  
         ghcr.io/oras-project/oras:v1.1.0 attach \
