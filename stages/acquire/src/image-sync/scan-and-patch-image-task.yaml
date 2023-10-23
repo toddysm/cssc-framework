@@ -1,31 +1,20 @@
 version: v1.1.0
 steps:
-  # Step #1: Install notation AKV plugin
-  - cmd: |                                                                  # install notation-azure-kv plugin
-        ghcr.io/toddysm/cssc-framework/notation-azure-kv-installer:1.0      
-  - cmd: |                                                                  # list all plugins
-        ghcr.io/toddysm/cssc-framework/notation:1.0 ls                      
-
-  # Step #2: Configure the signing key for notation
-  - cmd: >-                                                                 # add a signing key
-      ghcr.io/toddysm/cssc-framework/notation:1.0 key add \
-      --plugin azure-kv \
-      --id {{.Values.SIGNING_KEY_ID}} \
-      --plugin-config self_signed=true \
-      --default acquisition-signing-key
-  - cmd: |                                                                  # list all keys
-        ghcr.io/toddysm/cssc-framework/notation:1.0 key ls                  
-
-  # Step #4: Perform the vulnerability scan for the input image using Trivy
+  # Step #1: Perform the vulnerability scan
   - cmd: |
+        bash -c 'echo "Generating SBOM for image {{.Values.SOURCE_REGISTRY}}/{{.Values.SOURCE_REPOSITORY}}:{{.Values.SOURCE_IMAGE_TAG}} with digest {{.Values.SOURCE_IMAGE_DIGEST}}"'
+
+  - id: scan-image
+    cmd: |
       ghcr.io/aquasecurity/trivy image \
-      {{.Run.Registry}}/{{.Values.INPUT_IMAGE_NAME}}:{{.Values.INPUT_IMAGE_TAG}} \
+      {{.Run.Registry}}/{{.Values.SOURCE_REPOSITORY}}@{{.Values.SOURCE_IMAGE_DIGEST}} \
       --format sarif \
-      --output ./{{.Values.INPUT_IMAGE_NAME}}_{{now | date "2000-01-01"}}.sarif
+      --output ./vulnerability-report_{{now | date "2000-01-01"}}.sarif
 
-  # Step 5: Push the vulnerability report to the registry as OCI-referrer
-  - cmd: |
+  # Step 2: Push the vulnerability report to the registry as OCI-referrer
+  - id: push-vulnerability-report
+    cmd: |
       ghcr.io/oras-project/oras:v1.1.0 attach \
       --artifact-type "application/sarif+json" \
-      {{.Run.Registry}}/{{.Values.INPUT_IMAGE_NAME}}:{{.Values.INPUT_IMAGE_TAG}} \
-      ./{{.Values.INPUT_IMAGE_NAME}}_{{now | date "2000-01-01"}}.sarif
+      {{.Run.Registry}}/{{.Values.SOURCE_REPOSITORY}}@{{.Values.SOURCE_IMAGE_DIGEST}} \
+      ./vulnerability-report_{{now | date "2000-01-01"}}.sarif
