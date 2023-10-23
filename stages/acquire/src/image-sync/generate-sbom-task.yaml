@@ -1,0 +1,19 @@
+version: v1.1.0
+steps:
+  # Step #1: Copy the image from the source registry to the destination registry
+  - cmd: |
+        bash -c 'echo "Generating SBOM for image {{.Values.SOURCE_REGISTRY}}/{{.Values.SOURCE_REPOSITORY}}:{{.Values.SOURCE_IMAGE_TAG}} with digest {{.Values.SOURCE_IMAGE_DIGEST}}"'
+
+  - id: generate-image-sbom
+    cmd: |                                                                  
+        docker.io/anchore/syft --scope all-layers \
+        {{.Values.SOURCE_REGISTRY}}/{{.Values.SOURCE_REPOSITORY}}@{{.Values.SOURCE_IMAGE_DIGEST}} \
+        -o spdx-json > sbom.spdx
+
+  - id: push-sbom-as-referrer
+    cmd: |                                                                  
+        ghcr.io/oras-project/oras:v1.1.0 attach \
+        --artifact-type "application/spdx+json" \
+        {{.Run.Registry}}/{{.Values.SOURCE_REPOSITORY}}@{{.Values.SOURCE_IMAGE_DIGEST}} \
+        ./sbom.spdx
+
