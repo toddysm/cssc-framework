@@ -37,6 +37,8 @@ def VulnScanFunction(event: func.EventGridEvent):
     acr_client = ContainerRegistryManagementClient(credential, subscription_id, api_version="2019-06-01-preview")
     task = acr_client.tasks.get(resource_group_name, acr_name, acr_task_name)
 
+    logging.info(f"Starting task with parameters: registry: {result['registry']}, repository: {result['repository']}, tag: {result['tag']}, digest: {result['digest']}")
+
     acr_client.registries.begin_schedule_run(
         resource_group_name, 
         acr_name, 
