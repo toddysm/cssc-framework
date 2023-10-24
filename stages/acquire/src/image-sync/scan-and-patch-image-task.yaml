@@ -1,7 +1,8 @@
 version: v1.1.0
 steps:
   # Step #1: Perform the vulnerability scan
-  - cmd: |
+  - id: print-inputs
+    cmd: |
         bash -c 'echo "Generating SBOM for image {{.Values.SOURCE_REGISTRY}}/{{.Values.SOURCE_REPOSITORY}}:{{.Values.SOURCE_IMAGE_TAG}} with digest {{.Values.SOURCE_IMAGE_DIGEST}}"'
 
   - id: scan-image
