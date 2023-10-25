@@ -33,13 +33,13 @@ def SignImageFunction(event: func.EventGridEvent):
         SetValue(name='SOURCE_REPOSITORY', value=result['repository']),
         SetValue(name='SOURCE_IMAGE_TAG', value=result['tag']),
         SetValue(name='SOURCE_IMAGE_DIGEST', value=result['digest']),
-        SetValue(name='AKV_KEY_ID', value=akv_key_id)
+        SetValue(name='SIGNING_KEY_ID', value=akv_key_id)
     ]
     task_properties = OverrideTaskStepProperties(values=task_values)
     acr_client = ContainerRegistryManagementClient(credential, subscription_id, api_version="2019-06-01-preview")
     task = acr_client.tasks.get(resource_group_name, acr_name, acr_task_name)
 
-    logging.info(f"Starting task with parameters: registry: {result['registry']}, repository: {result['repository']}, tag: {result['tag']}, digest: {result['digest']}, key_id: {akv_key_id}")
+    logging.info(f"Starting task with parameters: SOURCE_REGISTRY: {result['registry']}, SOURCE_REPOSITORY: {result['repository']}, SOURCE_IMAGE_TAG: {result['tag']}, SOURCE_IMAGE_DIGEST: {result['digest']}, SIGNING_KEY_ID: {akv_key_id}")
 
     acr_client.registries.begin_schedule_run(
         resource_group_name, 
