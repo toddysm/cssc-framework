@@ -10,12 +10,12 @@ steps:
     cmd: |                                                                  
         ghcr.io/toddysm/cssc-framework/notation-azure-kv-installer:1.0      
   - cmd: |                                                                  # list all plugins
-        ghcr.io/toddysm/cssc-framework/notation:1.0 ls                      
+        ghcr.io/toddysm/cssc-framework/notation:1.0 plugin ls                      
 
   # Step #2: Configure the signing key for notation
   - id: debug-key-setup
     cmd: |
-        bash -c 'echo "Setting up key ghcr.io/toddysm/cssc-framework/notation:1.0 key add \n --plugin azure-kv \n --id {{.Values.SIGNING_KEY_ID}} \n --plugin-config self_signed=true \n --default acquisition-signing-key"'
+        bash -c 'echo "Setting up key ghcr.io/toddysm/cssc-framework/notation:1.0 key add --plugin azure-kv --id {{.Values.SIGNING_KEY_ID}} --plugin-config self_signed=true --default acquisition-signing-key"'
 
   - id: configure-notation-signing-key
     cmd: >-                                                                 
@@ -25,7 +25,7 @@ steps:
       --plugin-config self_signed=true \
       --default acquisition-signing-key
   - cmd: |                                                                  # list all keys
-        ghcr.io/toddysm/cssc-framework/notation:1.0 key ls                  
+        ghcr.io/toddysm/cssc-framework/notation:1.0 key ls               
 
   # Step #3: Sign the image
   - id: debug-sign-image
