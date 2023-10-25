@@ -1,8 +1,9 @@
 version: v1.1.0
 steps:
   # Log the input parameters for debugging purposes
-  - cmd: |
-        bash -c 'echo "Signing image {{.Values.SOURCE_REGISTRY}}/{{.Values.SOURCE_REPOSITORY}}:{{.Values.SOURCE_IMAGE_TAG}} with digest {{.Values.SOURCE_IMAGE_DIGEST}} with key {{.Values.SIGNING_KEY_ID}}""'
+  - id: print-inputs
+    cmd: |
+        bash -c 'echo "Signing image {{.Values.SOURCE_REGISTRY}}/{{.Values.SOURCE_REPOSITORY}}:{{.Values.SOURCE_IMAGE_TAG}} with digest {{.Values.SOURCE_IMAGE_DIGEST}} with key {{.Values.SIGNING_KEY_ID}}"'
 
   # Step #1: Install notation AKV plugin
   - id: install-notation-azure-kv-plugin
