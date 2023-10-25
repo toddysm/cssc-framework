@@ -30,7 +30,7 @@ steps:
   # Step #3: Sign the image
   - id: debug-sign-image
     cmd: |
-        bash -c 'echo "Setting up key ghcr.io/toddysm/cssc-framework/notation:1.0 key add \n --plugin azure-kv \n --id {{.Values.SIGNING_KEY_ID}} \n --plugin-config self_signed=true \n --default acquisition-signing-key"'
+        bash -c 'echo "Setting up key ghcr.io/toddysm/cssc-framework/notation:1.0 sign {{.Run.Registry}}/{{.Values.SOURCE_REPOSITORY}}@{{.Values.SOURCE_IMAGE_DIGEST}}"'
 
   - id: sign-image
     cmd: |
