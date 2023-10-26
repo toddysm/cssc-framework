@@ -17,5 +17,6 @@ steps:
     cmd: |
       ghcr.io/oras-project/oras:v1.1.0 attach \
       --artifact-type "application/sarif+json" \
+      --annotation "vnd.toddysm.generator.tool=trivy" \
       {{.Run.Registry}}/{{.Values.SOURCE_REPOSITORY}}@{{.Values.SOURCE_IMAGE_DIGEST}} \
       ./vulnerability-report_{{now | date "2000-01-01"}}.sarif

@@ -15,6 +15,7 @@ steps:
     cmd: |                                                                  
         ghcr.io/oras-project/oras:v1.1.0 attach \
         --artifact-type "application/spdx+json" \
+        --annotation "vnd.toddysm.generator.tool=syft" \
         {{.Run.Registry}}/{{.Values.SOURCE_REPOSITORY}}@{{.Values.SOURCE_IMAGE_DIGEST}} \
         ./sbom.spdx
 
