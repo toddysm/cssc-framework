@@ -30,4 +30,5 @@ az acr task create -r $ACR_NAME -n $ACR_TASK_NAME_SIGN_IMAGE \
     -f ../../../stages/acquire/src/image-sync/sign-image-task.yaml \
     -c /dev/null \
     --commit-trigger-enabled false \
-    --base-image-trigger-enabled false
+    --base-image-trigger-enabled false \
+    --assign-identity
