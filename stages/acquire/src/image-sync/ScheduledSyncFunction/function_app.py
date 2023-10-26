@@ -36,10 +36,13 @@ def ScheduledImageSyncFunction(myTimer: func.TimerRequest) -> None:
     for config in configs:
         # Get the current tags for the image
         tags = get_current_tags(config["registry"], config["repository"])
+        logging.info(f"Current tags for {config['registry']}/{config['repository']}: {tags}")
 
         for sync_tag in config["tags"]:
-            tag = [t for t in tags if t[0] == sync_tag['name']][0]
+            logging.info(f"Sync tag: {sync_tag['name']}")
+            tag = [t for t in tags if t[0] == sync_tag['name']]
             if tag:
+                tag = tag[0]
                 digest = tag[1]
                 logging.info(f"Digest for tag {sync_tag['name']}: {digest}")
                 if digest not in sync_tag['digests']:
