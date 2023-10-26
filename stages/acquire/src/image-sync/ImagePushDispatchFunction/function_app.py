@@ -23,7 +23,14 @@ def ImagePushDispatchFunction(event: func.EventGridEvent):
     logging.info(f"Event data: {result} \n Result type: {type(result)}")
 
     # Handle only events with `docker` in the user agent
-    if result['request']['useragent'].find('docker') != -1:
+    if 'tag' in result['target']:
+        logging.info(f"Handling image push event for tag: {result['target']['tag']}")
+
+        # TODO: This is what the lack of artifactType is causing us to do :)
+        if not result['target']['tag'].startswith("3.1"):
+            logging.info(f"Tag is not the image you are looking for, skipping...")
+            return
+
         registry = result['request']['host']
         repository = result['target']['repository']
         tag = result['target']['tag']

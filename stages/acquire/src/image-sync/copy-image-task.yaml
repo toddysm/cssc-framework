@@ -1,11 +1,29 @@
 version: v1.1.0
 steps:
-  # Step #1: Copy the image from the source registry to the destination registry
-  - cmd: |
+  - id: print-inputs
+    cmd: |
         bash -c 'echo "Copying image {{.Values.SOURCE_REGISTRY}}/{{.Values.SOURCE_REPOSITORY}}@{{.Values.SOURCE_IMAGE_DIGEST}} to {{.Run.Registry}}/{{.Values.SOURCE_REPOSITORY}}:{{.Values.SOURCE_IMAGE_TAG}}"'
 
+  # Step 1: Add lifecycle metadata to the previous image if it exists
+  - id: debug-lifecycle-metadata-update
+    cmd: |
+        bash -c 'echo "Running command to update the image lifecycle {{.Run.Registry}}/{{.Values.SOURCE_REPOSITORY}}:{{.Values.SOURCE_IMAGE_TAG}} > /dev/null; echo $?"'
+  - id: update-lifecycle-metadata
+    cmd: |
+        ghcr.io/toddysm/cssc-framework/update-lifecycle:1.0 {{.Run.Registry}}/{{.Values.SOURCE_REPOSITORY}}:{{.Values.SOURCE_IMAGE_TAG}}
+
+  # Step 2: Copy the image to the target registry
   - id: oras-copy-image
     cmd: |                                                                  
         ghcr.io/oras-project/oras:v1.1.0 copy \
         {{.Values.SOURCE_REGISTRY}}/{{.Values.SOURCE_REPOSITORY}}@{{.Values.SOURCE_IMAGE_DIGEST}} \
+        {{.Run.Registry}}/{{.Values.SOURCE_REPOSITORY}}:{{.Values.SOURCE_IMAGE_TAG}}
+
+  # Step #3: Add provenance metadata to the newly copied image
+  - id: oras-provenance-attach
+    cmd: |                                                                  
+        ghcr.io/oras-project/oras:v1.1.0 attach \
+        --artifact-type "application/vnd.toddysm.artifact.source" \
+        --annotation "vnd.toddysm.artifact.source.repository={{.Values.SOURCE_REGISTRY}}/{{.Values.SOURCE_REPOSITORY}}" \
+        --annotation "vnd.toddysm.artifact.source.tag={{.Values.SOURCE_IMAGE_TAG}}" \
         {{.Run.Registry}}/{{.Values.SOURCE_REPOSITORY}}:{{.Values.SOURCE_IMAGE_TAG}}

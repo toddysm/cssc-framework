@@ -162,3 +162,5 @@ cython_debug/
 # Temp files
 /temp/*
 .$*
+stages/acquire/src/image-sync/.DS_Store
+.vscode/settings.json

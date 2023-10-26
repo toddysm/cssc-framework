@@ -1,26 +1,39 @@
 version: v1.1.0
 steps:
+  # Log the input parameters for debugging purposes
+  - id: print-inputs
+    cmd: |
+        bash -c 'echo "Signing image {{.Values.SOURCE_REGISTRY}}/{{.Values.SOURCE_REPOSITORY}}:{{.Values.SOURCE_IMAGE_TAG}} with digest {{.Values.SOURCE_IMAGE_DIGEST}} with key {{.Values.SIGNING_KEY_ID}}"'
+
   # Step #1: Install notation AKV plugin
   - id: install-notation-azure-kv-plugin
     cmd: |                                                                  
         ghcr.io/toddysm/cssc-framework/notation-azure-kv-installer:1.0      
   - cmd: |                                                                  # list all plugins
-        ghcr.io/toddysm/cssc-framework/notation:1.0 ls                      
+        ghcr.io/toddysm/cssc-framework/notation:1.0 plugin ls                      
 
   # Step #2: Configure the signing key for notation
+  - id: debug-key-setup
+    cmd: |
+        bash -c 'echo "Setting up key ghcr.io/toddysm/cssc-framework/notation:1.0 key add --plugin azure-kv --id {{.Values.SIGNING_KEY_ID}} --plugin-config self_signed=true --default acquisition-signing-key"'
+
   - id: configure-notation-signing-key
-    cmd: >-                                                                 # add a signing key
-      ghcr.io/toddysm/cssc-framework/notation:1.0 key add \
-      --plugin azure-kv \
-      --id {{.Values.SIGNING_KEY_ID}} \
-      --plugin-config self_signed=true \
+    cmd: >-                                                                 
+      ghcr.io/toddysm/cssc-framework/notation:1.0 key add
+      --plugin azure-kv
+      --id {{.Values.SIGNING_KEY_ID}}
+      --plugin-config self_signed=true
       --default acquisition-signing-key
   - cmd: |                                                                  # list all keys
-        ghcr.io/toddysm/cssc-framework/notation:1.0 key ls                  
+        ghcr.io/toddysm/cssc-framework/notation:1.0 key ls               
 
   # Step #3: Sign the image
+  - id: debug-sign-image
+    cmd: |
+        bash -c 'echo "Signing image with ghcr.io/toddysm/cssc-framework/notation:1.0 sign {{.Run.Registry}}/{{.Values.SOURCE_REPOSITORY}}@{{.Values.SOURCE_IMAGE_DIGEST}}"'
+
   - id: sign-image
     cmd: |
         ghcr.io/toddysm/cssc-framework/notation:1.0 sign \
-        {{.Run.Registry}}/{{.Values.INPUT_IMAGE_NAME}}:{{.Values.INPUT_IMAGE_TAG}}
+        {{.Run.Registry}}/{{.Values.SOURCE_REPOSITORY}}@{{.Values.SOURCE_IMAGE_DIGEST}}
 
