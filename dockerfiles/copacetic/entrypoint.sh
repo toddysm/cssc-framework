@@ -11,7 +11,8 @@ image_no_tag=$(echo "$image" | cut -d':' -f1)
 if copa patch -i "$image" -r ./data/"$report" -t "$patched_tag" --addr tcp://127.0.0.1:8888;
 then
     patched_image="$image_no_tag:$patched_tag"
-    echo "patched-image=$patched_image" >> "$GITHUB_OUTPUT"
+    # echo "patched-image=$patched_image" >> "$GITHUB_OUTPUT"
+    echo "patched-image=$patched_image"
 else
     echo "Error patching image $image with copa"
     exit 1
