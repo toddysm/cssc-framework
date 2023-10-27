@@ -32,7 +32,7 @@ steps:
       --vuln-type os \
       --ignore-unfixed \
       --format json \
-      --output ./vulnerability-report_trivy_{{now | date "2000-01-01"}}.json
+      --output /workspace/data/vulnerability-report_trivy_{{now | date "2000-01-01"}}.json
   
   - id: buildkitd
     cmd: moby/buildkit --addr tcp://0.0.0.0:8888
@@ -47,11 +47,10 @@ steps:
   - id: patch-with_copa
     cmd: | 
       ghcr.io/toddysm/cssc-framework/copacetic:1.0 \
-      {{.Run.Registry}}/{{.Values.SOURCE_REPOSITORY}}@{{.Values.SOURCE_IMAGE_DIGEST}} \
-       ./vulnerability-report_trivy_{{now | date "2000-01-01"}}.json \
-      {{.Run.Registry}}/{{.Values.SOURCE_REPOSITORY}}:{{.Values.SOURCE_IMAGE_TAG}}-patched
-    network: 
-      - name: host
+      {{.Run.Registry}}/{{.Values.SOURCE_REPOSITORY}}:{{.Values.SOURCE_IMAGE_TAG}} \
+      vulnerability-report_trivy_{{now | date "2000-01-01"}}.json \
+      {{.Values.SOURCE_IMAGE_TAG}}-patched
+    network: host
 
   - id: push-image
     cmd: docker push {{.Run.Registry}}/{{.Values.SOURCE_REPOSITORY}}:{{.Values.SOURCE_IMAGE_TAG}}-patched
