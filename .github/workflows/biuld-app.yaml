@@ -1,0 +1,21 @@
+name: build-flask-app
+
+on:
+  workflow_dispatch
+  # push:
+  #   branches: [ main ]
+  # pull_request:
+  #   branches: [ main ]
+
+env:
+  BASE_IMAGE_TAG: ${{ vars.BASE_IMAGE_TAG }}
+  BASE_IMAGE_DIGEST: ${{ vars.BASE_IMAGE_DIGEST }}
+
+jobs:
+  display-environment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Display environment
+        run: |
+          echo "BASE_IMAGE_TAG: $BASE_IMAGE_TAG"
+          echo "BASE_IMAGE_DIGEST: $BASE_IMAGE_DIGEST"
