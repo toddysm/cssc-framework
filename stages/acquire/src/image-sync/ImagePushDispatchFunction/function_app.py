@@ -40,9 +40,8 @@ def ImagePushDispatchFunction(event: func.EventGridEvent):
         # Trigger SBOM generation task
         publish_eventgrid_event("SBOMGeneration", f"{registry}/{repository}", create_event(registry, repository, tag, digest))
         # Trigger vulnerability scan and patch task
-        publish_eventgrid_event("VulnScan", f"{registry}/{repository}", create_event(registry, repository, tag, digest))
-        # TODO: Trigger lifecycle generation task - note, we may not be able to do this at this point of the workflow
-        # TODO: Trigger provenance generation task - note, this may be something that we cannot do at this point of the workflow
+        if not result['target']['tag'].endswith("-patched"):
+            publish_eventgrid_event("VulnScan", f"{registry}/{repository}", create_event(registry, repository, tag, digest))
         # Trigger image signing task
         publish_eventgrid_event("SignImage", f"{registry}/{repository}", create_event(registry, repository, tag, digest))
 
