@@ -32,6 +32,10 @@ jobs:
         uses: notaryproject/notation-action/setup@v1
         with:
           version: "1.0.0"
+      - name: Sign into Azure
+        uses: Azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
       - name: Verify Base Image Signature
         uses: notaryproject/notation-action/verify@v1
         with:
