@@ -11,7 +11,7 @@ env:
   BASE_IMAGE_REPO: tsmacrquarantineusw2.azurecr.io/toddysm/python
   BASE_IMAGE_TAG: ${{ vars.BASE_IMAGE_TAG }}
   BASE_IMAGE_DIGEST: ${{ vars.BASE_IMAGE_DIGEST }}
-
+  NOTATION_EXPERIMENTAL: 1
 
 jobs:
   verify-base-image:
@@ -23,8 +23,11 @@ jobs:
     steps:
       - name: Display environment
         run: |
+          echo "BASE_IMAGE_REPO: $BASE_IMAGE_REPO"
           echo "BASE_IMAGE_TAG: $BASE_IMAGE_TAG"
           echo "BASE_IMAGE_DIGEST: $BASE_IMAGE_DIGEST"
+      - name: Checkout
+        uses: actions/checkout@v3
       - name: Setup Notation CLI
         uses: notaryproject/notation-action/setup@v1
         with:
