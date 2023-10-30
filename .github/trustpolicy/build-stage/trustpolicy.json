@@ -1,0 +1,16 @@
+{
+    "version": "1.0",
+    "trustPolicies": [
+        {
+            "name": "remote",
+            "registryScopes": [ "tsmacrquarantineusw2.azurecr.io/toddysm/python" ],
+            "signatureVerification": {
+                "level" : "strict" 
+            },
+            "trustStores": [ "ca:buildcert"],
+            "trustedIdentities": [
+                "x509.subject: C=US, ST=WA, L=Seattle, O=ToddySM, CN=toddysm.com"
+            ]
+        }
+    ]
+}
