@@ -8,7 +8,7 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-build/
+build/*
 develop-eggs/
 dist/
 downloads/
@@ -164,3 +164,6 @@ cython_debug/
 .$*
 stages/acquire/src/image-sync/.DS_Store
 .vscode/settings.json
+
+# Includes source folders under "build" folder
+!build/**/src
