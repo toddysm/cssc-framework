@@ -31,6 +31,6 @@ jobs:
         uses: notaryproject/notation-action/verify@v1
         with:
           target_artifact_reference: ${{ env.BASE_IMAGE_REPO }}:{{ env.BASE_IMAGE_TAG }}
-          trust_policy: .github/trustpolicy/build/trustpolicy.json
+          trust_policy: .github/trustpolicy/build-stage/trustpolicy.json
           trust_store: .github/truststore
           allow_referrers_api: 'true'
