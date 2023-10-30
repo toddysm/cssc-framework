@@ -11,7 +11,7 @@ env:
   BASE_IMAGE_REPO: tsmacrquarantineusw2.azurecr.io/toddysm/python
   BASE_IMAGE_TAG: ${{ vars.BASE_IMAGE_TAG }}
   BASE_IMAGE_DIGEST: ${{ vars.BASE_IMAGE_DIGEST }}
-
+  NOTATION_EXPERIMENTAL: 1
 
 jobs:
   verify-base-image:
