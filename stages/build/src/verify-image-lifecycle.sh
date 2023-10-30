@@ -19,7 +19,7 @@ eol_date=`oras discover \
     -o json | \
     jq -r 'select (.manifests != null) | .manifests[0].annotations["vnd.toddysm.artifact.lifecycle.eol"]'`
 
-tomorrows_date=$(date -v+1d '+%Y-%m-%dT%H:%M:%SZ')
+tomorrows_date=$(date --date='+1 day' '+%Y-%m-%dT%H:%M:%SZ')
 
 if [ "$eol_date" != "null" ] && [ "$eol_date" != "" ] && [ "$eol_date" != " " ]; then
     echo "Image has end of life date: ${eol_date}"
