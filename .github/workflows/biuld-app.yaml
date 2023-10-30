@@ -27,10 +27,14 @@ jobs:
           echo "BASE_IMAGE_REPO: $BASE_IMAGE_REPO"
           echo "BASE_IMAGE_TAG: $BASE_IMAGE_TAG"
           echo "BASE_IMAGE_DIGEST: $BASE_IMAGE_DIGEST"
-      - name: Checkout
-        uses: actions/checkout@v3
+      - name: Checkout the code
+        uses: actions/checkout@v4
       - name: Setup Notation CLI
         uses: notaryproject/notation-action/setup@v1
+        with:
+          version: "1.0.0"
+      - name: Setup ORAS CLI
+        uses: oras-project/setup-oras@v1
         with:
           version: "1.0.0"
       - name: Sign into Azure
@@ -40,10 +44,13 @@ jobs:
       - name: Sign into ACR
         run: |
             az acr login --name ${{ env.BASE_IMAGE_REGISTRY }}
-      - name: Verify Base Image Signature
+      - name: Verify base image signature
         uses: notaryproject/notation-action/verify@v1
         with:
           target_artifact_reference: "${{ env.BASE_IMAGE_REGISTRY }}/${{ env.BASE_IMAGE_REPO }}:${{ env.BASE_IMAGE_TAG }}"
           trust_policy: ".github/trustpolicy/build-stage/trustpolicy.json"
           trust_store: ".github/truststore"
           allow_referrers_api: "true"
+      - name: Verify the image is not end-of-life
+        run: |
+            oras discover ${{ env.BASE_IMAGE_REGISTRY }}/${{ env.BASE_IMAGE_REPO }}:${{ env.BASE_IMAGE_TAG }}
