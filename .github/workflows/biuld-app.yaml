@@ -8,14 +8,29 @@ on:
   #   branches: [ main ]
 
 env:
+  BASE_IMAGE_REPO: tsmacrquarantineusw2.azurecr.io/toddysm/python
   BASE_IMAGE_TAG: ${{ vars.BASE_IMAGE_TAG }}
   BASE_IMAGE_DIGEST: ${{ vars.BASE_IMAGE_DIGEST }}
 
+
 jobs:
-  display-environment:
+  build-flask-app:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     steps:
       - name: Display environment
         run: |
           echo "BASE_IMAGE_TAG: $BASE_IMAGE_TAG"
           echo "BASE_IMAGE_DIGEST: $BASE_IMAGE_DIGEST"
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Verify Base Image Signature
+        uses: notaryproject/notation-action/verify@v1
+        with:
+          target_artifact_reference: ${{ env.BASE_IMAGE_REPO }}:{{ env.BASE_IMAGE_TAG }}
+          trust_policy: .github/trustpolicy/build/trustpolicy.json
+          trust_store: .github/truststore
+          allow_referrers_api: 'true'
