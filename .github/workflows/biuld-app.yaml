@@ -53,7 +53,7 @@ jobs:
           allow_referrers_api: "true"
       - name: List the current working folder
         run: |
-            ls -la
+            ls -la stages/build/src/
       - name: Verify the image is not end-of-life
         run: |
-            /stages/build/src/verify-image-lifecycle.sh ${{ env.BASE_IMAGE_REGISTRY }} ${{ env.BASE_IMAGE_REPO }} ${{ env.BASE_IMAGE_TAG }} ${{ env.BASE_IMAGE_DIGEST }}
+            stages/build/src/verify-image-lifecycle.sh ${{ env.BASE_IMAGE_REGISTRY }} ${{ env.BASE_IMAGE_REPO }} ${{ env.BASE_IMAGE_TAG }} ${{ env.BASE_IMAGE_DIGEST }}
