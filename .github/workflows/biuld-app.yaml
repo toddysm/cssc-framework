@@ -53,4 +53,4 @@ jobs:
           allow_referrers_api: "true"
       - name: Verify the image is not end-of-life
         run: |
-            oras discover ${{ env.BASE_IMAGE_REGISTRY }}/${{ env.BASE_IMAGE_REPO }}:${{ env.BASE_IMAGE_TAG }}
+            ./stages/build/src/verify-image-lifecycle.sh ${{ env.BASE_IMAGE_REGISTRY }} ${{ env.BASE_IMAGE_REPO }} ${{ env.BASE_IMAGE_TAG }} ${{ env.BASE_IMAGE_DIGEST }}
