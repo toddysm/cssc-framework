@@ -36,6 +36,12 @@ trivy image --vuln-type os --ignore-unfixed python:3.10.13-slim
 trivy image --vuln-type os --ignore-unfixed tsmacrquarantineusw2.azurecr.io/python:3.10.12-slim | grep Total
 trivy image --vuln-type os --ignore-unfixed tsmacrquarantineusw2.azurecr.io/python:3.10.12-slim-patched | grep Total
 
+# Check the lifecycle metadata
+oras login -u tsmacrquarantineusw2 tsmacrquarantineusw2.azurecr.io
+# Old toddysm/python:3.10 image
+# sha256:13cc673c11ee90d6ba92d95f35f4d8e59148937f1e3b4044788e93268bfe9d2e
+
+oras manifest fetch tsmacrquarantineusw2.azurecr.io/toddysm/python@sha256:e7df7ed9bc4830fdfcc4d2924a02cb8d3070f69ce24a807b85ff66cc4d1b6838 | jq .
 
 # Copa commands
 # 1. Scan with Trivy
