@@ -51,6 +51,9 @@ jobs:
           trust_policy: ".github/trustpolicy/build-stage/trustpolicy.json"
           trust_store: ".github/truststore"
           allow_referrers_api: "true"
+      - name: List the current working folder
+        run: |
+            ls -la
       - name: Verify the image is not end-of-life
         run: |
             /stages/build/src/verify-image-lifecycle.sh ${{ env.BASE_IMAGE_REGISTRY }} ${{ env.BASE_IMAGE_REPO }} ${{ env.BASE_IMAGE_TAG }} ${{ env.BASE_IMAGE_DIGEST }}
