@@ -8,7 +8,8 @@ on:
   #   branches: [ main ]
 
 env:
-  BASE_IMAGE_REPO: tsmacrquarantineusw2.azurecr.io/toddysm/python
+  BASE_IMAGE_REGISTRY: tsmacrquarantineusw2.azurecr.io
+  BASE_IMAGE_REPO: toddysm/python
   BASE_IMAGE_TAG: ${{ vars.BASE_IMAGE_TAG }}
   BASE_IMAGE_DIGEST: ${{ vars.BASE_IMAGE_DIGEST }}
   NOTATION_EXPERIMENTAL: 1
@@ -36,10 +37,13 @@ jobs:
         uses: Azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Sign into ACR
+        run: |
+            az acr login --name ${{ env.BASE_IMAGE_REGISTRY }}
       - name: Verify Base Image Signature
         uses: notaryproject/notation-action/verify@v1
         with:
-          target_artifact_reference: "${{ env.BASE_IMAGE_REPO }}:${{ env.BASE_IMAGE_TAG }}"
+          target_artifact_reference: "${{ env.BASE_IMAGE_REGISTRY }}/${{ env.BASE_IMAGE_REPO }}:${{ env.BASE_IMAGE_TAG }}"
           trust_policy: ".github/trustpolicy/build-stage/trustpolicy.json"
           trust_store: ".github/truststore"
           allow_referrers_api: "true"
