@@ -5,7 +5,7 @@ base_image_repository=$2
 base_image_tag=$3
 base_image_digest=$4
 
-if [ $# -lt 4 ]; then
+if [ $# < 4 ]; then
     base_image="${base_image_registry}/${base_image_repository}@${base_image_digest}"
 else
     base_image="${base_image_registry}/${base_image_repository}:${base_image_tag}"
