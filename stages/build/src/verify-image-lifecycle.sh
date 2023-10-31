@@ -1,14 +1,19 @@
-#/bin/sh
+#!/bin/bash
 
 base_image_registry=$1
 base_image_repository=$2
 base_image_tag=$3
 base_image_digest=$4
 
-if [ "${base_image_tag}" ]; then
-    base_image="${base_image_registry}/${base_image_repository}@${base_image_digest}"
-else
+if [ $# -lt 3 ]; then
+    echo "Usage: $0 <base_image_registry> <base_image_repository> <base_image_tag> <base_image_digest>"
+    exit 1
+fi
+
+if [[ $# -lt 4 ]]; then
     base_image="${base_image_registry}/${base_image_repository}:${base_image_tag}"
+else
+    base_image="${base_image_registry}/${base_image_repository}@${base_image_digest}"
 fi
 
 echo "Checking image lifecycle for ${base_image}..."
