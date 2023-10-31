@@ -26,7 +26,7 @@ eol_date=`oras discover \
 
 tomorrows_date=$(date --date='+1 day' '+%Y-%m-%dT%H:%M:%SZ')
 
-if [ ! "$eol_date" -eq "null" ] && [ ! "$eol_date" -eq "" ] && [ ! "$eol_date" -eq " " ]; then
+if [ "$eol_date" != "null" ] && [ "$eol_date" != "" ] && [ "$eol_date" != " " ]; then
     echo "Image has end of life date: ${eol_date}"
     if [ "$eol_date" \< "$tomorrows_date" ]; then
         echo "Base image ${base_image} has reached end of life and should not be used for builds."
