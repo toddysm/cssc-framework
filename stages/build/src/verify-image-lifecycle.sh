@@ -1,4 +1,4 @@
-#/bin/sh
+#!/bin/bash
 
 base_image_registry=$1
 base_image_repository=$2
@@ -10,7 +10,7 @@ if [ $# -lt 3 ]; then
     exit 1
 fi
 
-if [ $# -lt 4 ]; then
+if [[ $# -lt 4 ]]; then
     base_image="${base_image_registry}/${base_image_repository}:${base_image_tag}"
 else
     base_image="${base_image_registry}/${base_image_repository}@${base_image_digest}"
@@ -26,9 +26,9 @@ eol_date=`oras discover \
 
 tomorrows_date=$(date --date='+1 day' '+%Y-%m-%dT%H:%M:%SZ')
 
-if [ "$eol_date" != "null" ] && [ "$eol_date" != "" ] && [ "$eol_date" != " " ]; then
+if [[ "$eol_date" != "null" ]] && [[ "$eol_date" != "" ]] && [[ "$eol_date" != " " ]]; then
     echo "Image has end of life date: ${eol_date}"
-    if [ "$eol_date" \< "$tomorrows_date" ]; then
+    if [[ "$eol_date" \< "$tomorrows_date" ]]; then
         echo "Base image ${base_image} has reached end of life and should not be used for builds."
 
         # Get the digest for the latest image from this lineage
