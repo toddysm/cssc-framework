@@ -167,3 +167,4 @@ stages/acquire/src/image-sync/.DS_Store
 
 # Includes source folders under "build" folder
 !build/**/src
+sample/src/.DS_Store
