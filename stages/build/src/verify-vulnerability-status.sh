@@ -5,6 +5,11 @@ base_image_repository=$2
 base_image_tag=$3
 base_image_digest=$4
 
+if test $# -lt 3 ; then
+    echo "Usage: $0 <base_image_registry> <base_image_repository> <base_image_tag> <base_image_digest>"
+    exit 1
+fi
+
 if test $# -lt 4 ; then
     base_image="${base_image_registry}/${base_image_repository}@${base_image_digest}"
 else
