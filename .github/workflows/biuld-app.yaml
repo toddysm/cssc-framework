@@ -61,6 +61,7 @@ jobs:
             stages/build/src/verify-vulnerability-status.sh ${{ env.BASE_IMAGE_REGISTRY }} ${{ env.BASE_IMAGE_REPO }} ${{ env.BASE_IMAGE_TAG }} ${{ env.BASE_IMAGE_DIGEST }}
 
   build-flask-app:
+    needs: verify-base-image
     runs-on: ubuntu-latest
     permissions:
       contents: read
