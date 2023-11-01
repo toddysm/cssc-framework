@@ -3,7 +3,7 @@
     "trustPolicies": [
         {
             "name": "remote",
-            "registryScopes": [ "tsmacrquarantineusw2.azurecr.io/toddysm/python" ],
+            "registryScopes": [ "tsmacrkubeconna23demousw2.azurecr.io/toddysm/python" ],
             "signatureVerification": {
                 "level" : "strict" 
             },
