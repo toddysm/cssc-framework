@@ -93,7 +93,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./sample
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ env.TARGET_IMAGE_REGISTRY }}/${{ env.TARGET_IMAGE_REPO }}:${{ env.TARGET_IMAGE_TAG }}
           build-args: |
