@@ -68,3 +68,10 @@ sudo docker run \
     --mount=type=bind,source=$(pwd),target=/data \
     --mount=type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock \
     ghcr.io/toddysm/cssc-framework/copacetic:1.0 docker.io/library/python:3.10.12-slim python\:3.10.12-slim.json 3.10.12-slim-patched
+
+
+# 4. Build the sample app
+docker build -t tsmacrquarantineusw2.azurecr.io/flasksample:1.0 --build-arg BASE_IMAGE="tsmacrquarantineusw2.azurecr.io/toddysm/python:3.10" .
+
+# 5. Run the sample app
+docker run -p 5050:5000 tsmacrquarantineusw2.azurecr.io/flasksample:1.0

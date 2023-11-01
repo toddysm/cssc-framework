@@ -1,0 +1,68 @@
+apiVersion: config.ratify.deislabs.io/v1beta1
+kind: CertificateStore
+metadata:
+  name: certstore-acquire
+spec:
+  provider: inline
+  parameters:
+    value: |
+      -----BEGIN CERTIFICATE-----
+      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
+      Zm60NPz/0mmIl8tUt2lJsH5C+o+zsCg=
+      -----END CERTIFICATE-----
+---
+apiVersion: config.ratify.deislabs.io/v1beta1
+kind: Store
+metadata:
+  name: store-oras
+spec:
+  name: oras
+---
+apiVersion: config.ratify.deislabs.io/v1beta1
+kind: Verifier
+metadata:
+  name: verifier-notary-inline
+spec:
+  name: notation
+  artifactTypes: application/vnd.cncf.notary.signature
+  parameters:
+    verificationCertStores:  # certificates for validating signatures
+      certs: # name of the trustStore
+        - certstore-acquire
+        - certstore-deploy 
+    trustPolicyDoc: # policy language that indicates which identities are trusted to produce artifacts
+      version: "1.0"
+      trustPolicies:
+        - name: default
+          registryScopes:
+            - "*"
+          signatureVerification:
+            level: strict
+          trustStores:
+            - ca:certs
+          trustedIdentities:
+            - "*"
