@@ -93,5 +93,8 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./sample
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ env.TARGET_IMAGE_REGISTRY }}/${{ env.TARGET_IMAGE_REGISTRY }}:${{ env.TARGET_IMAGE_TAG }}
+          build-args: |
+            BASE_IMAGE=${{ env.BASE_IMAGE_REGISTRY }}/${{ env.BASE_IMAGE_REPO }}:${{ env.BASE_IMAGE_TAG }}
