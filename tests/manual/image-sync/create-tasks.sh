@@ -1,4 +1,4 @@
-ACR_NAME=tsmacrquarantineusw2
+ACR_NAME=tsmacrkubeconna23demousw2                      # or whatever your ACR name is
 ACR_TASK_NAME_COPY_IMAGE=acquire-copy-image-task
 ACR_TASK_NAME_GENERATE_SBOM=acquire-generate-sbom-task
 ACR_TASK_NAME_SCAN_IMAGE=acquire-scan-image-task
