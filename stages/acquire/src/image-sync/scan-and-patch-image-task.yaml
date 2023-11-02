@@ -10,7 +10,7 @@ steps:
       ghcr.io/aquasecurity/trivy image \
       {{.Run.Registry}}/{{.Values.SOURCE_REPOSITORY}}@{{.Values.SOURCE_IMAGE_DIGEST}} \
       --format sarif \
-      --output ./vulnerability-report_{{now | date "2000-01-01"}}.sarif
+      --output ./vulnerability-report_{{now | date "2023-01-02"}}.sarif
 
   # Step 2: Push the vulnerability report to the registry as OCI-referrer
   - id: push-vulnerability-report
@@ -19,7 +19,7 @@ steps:
       --artifact-type "application/sarif+json" \
       --annotation "vnd.toddysm.generator.tool=trivy" \
       {{.Run.Registry}}/{{.Values.SOURCE_REPOSITORY}}@{{.Values.SOURCE_IMAGE_DIGEST}} \
-      ./vulnerability-report_{{now | date "2000-01-01"}}.sarif
+      ./vulnerability-report_{{now | date "2023-01-02"}}.sarif
 
   # Step 3: Patch the image with Copacetic
   - id: setup-data-dir
@@ -32,7 +32,7 @@ steps:
       --vuln-type os \
       --ignore-unfixed \
       --format json \
-      --output /workspace/data/vulnerability-report_trivy_{{now | date "2000-01-01"}}.json
+      --output /workspace/data/vulnerability-report_trivy_{{now | date "2023-01-02"}}.json
   
   - id: buildkitd
     cmd: moby/buildkit --addr tcp://0.0.0.0:8888
@@ -48,9 +48,18 @@ steps:
     cmd: | 
       ghcr.io/toddysm/cssc-framework/copacetic:1.0 \
       {{.Run.Registry}}/{{.Values.SOURCE_REPOSITORY}}:{{.Values.SOURCE_IMAGE_TAG}} \
-      vulnerability-report_trivy_{{now | date "2000-01-01"}}.json \
+      vulnerability-report_trivy_{{now | date "2023-01-02"}}.json \
       {{.Values.SOURCE_IMAGE_TAG}}-patched
     network: host
 
+  # Step 4: Add lifecycle metadata to the previous image if it exists
+  - id: debug-lifecycle-metadata-update
+    cmd: |
+        bash -c 'echo "Running command to update the image lifecycle {{.Run.Registry}}/{{.Values.SOURCE_REPOSITORY}}:{{.Values.SOURCE_IMAGE_TAG}} > /dev/null; echo $?"'
+  - id: update-lifecycle-metadata
+    cmd: |
+        ghcr.io/toddysm/cssc-framework/update-lifecycle:1.0 {{.Run.Registry}}/{{.Values.SOURCE_REPOSITORY}}:{{.Values.SOURCE_IMAGE_TAG}}-patched
+
+  # Step 5: Push the new patch
   - id: push-image
     cmd: docker push {{.Run.Registry}}/{{.Values.SOURCE_REPOSITORY}}:{{.Values.SOURCE_IMAGE_TAG}}-patched
