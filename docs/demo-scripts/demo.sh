@@ -1,77 +1,95 @@
 # NOTE: The commands below use sudo because they are for Ubuntu VM on Azure
 
-# Pull the images
-sudo docker pull python:3.12.0-slim
-sudo docker pull python:3.11.6-slim
-sudo docker pull python:3.11.5-slim
-sudo docker pull python:3.10.13-slim
-sudo docker pull python:3.10.12-slim
+# Prerequisites
+# 1. Delete repositories from ACR
+# 2. Delete images from Docker Hub
+# 3. Update the configuration in the storage account
+# 4. Make sure the ACR task `acquire-sign-image-task` have identities and have access to the AKV
+#       Key Vault Certificates Officer
+#       Key Vault Crypto User
+ssh csscadmin@csscjumpbox.westus3.cloudapp.azure.com
+az login
+az acr login -n tsmacrkubeconna23demousw2  # or whatever your ACR name is
+docker login -u toddysm                    # or whatever your Docker Hub username is
+docker pull python:3.10.12-slim
+docker pull python:3.10.13-slim
+clear
 
-sudo docker images
+# Demo start
+
+# STEP: Show that the ACR is empty
+docker images
 
 # Retag the images
-sudo docker image tag python:3.12.0-slim toddysm/python:3.12
-#sudo docker image tag python:3.11.6-slim toddysm/python:3.11.6-slim
-sudo docker image tag python:3.11.5-slim toddysm/python:3.11
-#sudo docker image tag python:3.10.13-slim toddysm/python:3.10.13-slim
-sudo docker image tag python:3.10.12-slim toddysm/python:3.10
-
-# Sign into Docker Hub
-sudo docker login -u toddysm
+docker image tag python:3.10.12-slim toddysm/python:3.10
+docker images
 
 # Push the images to Docker Hub
-sudo docker push toddysm/python:3.12
-sudo docker push toddysm/python:3.11
-sudo docker push toddysm/python:3.10
+docker push toddysm/python:3.10
+clear
 
-# Sign into Azure Container Registry
-sudo az login --use-device-code
-sudo az acr login --name tsmacrquarantineusw2
+# STEP: Show that DockerHub has the image
 
-# Trivy commands
-trivy image --vuln-type os --ignore-unfixed python:3.12.0-slim
-trivy image --vuln-type os --ignore-unfixed python:3.11.6-slim
-trivy image --vuln-type os --ignore-unfixed python:3.11.5-slim
-trivy image --vuln-type os --ignore-unfixed python:3.10.13-slim
-trivy image --vuln-type os --ignore-unfixed tsmacrquarantineusw2.azurecr.io/python:3.10.12-slim | grep Total
-trivy image --vuln-type os --ignore-unfixed tsmacrquarantineusw2.azurecr.io/python:3.10.12-slim-patched | grep Total
+# STEP: Swith to ACR and show that the new repository is created
+#       Show the repository
+#       Go over each artifact
+#           3.10 image
+#           Referrers - source with information where the image came from
+#           Referrers - SBOM created with Syft
+#           Referrers - Vulnerability report created with Trivy
+#           Referrers - Signature created with Notary
+#           3.10-patched with SBOM and signature
 
-# Check the lifecycle metadata
-oras login -u tsmacrquarantineusw2 tsmacrquarantineusw2.azurecr.io
-# Old toddysm/python:3.10 image
-# sha256:13cc673c11ee90d6ba92d95f35f4d8e59148937f1e3b4044788e93268bfe9d2e
+oras repo ls tsmacrkubeconna23demousw2.azurecr.io
+oras repo tags tsmacrkubeconna23demousw2.azurecr.io/toddysm/python
+oras discover tsmacrkubeconna23demousw2.azurecr.io/toddysm/python:3.10 -o tree
+oras discover tsmacrkubeconna23demousw2.azurecr.io/toddysm/python:3.10-patched -o tree
 
-oras manifest fetch tsmacrquarantineusw2.azurecr.io/toddysm/python@sha256:e7df7ed9bc4830fdfcc4d2924a02cb8d3070f69ce24a807b85ff66cc4d1b6838 | jq .
+# STEP: Pull the two images 3.10 and 3.10-patched
+docker pull tsmacrkubeconna23demousw2.azurecr.io/toddysm/python:3.10
+docker pull tsmacrkubeconna23demousw2.azurecr.io/toddysm/python:3.10-patched
+clear
 
-# Copa commands
-# 1. Scan with Trivy
+# STEP: Scan the images with Trivy
 trivy image \
     --vuln-type os \
     --ignore-unfixed \
-    -f json \
-    -o python:3.10.12-slim.json \
-    python:3.10.12-slim
+    tsmacrkubeconna23demousw2.azurecr.io/toddysm/python:3.10 \
+    | grep Total
 
-# 2. Run buildkit container
-sudo docker run \
-    --detach \
-    --rm \
-    --privileged \
-    -p 127.0.0.1:8888:8888/tcp \
-    --name buildkitd \
-    --entrypoint buildkitd \
-    moby/buildkit:v0.11.4 --addr tcp://0.0.0.0:8888
+trivy image --vuln-type os --ignore-unfixed tsmacrkubeconna23demousw2.azurecr.io/toddysm/python:3.10 | grep Total
 
-# 3. Patch with Copacetic container
-sudo docker run \
-    --net=host \
-    --mount=type=bind,source=$(pwd),target=/data \
-    --mount=type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock \
-    ghcr.io/toddysm/cssc-framework/copacetic:1.0 docker.io/library/python:3.10.12-slim python\:3.10.12-slim.json 3.10.12-slim-patched
+# STEP: Show that this image has X number of vulnerabilities
 
+trivy image \
+    --vuln-type os \
+    --ignore-unfixed \
+    tsmacrkubeconna23demousw2.azurecr.io/toddysm/python:3.10-patched \
+    | grep Total
 
-# 4. Build the sample app
-docker build -t tsmacrquarantineusw2.azurecr.io/flasksample:1.0 --build-arg BASE_IMAGE="tsmacrquarantineusw2.azurecr.io/toddysm/python:3.10" .
+clear
 
-# 5. Run the sample app
-docker run -p 5050:5000 tsmacrquarantineusw2.azurecr.io/flasksample:1.0
+# STEP: Show that this image has no vulnerabilities
+
+# STEP: Show the slides and explain what happened
+
+# STEP: Switch to GitHub repo
+#       Show the environment configuration and explain each one
+#       Make sure that 3.10 is selected for base image
+
+# STEP: Run the workflow
+#       Explain each step
+
+# STEP: Copy the digest of the patched image and store it in the BASE_IMAGE_DIGEST Github variable
+
+trivy image --vuln-type os --ignore-unfixed tsmacrkubeconna23demousw2.azurecr.io/flaskapp:1.0 | grep Total
+
+oras manifest fetch --descriptor tsmacrkubeconna23demousw2.azurecr.io/toddysm/python:3.10 | jq .
+
+# STEP: Tag the new python image
+docker tag python:3.10.13-slim toddysm/python:3.10
+
+# STEP: Push the image to Docker Hub
+docker push toddysm/python:3.10
+clear
+
