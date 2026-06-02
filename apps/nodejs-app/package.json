@@ -1,0 +1,11 @@
+{
+  "name": "nodejs-app",
+  "version": "0.1.0",
+  "description": "Node.js demo web application",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "echo \"Error: no tests configured yet\" && exit 1"
+  },
+  "license": "Apache-2.0"
+}

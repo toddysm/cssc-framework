@@ -1,0 +1,3 @@
+# Default ignores for Helm chart packaging.
+.git
+*.tgz
