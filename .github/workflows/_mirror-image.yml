@@ -1,0 +1,102 @@
+# Reusable workflow: mirror a container image from an upstream registry into GHCR.
+#
+# This workflow is internal (note the leading underscore in the filename) and is
+# not meant to be triggered directly. It is called by per-image "mirror-*"
+# workflows via `uses:`.
+#
+# It performs an idempotent sync: on every run it compares the digest of the
+# source tag with the digest already present in the destination, and only copies
+# when they differ. crane copy preserves multi-architecture manifest lists.
+name: _reusable / mirror-image
+
+on:
+  workflow_call:
+    inputs:
+      source_image:
+        description: "Fully qualified source image without tag (e.g. docker.io/library/python)."
+        required: true
+        type: string
+      source_tag:
+        description: "Source image tag to mirror (e.g. 3.14-slim)."
+        required: true
+        type: string
+      dest_image:
+        description: "Fully qualified destination image without tag (e.g. ghcr.io/toddysm/base/python)."
+        required: true
+        type: string
+      dest_tag:
+        description: "Destination image tag (e.g. 3.14-slim)."
+        required: true
+        type: string
+      force:
+        description: "Copy even when the source and destination digests match."
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Set up crane
+        uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ github.token }}" | crane auth login ghcr.io \
+            --username "${{ github.actor }}" --password-stdin
+
+      - name: Compare digests and copy if changed
+        env:
+          SOURCE_REF: "${{ inputs.source_image }}:${{ inputs.source_tag }}"
+          DEST_REF: "${{ inputs.dest_image }}:${{ inputs.dest_tag }}"
+          FORCE: "${{ inputs.force }}"
+        run: |
+          set -euo pipefail
+
+          echo "Source:      ${SOURCE_REF}"
+          echo "Destination: ${DEST_REF}"
+
+          source_digest="$(crane digest "${SOURCE_REF}")"
+          echo "Source digest:      ${source_digest}"
+
+          if dest_digest="$(crane digest "${DEST_REF}" 2>/dev/null)"; then
+            echo "Destination digest: ${dest_digest}"
+          else
+            dest_digest=""
+            echo "Destination digest: <not present>"
+          fi
+
+          if [ "${FORCE}" != "true" ] && [ "${source_digest}" = "${dest_digest}" ]; then
+            echo "Image is already up to date; nothing to copy."
+            {
+              echo "### Mirror image: up to date :white_check_mark:"
+              echo ""
+              echo "- **Source:** \`${SOURCE_REF}\`"
+              echo "- **Destination:** \`${DEST_REF}\`"
+              echo "- **Digest:** \`${source_digest}\`"
+            } >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          if [ "${FORCE}" = "true" ]; then
+            echo "Force enabled; copying regardless of digest match."
+          else
+            echo "Digests differ; copying updated image."
+          fi
+
+          crane copy "${SOURCE_REF}" "${DEST_REF}"
+
+          new_digest="$(crane digest "${DEST_REF}")"
+          echo "Copied. New destination digest: ${new_digest}"
+          {
+            echo "### Mirror image: copied :inbox_tray:"
+            echo ""
+            echo "- **Source:** \`${SOURCE_REF}\`"
+            echo "- **Destination:** \`${DEST_REF}\`"
+            echo "- **Previous digest:** \`${dest_digest:-<none>}\`"
+            echo "- **New digest:** \`${new_digest}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
