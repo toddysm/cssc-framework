@@ -1,0 +1,7 @@
+apiVersion: v2
+name: nodejs-app
+description: Helm chart for the Node.js demo web application
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+# TODO: Adjust metadata as needed.
