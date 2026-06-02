@@ -5,7 +5,7 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "test": "echo \"TODO: add tests\" && exit 0"
+    "test": "echo \"Error: no tests configured yet\" && exit 1"
   },
-  "license": "MIT"
+  "license": "Apache-2.0"
 }
