@@ -10,7 +10,7 @@ both in the file system and in the Actions UI.
 
 | Category | Purpose | Workflow file | Display `name:` | Concurrency group |
 | -------- | ------- | ------------- | --------------- | ----------------- |
-| **Mirror** | Copy / refresh a base image from an upstream registry into GHCR | `mirror-<image>.yml` | `mirror / base/<image>` | `mirror-base-<image>` |
+| **Mirror** | Copy / refresh a base image from an upstream registry into GHCR | `mirror-<image>.yml` | `mirror / quarantine/<image>` | `mirror-quarantine-<image>` |
 | **Build** | Build an application image on top of a mirrored base | `build-<app>.yml` | `build / <app>` | `build-<app>` |
 | **Reusable** | Shared logic invoked by other workflows; never triggered directly | `_<purpose>.yml` (leading underscore) | `_reusable / <purpose>` | n/a |
 
@@ -24,11 +24,11 @@ both in the file system and in the Actions UI.
    `workflow_call`) are prefixed with `_` so they sort to the top of the list
    and signal "do not run me directly."
 3. **Display names use a `category / subject` format** (for example
-   `mirror / base/python`) so the Actions sidebar reads cleanly.
+   `mirror / quarantine/python`) so the Actions sidebar reads cleanly.
 4. **Concurrency groups** mirror the filename so two runs of the same logical
    job never overlap, while different images/apps run independently.
 5. **GHCR destination repositories** for mirrored base images follow the
-   `base/<image>` scheme, e.g. `ghcr.io/<owner>/base/python`.
+   `quarantine/<image>` scheme, e.g. `ghcr.io/<owner>/quarantine/python`.
 
 ## Mirror workflows
 

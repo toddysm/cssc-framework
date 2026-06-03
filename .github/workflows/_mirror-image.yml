@@ -21,7 +21,7 @@ on:
         required: true
         type: string
       dest_image:
-        description: "Fully qualified destination image without tag (e.g. ghcr.io/toddysm/base/python)."
+        description: "Fully qualified destination image without tag (e.g. ghcr.io/toddysm/quarantine/python)."
         required: true
         type: string
       dest_tag:
