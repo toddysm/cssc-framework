@@ -1,4 +1,4 @@
-# Mirror python:3.14-slim from Docker Hub into GHCR as base/python.
+# Mirror python:3.14-slim from Docker Hub into GHCR as quarantine/python.
 #
 # This caller only defines triggers and the image-specific inputs; the actual
 # digest-check-and-copy logic lives in the reusable _mirror-image.yml workflow.
@@ -6,7 +6,7 @@
 # Naming convention: "mirror-<image>.yml" for image mirror workflows, kept
 # separate from "build-<app>.yml" build workflows. See
 # docs/contributing/workflow-naming.md.
-name: mirror / base/python
+name: mirror / quarantine/python
 
 on:
   # Daily upstream check at 06:00 UTC.
@@ -23,7 +23,7 @@ on:
 
 # Avoid overlapping runs for this specific image mirror.
 concurrency:
-  group: mirror-base-python
+  group: mirror-quarantine-python
   cancel-in-progress: false
 
 permissions:
@@ -36,6 +36,6 @@ jobs:
     with:
       source_image: docker.io/library/python
       source_tag: 3.14-slim
-      dest_image: ghcr.io/toddysm/base/python
+      dest_image: ghcr.io/toddysm/quarantine/python
       dest_tag: 3.14-slim
       force: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
