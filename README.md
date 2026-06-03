@@ -1,8 +1,8 @@
 # cssc-framework
 
-![GitHub issues](https://img.shields.io/github/issues-raw/toddysm/cssc-framework?link=https%3A%2F%2Fgithub.com%2Ftoddysm%2Fcssc-framework%2Fissues)
-![GitHub pull requests](https://img.shields.io/github/issues-pr-raw/toddysm/cssc-framework?link=https%3A%2F%2Fgithub.com%2Ftoddysm%2Fcssc-framework%2Fpulls)
-![License](https://img.shields.io/github/license/toddysm/cssc-framework)
+[![GitHub issues](https://img.shields.io/github/issues-raw/toddysm/cssc-framework)](https://github.com/toddysm/cssc-framework/issues)
+[![GitHub pull requests](https://img.shields.io/github/issues-pr-raw/toddysm/cssc-framework)](https://github.com/toddysm/cssc-framework/pulls)
+[![License](https://img.shields.io/github/license/toddysm/cssc-framework)](LICENSE)
 
 Containers Secure Supply Chain (CSSC) Framework implementation — a hands-on
 demonstration repository that shows how to put the practices from the
@@ -39,8 +39,9 @@ Supporting capabilities already in place include:
   into a `quarantine/` namespace in GHCR, refreshing only when the upstream
   digest changes. See the
   [workflow naming conventions](docs/contributing/workflow-naming.md).
-- **Supply chain tasks** — acquire, scan, patch, sign, and SBOM-generation
-  building blocks under [`stages/`](stages/) and [`dockerfiles/`](dockerfiles/).
+
+Planned supply chain building blocks — acquire, scan, patch, sign, and
+SBOM-generation — will be added as the demonstration grows.
 
 ## What's coming next
 
@@ -63,10 +64,7 @@ provenance, scanning, signing, SBOMs/AI-BOMs, and policy enforcement.
 | Path | Purpose |
 | ---- | ------- |
 | [`apps/`](apps/) | Sample applications demonstrating the supply chain stages. |
-| [`stages/`](stages/) | Supply chain stage implementations (acquire, build, deploy). |
-| [`dockerfiles/`](dockerfiles/) | Container images for supply chain tooling. |
 | [`docs/`](docs/) | Detailed documentation, organized by topic. |
-| [`sample/`](sample/) | A minimal sample container app. |
 | [`.github/workflows/`](.github/workflows/) | Mirror and automation workflows. |
 
 ## Documentation
