@@ -1,0 +1,41 @@
+# Mirror node:26-alpine from Docker Hub into GHCR as base/node.
+#
+# This caller only defines triggers and the image-specific inputs; the actual
+# digest-check-and-copy logic lives in the reusable _mirror-image.yml workflow.
+#
+# Naming convention: "mirror-<image>.yml" for image mirror workflows, kept
+# separate from "build-<app>.yml" build workflows. See
+# docs/contributing/workflow-naming.md.
+name: mirror / base/node
+
+on:
+  # Daily upstream check at 06:00 UTC.
+  schedule:
+    - cron: "0 6 * * *"
+  # Manual run, with an optional force copy.
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Copy even when the source and destination digests match."
+        required: false
+        default: false
+        type: boolean
+
+# Avoid overlapping runs for this specific image mirror.
+concurrency:
+  group: mirror-base-node
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  mirror-node:
+    uses: ./.github/workflows/_mirror-image.yml
+    with:
+      source_image: docker.io/library/node
+      source_tag: 26-alpine
+      dest_image: ghcr.io/toddysm/base/node
+      dest_tag: 26-alpine
+      force: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
