@@ -1,0 +1,172 @@
+# Image mirror workflows architecture
+
+This document describes the architecture of the GitHub Actions workflows that
+mirror upstream container base images from Docker Hub into the GitHub Container
+Registry (GHCR). It covers three questions:
+
+1. [How are the actions structured?](#how-are-the-actions-structured)
+2. [What tooling is used?](#what-tooling-is-used)
+3. [What functionality is implemented — and what is not?](#what-functionality-is-implemented-and-what-is-not)
+
+For naming and file-system conventions, see
+[workflow naming conventions](../../contributing/workflow-naming.md).
+
+## Purpose
+
+The mirror workflows keep a private, controlled copy of a set of upstream base
+images fresh inside GHCR. Each upstream image is copied into a `quarantine/<image>`
+repository (for example `ghcr.io/<owner>/quarantine/python`), establishing a
+stable, owner-controlled source that downstream application builds can depend on
+rather than pulling directly from Docker Hub.
+
+## How are the actions structured
+
+The mirror workflows follow a **caller + reusable workflow** pattern. All shared
+logic lives in a single reusable workflow, and each mirrored image gets a thin
+caller workflow that only supplies configuration.
+
+```text
+.github/workflows/
+├── _mirror-image.yml     # reusable workflow — all the logic
+├── mirror-python.yml     # caller — docker.io/library/python  → quarantine/python
+├── mirror-node.yml       # caller — docker.io/library/node    → quarantine/node
+└── mirror-openjdk.yml    # caller — docker.io/library/openjdk → quarantine/openjdk
+```
+
+### Reusable workflow (`_mirror-image.yml`)
+
+[`_mirror-image.yml`](../../../.github/workflows/_mirror-image.yml) is an
+internal workflow (the leading underscore marks it as "do not run directly").
+It is triggered only through `workflow_call` and exposes five inputs:
+
+| Input | Required | Default | Description |
+| ----- | -------- | ------- | ----------- |
+| `source_image` | yes | — | Fully qualified source image without tag (e.g. `docker.io/library/python`). |
+| `source_tag` | yes | — | Source image tag to mirror (e.g. `3.14-slim`). |
+| `dest_image` | yes | — | Fully qualified destination image without tag (e.g. `ghcr.io/<owner>/quarantine/python`). |
+| `dest_tag` | yes | — | Destination image tag. |
+| `force` | no | `false` | Copy even when the source and destination digests match. |
+
+It defines a single `mirror` job that runs on `ubuntu-latest` with the minimal
+permissions `contents: read` and `packages: write`, and performs three steps:
+
+1. **Set up crane** — installs the `crane` CLI.
+2. **Log in to GHCR** — authenticates to `ghcr.io` using the built-in
+   `GITHUB_TOKEN` and the triggering actor.
+3. **Compare digests and copy if changed** — the core idempotent-sync logic
+   (described below).
+
+### Caller workflows (`mirror-<image>.yml`)
+
+Each caller — for example
+[`mirror-python.yml`](../../../.github/workflows/mirror-python.yml),
+[`mirror-node.yml`](../../../.github/workflows/mirror-node.yml), and
+[`mirror-openjdk.yml`](../../../.github/workflows/mirror-openjdk.yml) — contains
+no shell logic. A caller only declares:
+
+- **Triggers** — a daily `schedule` (06:00 UTC) and a manual `workflow_dispatch`
+  with an optional `force` boolean input.
+- **Concurrency** — a per-image group (e.g. `mirror-quarantine-python`) with
+  `cancel-in-progress: false`, so two runs of the same image never overlap while
+  different images run independently.
+- **Permissions** — `contents: read`, `packages: write`.
+- **A single job** that calls `./.github/workflows/_mirror-image.yml` via `uses:`
+  and passes the image-specific inputs.
+
+The `force` input is wired through only on manual runs:
+
+```yaml
+force: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
+```
+
+This structure means adding a new mirror is a copy-and-edit operation on a caller
+file with no logic changes — the reusable workflow does all the work.
+
+### Control flow
+
+```mermaid
+flowchart TD
+    A[schedule 06:00 UTC] --> C[caller mirror-image.yml]
+    B[workflow_dispatch + force] --> C
+    C -->|uses: with inputs| D[_mirror-image.yml]
+    D --> E[setup crane]
+    E --> F[crane auth login ghcr.io]
+    F --> G[crane digest source]
+    G --> H[crane digest destination]
+    H --> I{force or digests differ?}
+    I -->|no| J[skip: up to date]
+    I -->|yes| K[crane copy source dest]
+    K --> L[write job summary]
+    J --> L
+```
+
+## What tooling is used
+
+| Tool | Role |
+| ---- | ---- |
+| **GitHub Actions** | Orchestration: scheduling, manual dispatch, reusable-workflow composition, concurrency control, and job summaries. |
+| **[`crane`](https://github.com/google/go-containerregistry/blob/main/cmd/crane/README.md)** | Registry client used for all image operations — `crane digest` to read manifest digests and `crane copy` to transfer images. |
+| **[`imjasonh/setup-crane`](https://github.com/imjasonh/setup-crane)** | Action that installs `crane` on the runner. It is pinned to a commit SHA (`31b88ef…`, v0.4) for supply-chain safety. |
+| **`GITHUB_TOKEN`** | The built-in, automatically scoped token used to authenticate to GHCR with `packages: write`. No long-lived registry secrets are required. |
+| **Bash** (`set -euo pipefail`) | The digest-compare-and-copy step is a single defensive shell script. |
+| **`ubuntu-latest` runner** | GitHub-hosted runner the job executes on. |
+
+Key tooling characteristics:
+
+- **`crane copy` preserves multi-architecture manifest lists**, so mirrored
+  images keep all their original platforms rather than collapsing to one.
+- **Anonymous Docker Hub pulls.** Public Docker Hub source images are read
+  without credentials; only the GHCR destination requires authentication.
+- **Pinned third-party action.** The only external action is pinned by SHA,
+  reducing the risk of a compromised tag.
+
+## What functionality is implemented and what is not
+
+### Implemented
+
+- **Idempotent digest-based sync.** Each run reads the source digest with
+  `crane digest`, reads the destination digest (treating a missing destination as
+  empty), and copies only when the two differ — avoiding redundant transfers.
+- **Multi-architecture preservation** via `crane copy`.
+- **Scheduled refresh.** A daily cron (06:00 UTC) checks upstream for changes.
+- **Manual runs with force.** `workflow_dispatch` allows on-demand execution, and
+  the optional `force` input copies even when digests already match (useful for
+  re-seeding or recovering a destination).
+- **Concurrency safety.** Per-image concurrency groups prevent overlapping runs
+  of the same mirror.
+- **Least-privilege auth.** Only the built-in `GITHUB_TOKEN` with
+  `contents: read` + `packages: write` is used; no static registry secrets.
+- **Run summaries.** Each run writes a Markdown summary to
+  `GITHUB_STEP_SUMMARY` reporting whether the image was up to date or copied,
+  including the previous and new digests.
+- **DRY, single-source-of-truth logic.** All behavior lives in one reusable
+  workflow; per-image callers are configuration only.
+
+### Not implemented (deliberately out of scope)
+
+- **No image scanning or vulnerability gating.** Despite the `quarantine/`
+  naming, the workflows do not scan images or block copying based on CVEs,
+  policy, or signatures — they perform a straight mirror.
+- **No signing or attestation.** Mirrored images are not signed (e.g. cosign)
+  and no provenance/SBOM attestations are produced or verified.
+- **No automatic tag discovery.** Each workflow mirrors one explicitly pinned
+  source tag (e.g. `python:3.14-slim`). New tags or floating/`latest` tags are
+  not discovered or tracked automatically; updating a tag is a manual edit to the
+  caller.
+- **No deletion / retention management.** Stale or superseded tags in GHCR are
+  never pruned; the workflows only add or update.
+- **No cross-registry generality.** Sources are assumed to be public Docker Hub
+  images pulled anonymously; private or non–Docker Hub upstreams would require
+  additional authentication that is not wired in.
+- **No build step.** These workflows only mirror base images. Building the
+  application images under `apps/` on top of those bases is handled separately by
+  planned `build-<app>.yml` workflows.
+- **No notification/alerting.** Failures surface only through the normal GitHub
+  Actions run status and step summary; there is no integrated alerting.
+
+## Adding a new mirror
+
+1. Copy an existing caller such as `mirror-python.yml` to `mirror-<image>.yml`.
+2. Update the display `name:`, the `concurrency.group`, and the four inputs
+   (`source_image`, `source_tag`, `dest_image`, `dest_tag`).
+3. No logic changes are needed — the reusable workflow handles the sync.
