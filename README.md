@@ -1,4 +1,4 @@
-# cssc-framework
+# Containers and Cloud-Native Secure Supply Chain Framework Implementation and Demo Project
 
 [![GitHub issues](https://img.shields.io/github/issues-raw/toddysm/cssc-framework)](https://github.com/toddysm/cssc-framework/issues)
 [![GitHub pull requests](https://img.shields.io/github/issues-pr-raw/toddysm/cssc-framework)](https://github.com/toddysm/cssc-framework/pulls)
