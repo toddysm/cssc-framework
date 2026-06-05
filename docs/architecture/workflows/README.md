@@ -2,13 +2,13 @@
 
 Architecture documentation for the GitHub Actions workflows in this repository.
 
-Workflows fall into two categories (see
+Workflows fall into three categories (see
 [workflow naming conventions](../../contributing/workflow-naming.md)):
 
 | Category | Purpose | Status |
 | -------- | ------- | ------ |
 | **Mirror** | Copy / refresh upstream base images from Docker Hub into GHCR | Implemented |
-| **Scan** | Scan quarantined images and promote the ones that pass a vulnerability policy into `golden/<image>` | Planned |
+| **Scan** | Scan quarantined images and promote the ones that pass a vulnerability policy into `golden/<image>` | Implemented |
 | **Build** | Build the demo applications under `apps/` on top of mirrored bases | Planned |
 
 ## Documents

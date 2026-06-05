@@ -68,7 +68,8 @@ jobs:
       - name: Set up oras
         uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1.2.4
         with:
-          version: 1.2.0
+          # ORAS CLI version (independent of the setup-oras action version above).
+          version: 1.3.2
 
       - name: Set up Trivy
         uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
@@ -150,8 +151,21 @@ jobs:
           }
 
           # --- Enumerate the quarantine tags. ----------------------------------
-          if ! tags="$(crane ls "${SOURCE_REPO}" 2>/dev/null)"; then
-            tags=""
+          # Distinguish an empty / not-yet-created repository (expected, exit 0)
+          # from a real failure such as an auth or transient registry error
+          # (must fail loudly rather than silently scanning nothing).
+          ls_err="${work}/crane-ls.err"
+          if tags="$(crane ls "${SOURCE_REPO}" 2>"${ls_err}")"; then
+            :
+          else
+            if grep -qiE 'NAME_UNKNOWN|not found|MANIFEST_UNKNOWN|UNAUTHORIZED.*not found|repository name not known' "${ls_err}"; then
+              echo "Source repository ${SOURCE_REPO} has no tags yet; nothing to scan."
+              tags=""
+            else
+              echo "::error::Failed to list tags for ${SOURCE_REPO}:"
+              cat "${ls_err}" >&2
+              exit 1
+            fi
           fi
           if [ -z "${tags}" ]; then
             echo "No tags found in ${SOURCE_REPO}; nothing to scan."
