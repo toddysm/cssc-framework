@@ -206,8 +206,12 @@ jobs:
             blocking_count="$(wc -l < "${blocking_file}" | tr -d ' ')"
             remaining_count="$(wc -l < "${remaining_file}" | tr -d ' ')"
             excepted_count="$(wc -l < "${excepted_file}" | tr -d ' ')"
+            # Pipe-separated form is used only for the oras annotation.
             excepted_str="$(paste -sd '|' "${excepted_file}")"
-            remaining_str="$(paste -sd ', ' "${remaining_file}")"
+            # Comma-separated, Markdown-safe display forms for the summary tables
+            # (CVE IDs contain no '|', so a comma join keeps table columns intact).
+            remaining_md="$(paste -sd ',' "${remaining_file}" | sed 's/,/, /g')"
+            excepted_md="$(paste -sd ',' "${excepted_file}" | sed 's/,/, /g')"
 
             # Per-CVE detail: id, severity, package, installed, fixed (deduped, ranked).
             vulns_tsv="${work}/vulns-${safe}.tsv"
@@ -276,7 +280,7 @@ jobs:
               echo "Result:           ${result}"
               echo "Promoted:         ${promoted_yesno}"
               echo "Threshold:        ${THRESHOLD} (severities: ${SEVERITIES})"
-              echo "Findings ≥ floor: ${blocking_count} (blocking: ${remaining_count}, excepted: ${excepted_count})"
+              echo "CVEs ≥ ${THRESHOLD}:   ${blocking_count} (blocking: ${remaining_count}, excepted: ${excepted_count})"
               if [ -s "${vulns_tsv}" ]; then
                 printf '  %-22s %-9s %-28s %-18s %s\n' "CVE" "SEVERITY" "PACKAGE" "INSTALLED" "STATUS"
                 while IFS="$(printf '\t')" read -r id sev pkg installed fixed; do
@@ -286,17 +290,17 @@ jobs:
               else
                 echo "  (no vulnerabilities at or above the threshold)"
               fi
-            } | tee -a "${work}/console-report.txt"
+            }
 
             # --- Summary table row. ----------------------------------------------
             printf '| `%s` | %s %s | %s | %s | %s |\n' \
               "${tag}" "${icon}" "${result}" "${blocking_count}" \
-              "${remaining_str:-—}" "${excepted_str:-—}" >> "${rows}"
+              "${remaining_md:-—}" "${excepted_md:-—}" >> "${rows}"
 
             # --- Collapsible per-image detail for the job summary. ----------------
             {
               echo ""
-              echo "<details><summary><code>${tag}</code> — ${icon} ${result} · ${blocking_count} finding(s) ≥ ${THRESHOLD}</summary>"
+              echo "<details><summary><code>${tag}</code> — ${icon} ${result} · ${blocking_count} CVE(s) ≥ ${THRESHOLD}</summary>"
               echo ""
               echo "- **Source:** \`${src}\`"
               echo "- **Destination:** \`${dest}\`"
@@ -333,7 +337,7 @@ jobs:
             echo "- **Dry run:** \`${DRY_RUN}\`"
             echo "- **Promoted:** ${promoted} · **Blocked:** ${blocked}"
             echo ""
-            echo "| Tag | Result | Findings ≥ ${THRESHOLD} | Blocking CVEs | Excepted |"
+            echo "| Tag | Result | CVEs ≥ ${THRESHOLD} | Blocking CVEs | Excepted |"
             echo "| --- | ------ | --- | --- | --- |"
             cat "${rows}"
             echo ""
