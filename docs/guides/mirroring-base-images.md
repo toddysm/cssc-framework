@@ -118,7 +118,7 @@ the reusable workflow:
 
 ```mermaid
 flowchart TD
-    A[schedule 06:00 UTC] --> C[caller mirror-image.yml]
+    A[schedule 06:00 UTC] --> C["caller mirror-&lt;image&gt;.yml"]
     B[workflow_dispatch + force] --> C
     C -->|uses: with inputs| D[_mirror-image.yml]
     D --> E[setup crane]
