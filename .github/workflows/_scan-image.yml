@@ -1,0 +1,270 @@
+# Reusable workflow: scan a quarantined repository and promote clean images.
+#
+# This workflow is internal (note the leading underscore in the filename) and is
+# not meant to be triggered directly. It is called by per-image "scan-*"
+# workflows via `uses:`.
+#
+# For every tag in `source_repo` it:
+#   1. scans the image with Trivy,
+#   2. applies a severity threshold plus an optional CVE exception list,
+#   3. promotes passing images into `dest_repo` with `crane copy`,
+#   4. attaches an empty OCI scan-report referrer with `oras attach`, and
+#   5. deletes the promoted tag from quarantine (when a delete token is set).
+#
+# See docs/architecture/workflows/scan-and-promote-workflows.md.
+name: _reusable / scan-image
+
+on:
+  workflow_call:
+    inputs:
+      source_repo:
+        description: "Quarantine repository to scan, without tag (e.g. ghcr.io/toddysm/quarantine/python)."
+        required: true
+        type: string
+      dest_repo:
+        description: "Promotion-target repository, without tag (e.g. ghcr.io/toddysm/golden/python)."
+        required: true
+        type: string
+      severity_threshold:
+        description: "Blocking severity floor: LOW, MEDIUM, HIGH, or CRITICAL."
+        required: false
+        default: HIGH
+        type: string
+      cve_exceptions:
+        description: "Pipe-separated allow-list of CVE IDs (e.g. CVE-2024-1234|CVE-2024-5678)."
+        required: false
+        default: ""
+        type: string
+      delete_source:
+        description: "Delete the tag from quarantine after a successful promotion."
+        required: false
+        default: true
+        type: boolean
+      trivy_version:
+        description: "Trivy version to install (e.g. v0.58.1); also recorded in the referrer."
+        required: false
+        default: v0.58.1
+        type: string
+      dry_run:
+        description: "Scan and report only; never copy, attach, or delete."
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      ghcr_delete_token:
+        description: "PAT with delete:packages used to remove quarantine tags. Optional; deletion is skipped when absent."
+        required: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Set up crane
+        uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
+
+      - name: Set up oras
+        uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1.2.4
+        with:
+          # ORAS CLI version (independent of the setup-oras action version above).
+          version: 1.3.2
+
+      - name: Set up Trivy
+        uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
+        with:
+          version: ${{ inputs.trivy_version }}
+
+      - name: Log in to GHCR
+        run: |
+          set -euo pipefail
+          echo "${{ github.token }}" | crane auth login ghcr.io \
+            --username "${{ github.actor }}" --password-stdin
+          echo "${{ github.token }}" | oras login ghcr.io \
+            --username "${{ github.actor }}" --password-stdin
+
+      - name: Scan, gate, promote, attest, and clean up
+        env:
+          SOURCE_REPO: "${{ inputs.source_repo }}"
+          DEST_REPO: "${{ inputs.dest_repo }}"
+          THRESHOLD: "${{ inputs.severity_threshold }}"
+          EXCEPTIONS: "${{ inputs.cve_exceptions }}"
+          DELETE_SOURCE: "${{ inputs.delete_source }}"
+          DRY_RUN: "${{ inputs.dry_run }}"
+          TRIVY_VERSION: "${{ inputs.trivy_version }}"
+          DELETE_TOKEN: "${{ secrets.ghcr_delete_token }}"
+          # Authenticate Trivy's remote image pulls to GHCR.
+          TRIVY_USERNAME: "${{ github.actor }}"
+          TRIVY_PASSWORD: "${{ github.token }}"
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+          work="$(mktemp -d)"
+
+          # --- Resolve the blocking severity set from the threshold floor. ------
+          case "${THRESHOLD}" in
+            LOW)      SEVERITIES="LOW,MEDIUM,HIGH,CRITICAL" ;;
+            MEDIUM)   SEVERITIES="MEDIUM,HIGH,CRITICAL" ;;
+            HIGH)     SEVERITIES="HIGH,CRITICAL" ;;
+            CRITICAL) SEVERITIES="CRITICAL" ;;
+            *) echo "::error::Invalid severity_threshold '${THRESHOLD}' (expected LOW|MEDIUM|HIGH|CRITICAL)"; exit 1 ;;
+          esac
+
+          # --- Normalise the exception list into a sorted, deduped file. --------
+          exceptions_file="${work}/exceptions.txt"
+          : > "${exceptions_file}"
+          if [ -n "${EXCEPTIONS}" ]; then
+            printf '%s\n' "${EXCEPTIONS}" | tr '|' '\n' | sed '/^[[:space:]]*$/d' \
+              | tr -d '[:space:]' | sort -u > "${exceptions_file}"
+          fi
+
+          # --- Resolve the actual Trivy version for the referrer annotation. ----
+          trivy_resolved="$(trivy version -f json 2>/dev/null | jq -r '.Version // empty' || true)"
+          [ -n "${trivy_resolved}" ] || trivy_resolved="${TRIVY_VERSION#v}"
+
+          # --- Work out the GHCR package coordinates for deletion. --------------
+          owner="$(printf '%s' "${SOURCE_REPO}" | awk -F/ '{print $2}')"
+          pkg_path="$(printf '%s' "${SOURCE_REPO}" | cut -d/ -f3-)"
+          pkg_enc="$(printf '%s' "${pkg_path}" | sed 's:/:%2F:g')"
+          owner_type=""
+          if [ "${DELETE_SOURCE}" = "true" ] && [ -n "${DELETE_TOKEN}" ]; then
+            owner_type="$(GH_TOKEN="${DELETE_TOKEN}" gh api "users/${owner}" --jq '.type' 2>/dev/null || true)"
+          fi
+
+          delete_quarantine_tag() {
+            local tag="$1" base vid
+            if [ "${owner_type}" = "Organization" ]; then
+              base="orgs/${owner}/packages/container/${pkg_enc}"
+            else
+              base="user/packages/container/${pkg_enc}"
+            fi
+            vid="$(GH_TOKEN="${DELETE_TOKEN}" gh api --paginate "${base}/versions" \
+                   --jq ".[] | select(.metadata.container.tags[]? == \"${tag}\") | .id" 2>/dev/null \
+                   | head -n1 || true)"
+            if [ -z "${vid}" ]; then
+              echo "::warning::Could not resolve a package version id for tag '${tag}'; skipping deletion."
+              return 1
+            fi
+            GH_TOKEN="${DELETE_TOKEN}" gh api -X DELETE "${base}/versions/${vid}" >/dev/null
+          }
+
+          # --- Enumerate the quarantine tags. ----------------------------------
+          # Distinguish an empty / not-yet-created repository (expected, exit 0)
+          # from a real failure such as an auth or transient registry error
+          # (must fail loudly rather than silently scanning nothing).
+          ls_err="${work}/crane-ls.err"
+          if tags="$(crane ls "${SOURCE_REPO}" 2>"${ls_err}")"; then
+            :
+          else
+            if grep -qiE 'NAME_UNKNOWN|not found|MANIFEST_UNKNOWN|UNAUTHORIZED.*not found|repository name not known' "${ls_err}"; then
+              echo "Source repository ${SOURCE_REPO} has no tags yet; nothing to scan."
+              tags=""
+            else
+              echo "::error::Failed to list tags for ${SOURCE_REPO}:"
+              cat "${ls_err}" >&2
+              exit 1
+            fi
+          fi
+          if [ -z "${tags}" ]; then
+            echo "No tags found in ${SOURCE_REPO}; nothing to scan."
+            {
+              echo "### Scan & promote: \`${SOURCE_REPO}\` → \`${DEST_REPO}\`"
+              echo ""
+              echo "No tags found in the source repository; nothing to do."
+            } >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          promoted=0
+          blocked=0
+          rows="${work}/rows.md"
+          : > "${rows}"
+
+          while IFS= read -r tag; do
+            [ -n "${tag}" ] || continue
+            src="${SOURCE_REPO}:${tag}"
+            dest="${DEST_REPO}:${tag}"
+            safe="${tag//[^A-Za-z0-9_.-]/_}"
+
+            echo "::group::Scanning ${src}"
+            report="${work}/report-${safe}.json"
+            trivy image --quiet --scanners vuln --severity "${SEVERITIES}" \
+              --format json --output "${report}" "${src}"
+
+            blocking_file="${work}/blocking-${safe}.txt"
+            remaining_file="${work}/remaining-${safe}.txt"
+            excepted_file="${work}/excepted-${safe}.txt"
+            jq -r '[.Results[]?.Vulnerabilities[]?.VulnerabilityID] | unique | .[]' \
+              "${report}" | sort -u > "${blocking_file}"
+            comm -23 "${blocking_file}" "${exceptions_file}" > "${remaining_file}"
+            comm -12 "${blocking_file}" "${exceptions_file}" > "${excepted_file}"
+
+            blocking_count="$(wc -l < "${blocking_file}" | tr -d ' ')"
+            remaining_count="$(wc -l < "${remaining_file}" | tr -d ' ')"
+            excepted_str="$(paste -sd '|' "${excepted_file}")"
+            remaining_str="$(paste -sd ', ' "${remaining_file}")"
+            echo "::endgroup::"
+
+            if [ "${remaining_count}" -gt 0 ]; then
+              blocked=$((blocked + 1))
+              echo "BLOCKED ${src}: ${remaining_str}"
+              printf '| `%s` | :no_entry: blocked | %s | %s | %s |\n' \
+                "${tag}" "${blocking_count}" "${remaining_str}" "${excepted_str:-—}" >> "${rows}"
+              continue
+            fi
+
+            if [ "${DRY_RUN}" = "true" ]; then
+              promoted=$((promoted + 1))
+              echo "DRY-RUN PASS ${src} (would promote to ${dest})"
+              printf '| `%s` | :mag: would promote | %s | — | %s |\n' \
+                "${tag}" "${blocking_count}" "${excepted_str:-—}" >> "${rows}"
+              continue
+            fi
+
+            echo "Promoting ${src} → ${dest}"
+            crane copy "${src}" "${dest}"
+
+            created="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            oras attach --artifact-type application/vnd.cssc.scan-report.v1+json \
+              --annotation "org.opencontainers.image.created=${created}" \
+              --annotation "com.cssc.scan.source=${SOURCE_REPO}" \
+              --annotation "com.cssc.scan.tag=${tag}" \
+              --annotation "com.cssc.scan.threshold=${THRESHOLD}" \
+              --annotation "com.cssc.scan.exceptions=${excepted_str}" \
+              --annotation "com.cssc.scan.scanner=trivy" \
+              --annotation "com.cssc.scan.scanner-version=${trivy_resolved}" \
+              "${dest}"
+
+            del_status="kept"
+            if [ "${DELETE_SOURCE}" = "true" ]; then
+              if [ -z "${DELETE_TOKEN}" ]; then
+                echo "::warning::delete_source=true but no ghcr_delete_token provided; skipping deletion of ${src}."
+                del_status="skipped (no token)"
+              elif delete_quarantine_tag "${tag}"; then
+                del_status="deleted"
+              else
+                del_status="delete failed"
+              fi
+            fi
+
+            promoted=$((promoted + 1))
+            printf '| `%s` | :white_check_mark: promoted (%s) | %s | — | %s |\n' \
+              "${tag}" "${del_status}" "${blocking_count}" "${excepted_str:-—}" >> "${rows}"
+          done <<EOF
+          ${tags}
+          EOF
+
+          {
+            echo "### Scan & promote: \`${SOURCE_REPO}\` → \`${DEST_REPO}\`"
+            echo ""
+            echo "- **Threshold:** \`${THRESHOLD}\` (severities scanned: \`${SEVERITIES}\`)"
+            echo "- **Scanner:** trivy \`${trivy_resolved}\`"
+            echo "- **Dry run:** \`${DRY_RUN}\`"
+            echo "- **Promoted:** ${promoted} · **Blocked:** ${blocked}"
+            echo ""
+            echo "| Tag | Result | Findings ≥ ${THRESHOLD} | Blocking CVEs | Excepted |"
+            echo "| --- | ------ | --- | --- | --- |"
+            cat "${rows}"
+          } >> "${GITHUB_STEP_SUMMARY}"

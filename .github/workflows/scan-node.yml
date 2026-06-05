@@ -1,0 +1,59 @@
+# Scan quarantine/node with Trivy and promote clean images into golden/node.
+#
+# This caller only defines triggers and the repository-specific inputs; the
+# scan/gate/promote/attest/cleanup logic lives in the reusable _scan-image.yml
+# workflow.
+#
+# Naming convention: "scan-<image>.yml" for scan-and-promote workflows, kept
+# separate from "mirror-<image>.yml" and "build-<app>.yml". See
+# docs/contributing/workflow-naming.md.
+name: scan / quarantine/node
+
+on:
+  # Daily scan at 07:00 UTC, after the 06:00 mirror has refreshed quarantine.
+  schedule:
+    - cron: "0 7 * * *"
+  # Manual run with policy overrides.
+  workflow_dispatch:
+    inputs:
+      severity_threshold:
+        description: "Blocking severity floor: LOW, MEDIUM, HIGH, or CRITICAL."
+        required: false
+        default: HIGH
+        type: choice
+        options:
+          - LOW
+          - MEDIUM
+          - HIGH
+          - CRITICAL
+      cve_exceptions:
+        description: "Pipe-separated allow-list of CVE IDs (e.g. CVE-2024-1234|CVE-2024-5678)."
+        required: false
+        default: ""
+        type: string
+      dry_run:
+        description: "Scan and report only; never copy, attach, or delete."
+        required: false
+        default: false
+        type: boolean
+
+# Avoid overlapping runs for this specific scan.
+concurrency:
+  group: scan-quarantine-node
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  scan-node:
+    uses: ./.github/workflows/_scan-image.yml
+    with:
+      source_repo: ghcr.io/toddysm/quarantine/node
+      dest_repo: ghcr.io/toddysm/golden/node
+      severity_threshold: ${{ github.event_name == 'workflow_dispatch' && inputs.severity_threshold || 'HIGH' }}
+      cve_exceptions: ${{ github.event_name == 'workflow_dispatch' && inputs.cve_exceptions || '' }}
+      dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+    secrets:
+      ghcr_delete_token: ${{ secrets.GHCR_DELETE_TOKEN }}
