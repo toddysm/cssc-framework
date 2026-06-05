@@ -90,7 +90,11 @@ with minimal permissions (`contents: read`, `packages: write`). It performs:
    using the built-in `GITHUB_TOKEN` and the triggering actor.
 3. **Enumerate and process tags** — the core scan/gate/promote loop described
    below.
-4. **Write a job summary** — one row per tag: promoted, blocked, or skipped.
+4. **Write a report** — a human-readable per-image report to the run log and a
+   job summary that combines a one-row-per-tag overview table with a collapsible
+   per-image vulnerability detail (every CVE found at or above the threshold,
+   its severity, package, installed/fixed versions, and whether it was blocking
+   or excepted).
 
 ### Caller workflows (`scan-<image>.yml`)
 
@@ -208,6 +212,10 @@ referrer of the image.
   scanner name/version.
 - **Quarantine cleanup.** Promoted tags are deleted from quarantine when a
   delete token is configured (see below).
+- **Detailed scan reporting.** For every scanned tag the workflow prints a
+  report to the run log and to the job summary: whether the image was promoted
+  or left in quarantine, and a per-CVE breakdown (severity, package,
+  installed/fixed versions) marking each finding as blocking or excepted.
 - **Scheduled and manual runs.** A daily cron plus `workflow_dispatch` with
   overrides for threshold, exceptions, and a no-op `dry_run` mode.
 - **Concurrency safety.** Per-image concurrency groups prevent overlapping runs.

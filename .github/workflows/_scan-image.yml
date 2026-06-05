@@ -180,7 +180,9 @@ jobs:
           promoted=0
           blocked=0
           rows="${work}/rows.md"
+          details_md="${work}/details.md"
           : > "${rows}"
+          : > "${details_md}"
 
           while IFS= read -r tag; do
             [ -n "${tag}" ] || continue
@@ -203,55 +205,122 @@ jobs:
 
             blocking_count="$(wc -l < "${blocking_file}" | tr -d ' ')"
             remaining_count="$(wc -l < "${remaining_file}" | tr -d ' ')"
+            excepted_count="$(wc -l < "${excepted_file}" | tr -d ' ')"
             excepted_str="$(paste -sd '|' "${excepted_file}")"
             remaining_str="$(paste -sd ', ' "${remaining_file}")"
+
+            # Per-CVE detail: id, severity, package, installed, fixed (deduped, ranked).
+            vulns_tsv="${work}/vulns-${safe}.tsv"
+            jq -r '
+              [ .Results[]? | (.Vulnerabilities[]? | {
+                  id: .VulnerabilityID,
+                  sev: (.Severity // "UNKNOWN"),
+                  pkg: (.PkgName // ""),
+                  installed: (.InstalledVersion // ""),
+                  fixed: (.FixedVersion // "")
+                }) ]
+              | unique_by("\(.id)|\(.pkg)|\(.installed)")
+              | map(. + {rank: ({"CRITICAL":0,"HIGH":1,"MEDIUM":2,"LOW":3}[.sev] // 9)})
+              | sort_by(.rank, .id)
+              | .[] | [.id, .sev, .pkg, .installed, .fixed] | @tsv
+            ' "${report}" > "${vulns_tsv}"
             echo "::endgroup::"
 
+            # --- Decide the outcome for this tag. --------------------------------
             if [ "${remaining_count}" -gt 0 ]; then
               blocked=$((blocked + 1))
-              echo "BLOCKED ${src}: ${remaining_str}"
-              printf '| `%s` | :no_entry: blocked | %s | %s | %s |\n' \
-                "${tag}" "${blocking_count}" "${remaining_str}" "${excepted_str:-—}" >> "${rows}"
-              continue
-            fi
-
-            if [ "${DRY_RUN}" = "true" ]; then
+              result="blocked"
+              icon=":no_entry:"
+              promoted_yesno="no (left in quarantine)"
+            elif [ "${DRY_RUN}" = "true" ]; then
               promoted=$((promoted + 1))
-              echo "DRY-RUN PASS ${src} (would promote to ${dest})"
-              printf '| `%s` | :mag: would promote | %s | — | %s |\n' \
-                "${tag}" "${blocking_count}" "${excepted_str:-—}" >> "${rows}"
-              continue
-            fi
+              result="would promote"
+              icon=":mag:"
+              promoted_yesno="no (dry run)"
+            else
+              crane copy "${src}" "${dest}"
 
-            echo "Promoting ${src} → ${dest}"
-            crane copy "${src}" "${dest}"
+              created="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              oras attach --artifact-type application/vnd.cssc.scan-report.v1+json \
+                --annotation "org.opencontainers.image.created=${created}" \
+                --annotation "com.cssc.scan.source=${SOURCE_REPO}" \
+                --annotation "com.cssc.scan.tag=${tag}" \
+                --annotation "com.cssc.scan.threshold=${THRESHOLD}" \
+                --annotation "com.cssc.scan.exceptions=${excepted_str}" \
+                --annotation "com.cssc.scan.scanner=trivy" \
+                --annotation "com.cssc.scan.scanner-version=${trivy_resolved}" \
+                "${dest}"
 
-            created="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            oras attach --artifact-type application/vnd.cssc.scan-report.v1+json \
-              --annotation "org.opencontainers.image.created=${created}" \
-              --annotation "com.cssc.scan.source=${SOURCE_REPO}" \
-              --annotation "com.cssc.scan.tag=${tag}" \
-              --annotation "com.cssc.scan.threshold=${THRESHOLD}" \
-              --annotation "com.cssc.scan.exceptions=${excepted_str}" \
-              --annotation "com.cssc.scan.scanner=trivy" \
-              --annotation "com.cssc.scan.scanner-version=${trivy_resolved}" \
-              "${dest}"
-
-            del_status="kept"
-            if [ "${DELETE_SOURCE}" = "true" ]; then
-              if [ -z "${DELETE_TOKEN}" ]; then
-                echo "::warning::delete_source=true but no ghcr_delete_token provided; skipping deletion of ${src}."
-                del_status="skipped (no token)"
-              elif delete_quarantine_tag "${tag}"; then
-                del_status="deleted"
-              else
-                del_status="delete failed"
+              del_status="kept"
+              if [ "${DELETE_SOURCE}" = "true" ]; then
+                if [ -z "${DELETE_TOKEN}" ]; then
+                  echo "::warning::delete_source=true but no ghcr_delete_token provided; skipping deletion of ${src}."
+                  del_status="skipped (no token)"
+                elif delete_quarantine_tag "${tag}"; then
+                  del_status="deleted"
+                else
+                  del_status="delete failed"
+                fi
               fi
+
+              promoted=$((promoted + 1))
+              result="promoted (source ${del_status})"
+              icon=":white_check_mark:"
+              promoted_yesno="yes → ${dest}"
             fi
 
-            promoted=$((promoted + 1))
-            printf '| `%s` | :white_check_mark: promoted (%s) | %s | — | %s |\n' \
-              "${tag}" "${del_status}" "${blocking_count}" "${excepted_str:-—}" >> "${rows}"
+            # --- Human-readable report to the run log. ---------------------------
+            {
+              echo "================================================================"
+              echo "Image:            ${src}"
+              echo "Result:           ${result}"
+              echo "Promoted:         ${promoted_yesno}"
+              echo "Threshold:        ${THRESHOLD} (severities: ${SEVERITIES})"
+              echo "Findings ≥ floor: ${blocking_count} (blocking: ${remaining_count}, excepted: ${excepted_count})"
+              if [ -s "${vulns_tsv}" ]; then
+                printf '  %-22s %-9s %-28s %-18s %s\n' "CVE" "SEVERITY" "PACKAGE" "INSTALLED" "STATUS"
+                while IFS="$(printf '\t')" read -r id sev pkg installed fixed; do
+                  if grep -qxF "${id}" "${exceptions_file}"; then st="EXCEPTED"; else st="BLOCKING"; fi
+                  printf '  %-22s %-9s %-28s %-18s %s\n' "${id}" "${sev}" "${pkg}" "${installed:-—}" "${st}"
+                done < "${vulns_tsv}"
+              else
+                echo "  (no vulnerabilities at or above the threshold)"
+              fi
+            } | tee -a "${work}/console-report.txt"
+
+            # --- Summary table row. ----------------------------------------------
+            printf '| `%s` | %s %s | %s | %s | %s |\n' \
+              "${tag}" "${icon}" "${result}" "${blocking_count}" \
+              "${remaining_str:-—}" "${excepted_str:-—}" >> "${rows}"
+
+            # --- Collapsible per-image detail for the job summary. ----------------
+            {
+              echo ""
+              echo "<details><summary><code>${tag}</code> — ${icon} ${result} · ${blocking_count} finding(s) ≥ ${THRESHOLD}</summary>"
+              echo ""
+              echo "- **Source:** \`${src}\`"
+              echo "- **Destination:** \`${dest}\`"
+              echo "- **Promoted:** ${promoted_yesno}"
+              echo "- **Blocking (not excepted):** ${remaining_count} · **Excepted:** ${excepted_count}"
+              echo ""
+              echo "| CVE | Severity | Package | Installed | Fixed | Status |"
+              echo "| --- | --- | --- | --- | --- | --- |"
+              if [ -s "${vulns_tsv}" ]; then
+                while IFS="$(printf '\t')" read -r id sev pkg installed fixed; do
+                  if grep -qxF "${id}" "${exceptions_file}"; then
+                    st=":large_yellow_circle: excepted"
+                  else
+                    st=":red_circle: blocking"
+                  fi
+                  printf '| %s | %s | `%s` | %s | %s | %s |\n' \
+                    "${id}" "${sev}" "${pkg}" "${installed:-—}" "${fixed:-—}" "${st}"
+                done < "${vulns_tsv}"
+              else
+                echo "| — | — | — | — | — | none ≥ ${THRESHOLD} |"
+              fi
+              echo ""
+              echo "</details>"
+            } >> "${details_md}"
           done <<EOF
           ${tags}
           EOF
@@ -267,4 +336,9 @@ jobs:
             echo "| Tag | Result | Findings ≥ ${THRESHOLD} | Blocking CVEs | Excepted |"
             echo "| --- | ------ | --- | --- | --- |"
             cat "${rows}"
+            echo ""
+            echo "#### Per-image vulnerability detail"
+            echo ""
+            echo "Status legend: :red_circle: blocking (counts against the threshold) · :large_yellow_circle: excepted (matched the exception list)."
+            cat "${details_md}"
           } >> "${GITHUB_STEP_SUMMARY}"
