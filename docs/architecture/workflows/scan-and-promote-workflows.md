@@ -49,7 +49,9 @@ configuration.
 ```text
 .github/workflows/
 ├── _scan-image.yml      # reusable workflow — all the logic
-└── scan-python.yml      # caller — quarantine/python → golden/python
+├── scan-python.yml      # caller — quarantine/python  → golden/python
+├── scan-node.yml        # caller — quarantine/node    → golden/node
+└── scan-openjdk.yml     # caller — quarantine/openjdk → golden/openjdk
 ```
 
 - **Display name:** `scan / quarantine/<image>` (e.g. `scan / quarantine/python`).
