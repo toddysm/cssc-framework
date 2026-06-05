@@ -12,6 +12,12 @@ topic so each area can grow independently.
 | [`guides/`](guides/) | How-to and operational guides. |
 | [`reference/`](reference/) | Reference material and conventions. |
 
+## Guides
+
+- [Mirroring base images from Docker Hub to GHCR](guides/mirroring-base-images.md)
+  — how the mirror actions work and how to add a new mirror for another image or
+  tag.
+
 ## Architecture docs
 
 - [Image mirror workflows](architecture/workflows/image-mirror-workflows.md) —
