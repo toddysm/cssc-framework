@@ -1,10 +1,13 @@
-# Scan quarantine/hardened/python with Trivy and promote clean images into
-# base/hardened/python.
+# Scan quarantine/hardened/python via its SBOM attestation and promote clean
+# images into base/hardened/python.
 #
 # This caller only defines triggers and the repository-specific inputs; the
-# scan/gate/promote/attest/cleanup logic lives in the reusable _scan-image.yml
-# workflow. The source image already lives in GHCR, so no dhi.io/Docker Hub
-# authentication is required here.
+# scan/gate/promote/attest/cleanup logic lives in the reusable
+# _scan-sbom-image.yml workflow. Hardened (DHI) images are distroless and carry
+# no package-manager metadata, so they are scanned via the SBOM attestation that
+# the mirror copied into quarantine rather than with `trivy image`. The source
+# image already lives in GHCR, so no dhi.io/Docker Hub authentication is required
+# here.
 #
 # Promotion target exception: this workflow promotes into "base/hardened/python"
 # rather than the "golden/<image>" scheme described in
@@ -38,6 +41,14 @@ on:
         required: false
         default: ""
         type: string
+      sbom_predicate_type:
+        description: "in-toto predicate type of the SBOM attestation to scan."
+        required: false
+        default: https://cyclonedx.org/bom/v1.6
+        type: choice
+        options:
+          - https://cyclonedx.org/bom/v1.6
+          - https://spdx.dev/Document
       dry_run:
         description: "Scan and report only; never copy, attach, or delete."
         required: false
@@ -55,12 +66,13 @@ permissions:
 
 jobs:
   scan-hardened-python:
-    uses: ./.github/workflows/_scan-image.yml
+    uses: ./.github/workflows/_scan-sbom-image.yml
     with:
       source_repo: ghcr.io/toddysm/quarantine/hardened/python
       dest_repo: ghcr.io/toddysm/base/hardened/python
       severity_threshold: ${{ github.event_name == 'workflow_dispatch' && inputs.severity_threshold || 'HIGH' }}
       cve_exceptions: ${{ github.event_name == 'workflow_dispatch' && inputs.cve_exceptions || '' }}
+      sbom_predicate_type: ${{ github.event_name == 'workflow_dispatch' && inputs.sbom_predicate_type || 'https://cyclonedx.org/bom/v1.6' }}
       dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
     secrets:
       ghcr_delete_token: ${{ secrets.GHCR_DELETE_TOKEN }}

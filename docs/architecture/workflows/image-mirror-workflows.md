@@ -37,7 +37,7 @@ caller workflow that only supplies configuration.
 
 [`_mirror-image.yml`](../../../.github/workflows/_mirror-image.yml) is an
 internal workflow (the leading underscore marks it as "do not run directly").
-It is triggered only through `workflow_call` and exposes five inputs:
+It is triggered only through `workflow_call` and exposes these inputs:
 
 | Input | Required | Default | Description |
 | ----- | -------- | ------- | ----------- |
@@ -46,15 +46,30 @@ It is triggered only through `workflow_call` and exposes five inputs:
 | `dest_image` | yes | — | Fully qualified destination image without tag (e.g. `ghcr.io/<owner>/quarantine/python`). |
 | `dest_tag` | yes | — | Destination image tag. |
 | `force` | no | `false` | Copy even when the source and destination digests match. |
+| `source_login_registry` | no | `""` | Registry to authenticate to before pulling the source (e.g. `dhi.io`). Empty means an anonymous public pull. |
+| `copy_referrers` | no | `false` | Also copy OCI referrer artifacts (SBOMs, provenance, VEX, signatures) attached to the image. Switches the copy to `oras`. Works for any image that has referrers, not just hardened images. |
+
+It also accepts two optional secrets, used only for authenticated sources:
+
+| Secret | Required | Description |
+| ------ | -------- | ----------- |
+| `source_registry_username` | no | Username for `source_login_registry`. Required only when `source_login_registry` is set. |
+| `source_registry_password` | no | Password/PAT for `source_login_registry`. Required only when `source_login_registry` is set. |
 
 It defines a single `mirror` job that runs on `ubuntu-latest` with the minimal
-permissions `contents: read` and `packages: write`, and performs three steps:
+permissions `contents: read` and `packages: write`, and performs these steps:
 
 1. **Set up crane** — installs the `crane` CLI.
-2. **Log in to GHCR** — authenticates to `ghcr.io` using the built-in
+2. **Set up oras** — installs `oras`, only when `copy_referrers` is `true`.
+3. **Log in to source registry** — only when `source_login_registry` is set
+   (e.g. Docker Hardened Images on `dhi.io`); authenticates `crane` (and `oras`
+   when copying referrers).
+4. **Log in to GHCR** — authenticates to `ghcr.io` using the built-in
    `GITHUB_TOKEN` and the triggering actor.
-3. **Compare digests and copy if changed** — the core idempotent-sync logic
-   (described below).
+5. **Compare digests and copy if changed** — the core idempotent-sync logic
+   (described below). When `copy_referrers` is `true` the copy uses
+   `oras cp -r` for the index and each per-platform child manifest so the
+   attached referrers travel with the image; otherwise it uses `crane copy`.
 
 ### Caller workflows (`mirror-<image>.yml`)
 
@@ -106,6 +121,7 @@ flowchart TD
 | ---- | ---- |
 | **GitHub Actions** | Orchestration: scheduling, manual dispatch, reusable-workflow composition, concurrency control, and job summaries. |
 | **[`crane`](https://github.com/google/go-containerregistry/blob/main/cmd/crane/README.md)** | Registry client used for all image operations — `crane digest` to read manifest digests and `crane copy` to transfer images. |
+| **[`oras`](https://oras.land)** | Used only when `copy_referrers` is enabled, to copy the image together with its OCI referrer artifacts (`oras cp -r`). |
 | **[`imjasonh/setup-crane`](https://github.com/imjasonh/setup-crane)** | Action that installs `crane` on the runner. It is pinned to a commit SHA (`31b88ef…`, v0.4) for supply-chain safety. |
 | **`GITHUB_TOKEN`** | The built-in, automatically scoped token used to authenticate to GHCR with `packages: write`. No long-lived registry secrets are required. |
 | **Bash** (`set -euo pipefail`) | The digest-compare-and-copy step is a single defensive shell script. |
@@ -128,6 +144,16 @@ Key tooling characteristics:
   `crane digest`, reads the destination digest (treating a missing destination as
   empty), and copies only when the two differ — avoiding redundant transfers.
 - **Multi-architecture preservation** via `crane copy`.
+- **Optional referrer copying.** When `copy_referrers` is enabled the mirror
+  copies the image together with its OCI referrer artifacts — SBOMs, provenance,
+  VEX statements, and signatures — using `oras cp -r` for the index and each
+  per-platform child manifest. This is what lets downstream SBOM-based scanning
+  read attestations straight from quarantine. It works for any image that has
+  referrers, not just Docker Hardened Images.
+- **Authenticated sources.** Setting `source_login_registry` (plus the
+  `source_registry_username` / `source_registry_password` secrets) lets the
+  mirror pull from private or non–Docker Hub upstreams such as `dhi.io`. Public
+  sources leave it empty and pull anonymously.
 - **Scheduled refresh.** A daily cron (06:00 UTC) checks upstream for changes.
 - **Manual runs with force.** `workflow_dispatch` allows on-demand execution, and
   the optional `force` input copies even when digests already match (useful for
@@ -147,17 +173,16 @@ Key tooling characteristics:
 - **No image scanning or vulnerability gating.** Despite the `quarantine/`
   naming, the workflows do not scan images or block copying based on CVEs,
   policy, or signatures — they perform a straight mirror.
-- **No signing or attestation.** Mirrored images are not signed (e.g. cosign)
-  and no provenance/SBOM attestations are produced or verified.
+- **No signing or attestation generation.** Mirrored images are not signed (e.g.
+  cosign) and no new provenance/SBOM attestations are produced or verified. When
+  `copy_referrers` is enabled, existing referrers (including the upstream's
+  SBOMs and signatures) are copied verbatim but are not re-verified.
 - **No automatic tag discovery.** Each workflow mirrors one explicitly pinned
   source tag (e.g. `python:3.14-slim`). New tags or floating/`latest` tags are
   not discovered or tracked automatically; updating a tag is a manual edit to the
   caller.
 - **No deletion / retention management.** Stale or superseded tags in GHCR are
   never pruned; the workflows only add or update.
-- **No cross-registry generality.** Sources are assumed to be public Docker Hub
-  images pulled anonymously; private or non–Docker Hub upstreams would require
-  additional authentication that is not wired in.
 - **No build step.** These workflows only mirror base images. Building the
   application images under `apps/` on top of those bases is handled separately by
   planned `build-<app>.yml` workflows.
