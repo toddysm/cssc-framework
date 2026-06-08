@@ -155,11 +155,32 @@ jobs:
 
           referrers_note=""
           if [ "${COPY_REFERRERS}" = "true" ]; then
+            # Some registries (notably dhi.io) intermittently return transient
+            # "not found"/5xx errors while oras fans out the many blob requests
+            # an `oras cp -r` makes. Retry the copy a few times with backoff so a
+            # single flaky response does not fail the whole mirror.
+            oras_cp_retry() {
+              local attempt=1 max=4 delay=5
+              while true; do
+                if oras cp -r "$1" "$2"; then
+                  return 0
+                fi
+                if [ "${attempt}" -ge "${max}" ]; then
+                  echo "::error::oras cp -r '$1' -> '$2' failed after ${max} attempts."
+                  return 1
+                fi
+                echo "::warning::oras cp -r '$1' -> '$2' failed (attempt ${attempt}/${max}); retrying in ${delay}s."
+                sleep "${delay}"
+                attempt=$((attempt + 1))
+                delay=$((delay * 2))
+              done
+            }
+
             # Copy the image graph and all referrers with oras. `oras cp -r`
             # copies the index, its child manifests/blobs, and the referrers of
             # the index itself.
             echo "Copying image and referrers with oras."
-            oras cp -r "${SOURCE_REF}" "${DEST_REF}"
+            oras_cp_retry "${SOURCE_REF}" "${DEST_REF}"
 
             # Referrers attached to each per-platform child manifest (e.g. DHI
             # cosign SBOM/provenance/VEX attestations whose subject is a platform
@@ -171,7 +192,7 @@ jobs:
             for d in ${child_digests}; do
               [ -n "${d}" ] || continue
               echo "Copying child manifest ${d} and its referrers."
-              oras cp -r "${SOURCE_IMAGE}@${d}" "${DEST_IMAGE}@${d}"
+              oras_cp_retry "${SOURCE_IMAGE}@${d}" "${DEST_IMAGE}@${d}"
               child_count=$((child_count + 1))
             done
 

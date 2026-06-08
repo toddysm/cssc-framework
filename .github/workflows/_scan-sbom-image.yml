@@ -164,17 +164,38 @@ jobs:
             GH_TOKEN="${DELETE_TOKEN}" gh api -X DELETE "${base}/versions/${vid}" >/dev/null
           }
 
+          # --- Retry an oras cp -r to absorb transient registry errors. --------
+          # An `oras cp -r` fans out many blob requests; registries occasionally
+          # return a transient "not found"/5xx for one of them. Retry with
+          # backoff so a single flaky response does not fail promotion.
+          oras_cp_retry() {
+            local attempt=1 max=4 delay=5
+            while true; do
+              if oras cp -r "$1" "$2"; then
+                return 0
+              fi
+              if [ "${attempt}" -ge "${max}" ]; then
+                echo "::error::oras cp -r '$1' -> '$2' failed after ${max} attempts."
+                return 1
+              fi
+              echo "::warning::oras cp -r '$1' -> '$2' failed (attempt ${attempt}/${max}); retrying in ${delay}s."
+              sleep "${delay}"
+              attempt=$((attempt + 1))
+              delay=$((delay * 2))
+            done
+          }
+
           # --- Copy an image and all its referrers from source to destination. --
           # Mirrors the oras-based copy used by _mirror-image.yml: copy the index
           # plus its referrers, then each per-platform child manifest plus its
           # own referrers (DHI attestations are attached per platform).
           copy_with_referrers() {
             local src_ref="$1" dst_ref="$2"
-            oras cp -r "${src_ref}" "${dst_ref}"
+            oras_cp_retry "${src_ref}" "${dst_ref}"
             local child
             for child in $(crane manifest "${src_ref}" | jq -r '.manifests[]?.digest // empty'); do
               [ -n "${child}" ] || continue
-              oras cp -r "${SOURCE_REPO}@${child}" "${DEST_REPO}@${child}"
+              oras_cp_retry "${SOURCE_REPO}@${child}" "${DEST_REPO}@${child}"
             done
           }
 
