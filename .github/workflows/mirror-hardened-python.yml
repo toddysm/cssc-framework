@@ -1,0 +1,48 @@
+# Mirror the Docker Hardened Image (DHI) python:3.14-alpine3.23 from dhi.io into
+# GHCR as quarantine/hardened/python.
+#
+# Unlike the public Docker Hub mirrors, DHI is served from the dhi.io registry
+# and requires authentication with Docker Hub credentials. This caller passes a
+# source_login_registry plus the DOCKERHUB_USERNAME / DOCKERHUB_TOKEN secrets to
+# the reusable _mirror-image.yml workflow, which performs the dhi.io login before
+# the digest-check-and-copy.
+#
+# Naming convention: "mirror-<image>.yml" for image mirror workflows. See
+# docs/contributing/workflow-naming.md.
+name: mirror / quarantine/hardened/python
+
+on:
+  # Daily upstream check at 06:00 UTC.
+  schedule:
+    - cron: "0 6 * * *"
+  # Manual run, with an optional force copy.
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Copy even when the source and destination digests match."
+        required: false
+        default: false
+        type: boolean
+
+# Avoid overlapping runs for this specific image mirror.
+concurrency:
+  group: mirror-quarantine-hardened-python
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  mirror-hardened-python:
+    uses: ./.github/workflows/_mirror-image.yml
+    with:
+      source_image: dhi.io/python
+      source_tag: 3.14-alpine3.23
+      source_login_registry: dhi.io
+      dest_image: ghcr.io/toddysm/quarantine/hardened/python
+      dest_tag: 3.14-alpine3.23
+      force: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
+    secrets:
+      source_registry_username: ${{ secrets.DOCKERHUB_USERNAME }}
+      source_registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
