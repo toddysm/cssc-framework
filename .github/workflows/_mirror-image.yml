@@ -33,6 +33,18 @@ on:
         required: false
         default: false
         type: boolean
+      source_login_registry:
+        description: "Registry to authenticate to before pulling the source (e.g. dhi.io). Leave empty for anonymous public pulls."
+        required: false
+        default: ""
+        type: string
+    secrets:
+      source_registry_username:
+        description: "Username for source_login_registry. Required only when source_login_registry is set."
+        required: false
+      source_registry_password:
+        description: "Password/PAT for source_login_registry. Required only when source_login_registry is set."
+        required: false
 
 jobs:
   mirror:
@@ -43,6 +55,24 @@ jobs:
     steps:
       - name: Set up crane
         uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
+
+      - name: Log in to source registry
+        # Only runs for authenticated sources (e.g. Docker Hardened Images on
+        # dhi.io). Anonymous public sources leave source_login_registry empty
+        # and skip this step entirely.
+        if: ${{ inputs.source_login_registry != '' }}
+        env:
+          SOURCE_LOGIN_REGISTRY: "${{ inputs.source_login_registry }}"
+          SOURCE_REGISTRY_USERNAME: "${{ secrets.source_registry_username }}"
+          SOURCE_REGISTRY_PASSWORD: "${{ secrets.source_registry_password }}"
+        run: |
+          set -euo pipefail
+          if [ -z "${SOURCE_REGISTRY_USERNAME}" ] || [ -z "${SOURCE_REGISTRY_PASSWORD}" ]; then
+            echo "::error::source_login_registry is set to '${SOURCE_LOGIN_REGISTRY}' but source_registry_username/source_registry_password were not provided."
+            exit 1
+          fi
+          echo "${SOURCE_REGISTRY_PASSWORD}" | crane auth login "${SOURCE_LOGIN_REGISTRY}" \
+            --username "${SOURCE_REGISTRY_USERNAME}" --password-stdin
 
       - name: Log in to GHCR
         run: |
