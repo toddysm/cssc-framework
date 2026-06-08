@@ -42,6 +42,7 @@ jobs:
       source_login_registry: dhi.io
       dest_image: ghcr.io/toddysm/quarantine/hardened/python
       dest_tag: 3.14-alpine3.23
+      copy_referrers: true
       force: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
     secrets:
       source_registry_username: ${{ secrets.DOCKERHUB_USERNAME }}
