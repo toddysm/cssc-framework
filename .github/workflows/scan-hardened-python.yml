@@ -6,6 +6,12 @@
 # workflow. The source image already lives in GHCR, so no dhi.io/Docker Hub
 # authentication is required here.
 #
+# Promotion target exception: this workflow promotes into "base/hardened/python"
+# rather than the "golden/<image>" scheme described in
+# docs/contributing/workflow-naming.md. Hardened (DHI) images are promoted into a
+# dedicated "base/hardened/<image>" namespace, so dest_repo intentionally does
+# NOT follow the golden/ convention.
+#
 # Naming convention: "scan-<image>.yml" for scan-and-promote workflows. See
 # docs/contributing/workflow-naming.md.
 name: scan / quarantine/hardened/python
