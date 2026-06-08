@@ -48,10 +48,12 @@ configuration.
 
 ```text
 .github/workflows/
-├── _scan-image.yml      # reusable workflow — all the logic
-├── scan-python.yml      # caller — quarantine/python  → golden/python
-├── scan-node.yml        # caller — quarantine/node    → golden/node
-└── scan-openjdk.yml     # caller — quarantine/openjdk → golden/openjdk
+├── _scan-image.yml          # reusable workflow — image-filesystem scan
+├── _scan-sbom-image.yml     # reusable workflow — SBOM-attestation scan (hardened images)
+├── scan-python.yml          # caller — quarantine/python  → golden/python
+├── scan-node.yml            # caller — quarantine/node    → golden/node
+├── scan-openjdk.yml         # caller — quarantine/openjdk → golden/openjdk
+└── scan-hardened-python.yml # caller — quarantine/hardened/python → base/hardened/python (SBOM-based)
 ```
 
 - **Display name:** `scan / quarantine/<image>` (e.g. `scan / quarantine/python`).
@@ -156,6 +158,51 @@ For each tag the gate is evaluated as follows:
   offending CVEs. Blocked images never fail the whole job; the run finishes and
   the summary lists every outcome.
 
+## SBOM-based scanning for hardened images (`_scan-sbom-image.yml`)
+
+Distroless images such as [Docker Hardened Images](https://docs.docker.com/dhi/)
+(DHI) ship no package-manager metadata, so `trivy image` cannot enumerate their
+packages. Those images instead carry their package inventory as an **SBOM
+attestation** — an in-toto statement attached to each platform manifest as an
+OCI referrer. The mirror copies these referrers into quarantine (see
+[`copy_referrers`](image-mirror-workflows.md)), and a dedicated reusable
+workflow, `_scan-sbom-image.yml`, gates on the SBOM rather than the image
+filesystem.
+
+It mirrors `_scan-image.yml` (same inputs, gate semantics, scan-report referrer,
+source deletion, and reporting) with these differences:
+
+- **Extra input `sbom_predicate_type`** (default `https://cyclonedx.org/bom/v1.6`;
+  `https://spdx.dev/Document` also supported) selects which SBOM attestation to
+  scan.
+- **No upstream re-pull.** The SBOM is read from the GHCR quarantine copy, so
+  only GHCR authentication is needed.
+- **Per-platform SBOM extraction.** For every platform in the image index the
+  workflow:
+  1. runs `oras discover` on the platform manifest and finds the referrer whose
+     `in-toto.io/predicate-type` annotation matches `sbom_predicate_type`,
+  2. fetches that referrer manifest and pulls its first layer blob,
+  3. extracts the in-toto statement's `.predicate` (the CycloneDX/SPDX BOM),
+     handling both plain statements and DSSE-wrapped envelopes, and
+  4. scans the BOM with `trivy sbom`.
+- **All platforms gated together.** CVE findings are unioned across platforms;
+  promotion is blocked if **any** platform has a blocking CVE after exceptions.
+  A platform whose SBOM cannot be found is also treated as a blocking failure,
+  since an image whose inventory cannot be read cannot be cleared.
+- **Referrer-preserving promotion.** Passing images are promoted with
+  `oras cp -r` (index plus per-platform children) so the SBOMs, provenance, VEX,
+  and signatures travel into the destination alongside the scan-report referrer.
+
+The scan-report referrer adds two annotations on top of the common set:
+`com.cssc.scan.method=sbom` and
+`com.cssc.scan.sbom-predicate-type=<predicate type>`.
+
+The `scan-hardened-python.yml` caller wires this workflow for
+`quarantine/hardened/python → base/hardened/python`. Hardened images are
+promoted into a dedicated `base/hardened/<image>` namespace rather than the
+`golden/<image>` scheme; see the
+[workflow naming conventions](../../contributing/workflow-naming.md).
+
 ## What tooling is used
 
 | Tool | Role |
@@ -240,9 +287,11 @@ The workflow therefore treats deletion as configurable:
 
 ### Not implemented (deliberately out of scope)
 
-- **No signing or SBOM attestation.** Promoted images are not signed (e.g.
-  cosign) and no SBOM/provenance attestations are produced. The only attached
-  metadata is the scan-report referrer.
+- **No signing.** Promoted images are not signed (e.g. cosign). The image-based
+  scanner (`_scan-image.yml`) produces no SBOM/provenance; the SBOM-based
+  scanner (`_scan-sbom-image.yml`) does not generate attestations but copies the
+  upstream's existing SBOM/provenance/VEX/signature referrers verbatim during
+  promotion.
 - **No automatic remediation.** Blocked images are left in quarantine; the
   workflow does not patch, rebuild, or open tickets for them.
 - **No cross-scanner support.** Trivy is the only scanner; the referrer schema
