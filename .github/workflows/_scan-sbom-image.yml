@@ -292,10 +292,17 @@ jobs:
                 "${report}" | sort -u > "${plat_ids}"
               cat "${plat_ids}" >> "${tag_blocking}"
 
-              plat_count="$(wc -l < "${plat_ids}" | tr -d ' ')"
-              plat_list="$(paste -sd ',' "${plat_ids}" | sed 's/,/, /g')"
+              # Per-platform counts that mirror the gate: total findings at/above
+              # the threshold, and the blocking subset after removing exceptions.
+              plat_total_ids="${work}/plattotal-${safe}.txt"
+              plat_block_ids="${work}/platblock-${safe}.txt"
+              sort -u "${plat_ids}" > "${plat_total_ids}"
+              comm -23 "${plat_total_ids}" "${exceptions_file}" > "${plat_block_ids}"
+              plat_total="$(wc -l < "${plat_total_ids}" | tr -d ' ')"
+              plat_block="$(wc -l < "${plat_block_ids}" | tr -d ' ')"
+              plat_block_list="$(paste -sd ',' "${plat_block_ids}" | sed 's/,/, /g')"
               printf '| `%s` | %s | %s | %s |\n' \
-                "${plat_name}" "${plat_count}" "${plat_count}" "${plat_list:-—}" >> "${plat_detail}"
+                "${plat_name}" "${plat_total}" "${plat_block}" "${plat_block_list:-—}" >> "${plat_detail}"
             done < "${platforms_file}"
             echo "::endgroup::"
 
@@ -394,7 +401,7 @@ jobs:
               echo "- **SBOM predicate type:** \`${SBOM_PREDICATE_TYPE}\`"
               echo "- **Blocking (not excepted):** ${remaining_count} · **Excepted:** ${excepted_count}"
               echo ""
-              echo "| Platform | CVEs ≥ ${THRESHOLD} | Blocking | CVE IDs |"
+              echo "| Platform | CVEs ≥ ${THRESHOLD} | Blocking | Blocking CVE IDs |"
               echo "| --- | --- | --- | --- |"
               cat "${plat_detail}"
               echo ""

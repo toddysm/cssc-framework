@@ -128,7 +128,12 @@ jobs:
             echo "Destination digest: <not present>"
           fi
 
-          if [ "${FORCE}" != "true" ] && [ "${source_digest}" = "${dest_digest}" ]; then
+          # The digest short-circuit is intentionally skipped when copying
+          # referrers: OCI referrers (SBOM/VEX/provenance/signatures) can change
+          # independently of the subject manifest digest, so a matching image
+          # digest does not guarantee the referrers are in sync. In that mode we
+          # always re-run the referrer-aware copy (oras cp is itself idempotent).
+          if [ "${FORCE}" != "true" ] && [ "${COPY_REFERRERS}" != "true" ] && [ "${source_digest}" = "${dest_digest}" ]; then
             echo "Image is already up to date; nothing to copy."
             {
               echo "### Mirror image: up to date :white_check_mark:"
@@ -142,6 +147,8 @@ jobs:
 
           if [ "${FORCE}" = "true" ]; then
             echo "Force enabled; copying regardless of digest match."
+          elif [ "${COPY_REFERRERS}" = "true" ] && [ "${source_digest}" = "${dest_digest}" ]; then
+            echo "Image digest matches, but copy_referrers is enabled; re-syncing image and referrers."
           else
             echo "Digests differ; copying updated image."
           fi
