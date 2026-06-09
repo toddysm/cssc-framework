@@ -1,0 +1,78 @@
+# Composite action: enumerate-tags
+#
+# List the tags in a container repository with crane, distinguishing an
+# empty / not-yet-created repository (expected; has-tags=false) from a real
+# failure such as an auth or transient registry error (fails loudly).
+#
+# Emits the tags as a JSON array so a calling workflow can fan them out across a
+# job matrix (strategy.matrix). Optionally filters out OCI referrer fallback
+# tags (sha256-*), which is needed when enumerating image tags in a repository
+# that also stores referrers as tags.
+#
+# Terminology: see docs/reference/workflow-actions.md.
+name: enumerate-tags
+description: List the tags in a container repository as a JSON array.
+
+inputs:
+  repository:
+    description: "Repository to enumerate, without a tag (e.g. ghcr.io/owner/quarantine/python)."
+    required: true
+  exclude-referrer-tags:
+    description: "Drop OCI referrer fallback tags (sha256-*) from the result."
+    required: false
+    default: "false"
+
+outputs:
+  tags-json:
+    description: "JSON array of tag names (empty array when the repository has no tags)."
+    value: ${{ steps.enumerate.outputs.tags-json }}
+  has-tags:
+    description: "'true' when at least one tag was found, otherwise 'false'."
+    value: ${{ steps.enumerate.outputs.has-tags }}
+
+runs:
+  using: composite
+  steps:
+    - name: Enumerate tags in ${{ inputs.repository }}
+      id: enumerate
+      shell: bash
+      env:
+        REPOSITORY: "${{ inputs.repository }}"
+        EXCLUDE_REFERRER_TAGS: "${{ inputs.exclude-referrer-tags }}"
+      run: |
+        set -euo pipefail
+        export LC_ALL=C
+
+        ls_err="$(mktemp)"
+        if all_tags="$(crane ls "${REPOSITORY}" 2>"${ls_err}")"; then
+          :
+        else
+          if grep -qiE 'NAME_UNKNOWN|not found|MANIFEST_UNKNOWN|UNAUTHORIZED.*not found|repository name not known' "${ls_err}"; then
+            echo "Repository ${REPOSITORY} has no tags yet; nothing to enumerate."
+            all_tags=""
+          else
+            echo "::error::Failed to list tags for ${REPOSITORY}:"
+            cat "${ls_err}" >&2
+            exit 1
+          fi
+        fi
+
+        if [ "${EXCLUDE_REFERRER_TAGS}" = "true" ]; then
+          tags="$(printf '%s\n' "${all_tags}" | grep -vE '^sha256-' || true)"
+        else
+          tags="${all_tags}"
+        fi
+
+        # Build a JSON array of non-empty tag names for matrix fan-out.
+        tags_json="$(printf '%s\n' "${tags}" \
+          | jq -R . | jq -s 'map(select(length > 0))' -c)"
+
+        if [ "${tags_json}" = "[]" ]; then
+          echo "No tags found in ${REPOSITORY}."
+          echo "tags-json=[]" >> "${GITHUB_OUTPUT}"
+          echo "has-tags=false" >> "${GITHUB_OUTPUT}"
+        else
+          echo "Found tags: ${tags_json}"
+          echo "tags-json=${tags_json}" >> "${GITHUB_OUTPUT}"
+          echo "has-tags=true" >> "${GITHUB_OUTPUT}"
+        fi

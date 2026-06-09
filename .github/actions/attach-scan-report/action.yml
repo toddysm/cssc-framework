@@ -1,0 +1,79 @@
+# Composite action: attach-scan-report
+#
+# Attach an empty OCI scan-report referrer to a promoted image with `oras
+# attach`. The referrer records how and when the image was cleared: its scan
+# method, source, tag, threshold, excepted CVEs, and scanner name/version. It
+# carries annotations only (no layer blobs); its subject is the promoted image.
+#
+# Terminology: see docs/reference/workflow-actions.md.
+name: attach-scan-report
+description: Attach an empty OCI scan-report referrer to a promoted image.
+
+inputs:
+  image-ref:
+    description: "Promoted image to attach the referrer to (repo:tag)."
+    required: true
+  source-repo:
+    description: "Repository the image was promoted from (recorded in the referrer)."
+    required: true
+  tag:
+    description: "Image tag that was scanned and promoted."
+    required: true
+  threshold:
+    description: "Severity threshold the image passed."
+    required: true
+  excepted-str:
+    description: "Pipe-separated CVEs cleared via the exception list (empty if none)."
+    required: false
+    default: ""
+  scanner-version:
+    description: "Resolved scanner (Trivy) version."
+    required: true
+  method:
+    description: "Scan method recorded in the referrer: 'image' or 'sbom'."
+    required: false
+    default: "image"
+  sbom-predicate-type:
+    description: "in-toto predicate type scanned; recorded only when method is 'sbom'."
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Attach scan report to ${{ inputs.image-ref }}
+      shell: bash
+      env:
+        IMAGE_REF: "${{ inputs.image-ref }}"
+        SOURCE_REPO: "${{ inputs.source-repo }}"
+        TAG: "${{ inputs.tag }}"
+        THRESHOLD: "${{ inputs.threshold }}"
+        EXCEPTED_STR: "${{ inputs.excepted-str }}"
+        SCANNER_VERSION: "${{ inputs.scanner-version }}"
+        METHOD: "${{ inputs.method }}"
+        SBOM_PREDICATE_TYPE: "${{ inputs.sbom-predicate-type }}"
+      run: |
+        set -euo pipefail
+        export LC_ALL=C
+
+        created="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo "Attaching scan report to ${IMAGE_REF}"
+
+        args=(
+          --artifact-type application/vnd.cssc.scan-report.v1+json
+          --annotation "org.opencontainers.image.created=${created}"
+          --annotation "com.cssc.scan.source=${SOURCE_REPO}"
+          --annotation "com.cssc.scan.tag=${TAG}"
+          --annotation "com.cssc.scan.threshold=${THRESHOLD}"
+          --annotation "com.cssc.scan.exceptions=${EXCEPTED_STR}"
+          --annotation "com.cssc.scan.scanner=trivy"
+          --annotation "com.cssc.scan.scanner-version=${SCANNER_VERSION}"
+          --annotation "com.cssc.scan.method=${METHOD}"
+        )
+        if [ "${METHOD}" = "sbom" ]; then
+          args+=(
+            --annotation "com.cssc.scan.sbom-predicate-type=${SBOM_PREDICATE_TYPE}"
+          )
+        fi
+
+        oras attach "${args[@]}" "${IMAGE_REF}"

@@ -42,18 +42,30 @@ referrer describing the decision.
 ## How are the actions structured
 
 The scan-and-promote workflows follow the same **caller + reusable workflow**
-pattern as the mirror workflows. All shared logic lives in one reusable
-workflow, and each scanned repository gets a thin caller that only supplies
-configuration.
+pattern as the mirror workflows, and the reusable workflows are assembled from
+small, single-purpose **composite actions** under
+[`.github/actions/`](../../../.github/actions/) (see the
+[action catalogue](../../reference/workflow-actions.md)). Each scanned
+repository gets a thin caller that only supplies configuration.
 
 ```text
-.github/workflows/
-├── _scan-image.yml          # reusable workflow — image-filesystem scan
-├── _scan-sbom-image.yml     # reusable workflow — SBOM-attestation scan (hardened images)
-├── scan-python.yml          # caller — quarantine/python  → golden/python
-├── scan-node.yml            # caller — quarantine/node    → golden/node
-├── scan-openjdk.yml         # caller — quarantine/openjdk → golden/openjdk
-└── scan-hardened-python.yml # caller — quarantine/hardened/python → base/hardened/python (SBOM-based)
+.github/
+├── actions/                  # composite actions (reusable steps)
+│   ├── registry-login/
+│   ├── enumerate-tags/
+│   ├── scan-image/
+│   ├── scan-sbom/
+│   ├── evaluate-findings/
+│   ├── mirror-image/         # also used to promote (force: true)
+│   ├── attach-scan-report/
+│   └── delete-image/
+└── workflows/
+    ├── _scan-image.yml          # reusable workflow — image-filesystem scan
+    ├── _scan-sbom-image.yml     # reusable workflow — SBOM-attestation scan (hardened images)
+    ├── scan-python.yml          # caller — quarantine/python  → golden/python
+    ├── scan-node.yml            # caller — quarantine/node    → golden/node
+    ├── scan-openjdk.yml         # caller — quarantine/openjdk → golden/openjdk
+    └── scan-hardened-python.yml # caller — quarantine/hardened/python → base/hardened/python (SBOM-based)
 ```
 
 - **Display name:** `scan / quarantine/<image>` (e.g. `scan / quarantine/python`).
@@ -84,19 +96,24 @@ It also accepts one optional secret:
 | ------ | -------- | ----------- |
 | `ghcr_delete_token` | no | PAT with `delete:packages` used to delete quarantine tags via the GitHub Packages REST API. When absent, deletion is skipped with a warning (see [source deletion](#source-deletion)). |
 
-The reusable workflow defines a single `scan` job running on `ubuntu-latest`
-with minimal permissions (`contents: read`, `packages: write`). It performs:
+The reusable workflow defines three jobs running on `ubuntu-latest` with minimal
+permissions (`contents: read`, `packages: write`). It fans the work out across a
+job matrix so each tag is processed in its own parallel job:
 
-1. **Set up tooling** — installs `crane`, `oras`, and `trivy` (all pinned).
-2. **Log in to GHCR** — authenticates `crane`, `oras`, and Trivy to `ghcr.io`
-   using the built-in `GITHUB_TOKEN` and the triggering actor.
-3. **Enumerate and process tags** — the core scan/gate/promote loop described
-   below.
-4. **Write a report** — a human-readable per-image report to the run log and a
-   job summary that combines a one-row-per-tag overview table with a collapsible
-   per-image vulnerability detail (every CVE found at or above the threshold,
-   its severity, package, installed/fixed versions, and whether it was blocking
-   or excepted).
+1. **`enumerate`** — logs in to GHCR (`registry-login`), resolves the severity
+   set from the threshold, and lists the quarantine tags (`enumerate-tags`),
+   emitting them as a JSON array for the matrix.
+2. **`scan`** — runs once per tag (`strategy.matrix`, `fail-fast: false`):
+   sets up `crane`/`oras`/`trivy`, logs in, scans the image
+   (`scan-image`), applies the gate (`evaluate-findings`), and — for passing
+   images — promotes it (`mirror-image` with `force: true`), attaches the
+   scan-report referrer (`attach-scan-report`), and deletes the source
+   (`delete-image`). Each job uploads a small result artifact.
+3. **`summary`** — downloads every result artifact and renders one aggregated
+   job summary: a one-row-per-tag overview table plus a collapsible per-image
+   vulnerability detail (every CVE found at or above the threshold, its
+   severity, package, installed/fixed versions, and whether it was blocking or
+   excepted).
 
 ### Caller workflows (`scan-<image>.yml`)
 
@@ -116,31 +133,30 @@ with no logic changes.
 
 ### Control flow
 
-The job lists every tag in `source_repo` and processes each one independently:
+The `enumerate` job lists every tag in `source_repo` and emits them as a matrix;
+the `scan` job then processes each tag independently and in parallel, and the
+`summary` job aggregates the results:
 
 ```mermaid
 flowchart TD
     A[schedule 07:00 UTC] --> C[caller scan-image.yml]
     B[workflow_dispatch + overrides] --> C
     C -->|uses: with inputs| D[_scan-image.yml]
-    D --> E[setup crane + oras + trivy]
-    E --> F[login ghcr.io]
-    F --> G[crane ls source_repo]
-    G --> H[for each tag]
-    H --> I[trivy image --format json --severity threshold..CRITICAL]
-    I --> J[blocking = findings at/above threshold]
-    J --> K[excepted_found = blocking ∩ cve_exceptions]
-    K --> L[remaining = blocking − cve_exceptions]
-    L --> M{remaining empty?}
-    M -->|no| N[BLOCKED: stays in quarantine, report CVEs]
-    M -->|yes| O[crane copy source:tag → dest:tag]
-    O --> P[oras attach scan-report referrer to dest:tag]
-    P --> Q{delete_source and token present?}
-    Q -->|yes| R[delete source:tag via Packages REST API]
-    Q -->|no| S[keep source:tag, warn]
-    N --> T[job summary]
-    R --> T
-    S --> T
+    D --> E[enumerate job: login + enumerate-tags]
+    E -->|tags-json matrix| F[scan job: one parallel job per tag]
+    F --> G[scan-image: trivy image]
+    G --> H[evaluate-findings: threshold + exceptions]
+    H --> I{decision}
+    I -->|blocked| J[stays in quarantine, report CVEs]
+    I -->|promote| K[mirror-image: copy source -> dest]
+    K --> L[attach-scan-report referrer]
+    L --> M{delete_source and token present?}
+    M -->|yes| N[delete-image source:tag]
+    M -->|no| O[keep source:tag, warn]
+    J --> P[upload result artifact]
+    N --> P
+    O --> P
+    P --> Q[summary job: aggregate into job summary]
 ```
 
 ### Gate semantics
@@ -193,8 +209,8 @@ source deletion, and reporting) with these differences:
   `oras cp -r` (index plus per-platform children) so the SBOMs, provenance, VEX,
   and signatures travel into the destination alongside the scan-report referrer.
 
-The scan-report referrer adds two annotations on top of the common set:
-`com.cssc.scan.method=sbom` and
+The scan-report referrer records the scan method in `com.cssc.scan.method`
+(`image` for `_scan-image.yml`, `sbom` here) and, for SBOM scans, adds
 `com.cssc.scan.sbom-predicate-type=<predicate type>`.
 
 The `scan-hardened-python.yml` caller wires this workflow for
@@ -243,6 +259,7 @@ referrer of the image.
 | `com.cssc.scan.exceptions` | `CVE-2024-1234\|CVE-2024-5678` | Pipe-separated CVEs found in the image at/above the threshold but cleared via the exception list (empty if none). |
 | `com.cssc.scan.scanner` | `trivy` | Scanner name. |
 | `com.cssc.scan.scanner-version` | `0.52.0` | Scanner version. |
+| `com.cssc.scan.method` | `image` | Scan method: `image` (filesystem) or `sbom` (SBOM attestation). |
 
 ## What functionality is implemented and what is not
 

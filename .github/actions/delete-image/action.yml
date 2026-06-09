@@ -1,0 +1,77 @@
+# Composite action: delete-image
+#
+# Delete one tag from a GHCR repository via the GitHub Packages REST API. The
+# built-in GITHUB_TOKEN can push and pull but cannot delete package versions, so
+# a PAT carrying `delete:packages` is required. Used to remove a tag from
+# quarantine after it has been promoted.
+#
+# Resolves the owner type (user vs organization) and the package-version id for
+# the tag, then issues the delete. Emits a status the caller can surface:
+# deleted | skipped | failed.
+#
+# Terminology: see docs/reference/workflow-actions.md.
+name: delete-image
+description: Delete one tag from a GHCR repository via the Packages REST API.
+
+inputs:
+  repository:
+    description: "GHCR repository the tag lives in, without tag (e.g. ghcr.io/owner/quarantine/python)."
+    required: true
+  tag:
+    description: "Tag to delete."
+    required: true
+  token:
+    description: "PAT with delete:packages. When empty, deletion is skipped with a warning."
+    required: false
+    default: ""
+
+outputs:
+  status:
+    description: "deleted | skipped | failed."
+    value: ${{ steps.delete.outputs.status }}
+
+runs:
+  using: composite
+  steps:
+    - name: Delete ${{ inputs.repository }}:${{ inputs.tag }}
+      id: delete
+      shell: bash
+      env:
+        REPOSITORY: "${{ inputs.repository }}"
+        TAG: "${{ inputs.tag }}"
+        DELETE_TOKEN: "${{ inputs.token }}"
+      run: |
+        set -euo pipefail
+        export LC_ALL=C
+
+        if [ -z "${DELETE_TOKEN}" ]; then
+          echo "::warning::No delete token provided; skipping deletion of ${REPOSITORY}:${TAG}."
+          echo "status=skipped" >> "${GITHUB_OUTPUT}"
+          exit 0
+        fi
+
+        # Work out the GHCR package coordinates: owner, encoded package path, and
+        # whether the owner is a user or an organization (different API base).
+        owner="$(printf '%s' "${REPOSITORY}" | awk -F/ '{print $2}')"
+        pkg_path="$(printf '%s' "${REPOSITORY}" | cut -d/ -f3-)"
+        pkg_enc="$(printf '%s' "${pkg_path}" | sed 's:/:%2F:g')"
+        owner_type="$(GH_TOKEN="${DELETE_TOKEN}" gh api "users/${owner}" --jq '.type' 2>/dev/null || true)"
+
+        if [ "${owner_type}" = "Organization" ]; then
+          base="orgs/${owner}/packages/container/${pkg_enc}"
+        else
+          base="user/packages/container/${pkg_enc}"
+        fi
+
+        vid="$(GH_TOKEN="${DELETE_TOKEN}" gh api --paginate "${base}/versions" \
+               --jq ".[] | select(.metadata.container.tags[]? == \"${TAG}\") | .id" 2>/dev/null \
+               | head -n1 || true)"
+        if [ -z "${vid}" ]; then
+          echo "::warning::Could not resolve a package version id for tag '${TAG}'; skipping deletion."
+          echo "status=failed" >> "${GITHUB_OUTPUT}"
+          exit 0
+        fi
+
+        GH_TOKEN="${DELETE_TOKEN}" gh api -X DELETE "${base}/versions/${vid}" >/dev/null
+        echo "Deleted ${REPOSITORY}:${TAG} (version ${vid})."
+        echo "status=deleted" >> "${GITHUB_OUTPUT}"

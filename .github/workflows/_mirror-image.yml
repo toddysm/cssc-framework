@@ -4,9 +4,13 @@
 # not meant to be triggered directly. It is called by per-image "mirror-*"
 # workflows via `uses:`.
 #
-# It performs an idempotent sync: on every run it compares the digest of the
-# source tag with the digest already present in the destination, and only copies
-# when they differ. crane copy preserves multi-architecture manifest lists.
+# It orchestrates the shared composite actions under .github/actions/ to perform
+# an idempotent sync: log in (registry-login), then compare the source and
+# destination digests and copy only when they differ (mirror-image). crane copy
+# preserves multi-architecture manifest lists; with copy_referrers it switches to
+# an oras-based copy that also carries OCI referrers.
+#
+# Terminology and the action catalogue: see docs/reference/workflow-actions.md.
 name: _reusable / mirror-image
 
 on:
@@ -58,6 +62,9 @@ jobs:
       contents: read
       packages: write
     steps:
+      - name: Check out actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
       - name: Set up crane
         uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
 
@@ -74,147 +81,58 @@ jobs:
         # dhi.io). Anonymous public sources leave source_login_registry empty
         # and skip this step entirely.
         if: ${{ inputs.source_login_registry != '' }}
-        env:
-          SOURCE_LOGIN_REGISTRY: "${{ inputs.source_login_registry }}"
-          SOURCE_REGISTRY_USERNAME: "${{ secrets.source_registry_username }}"
-          SOURCE_REGISTRY_PASSWORD: "${{ secrets.source_registry_password }}"
-          COPY_REFERRERS: "${{ inputs.copy_referrers }}"
-        run: |
-          set -euo pipefail
-          if [ -z "${SOURCE_REGISTRY_USERNAME}" ] || [ -z "${SOURCE_REGISTRY_PASSWORD}" ]; then
-            echo "::error::source_login_registry is set to '${SOURCE_LOGIN_REGISTRY}' but source_registry_username/source_registry_password were not provided."
-            exit 1
-          fi
-          echo "${SOURCE_REGISTRY_PASSWORD}" | crane auth login "${SOURCE_LOGIN_REGISTRY}" \
-            --username "${SOURCE_REGISTRY_USERNAME}" --password-stdin
-          if [ "${COPY_REFERRERS}" = "true" ]; then
-            echo "${SOURCE_REGISTRY_PASSWORD}" | oras login "${SOURCE_LOGIN_REGISTRY}" \
-              --username "${SOURCE_REGISTRY_USERNAME}" --password-stdin
-          fi
+        uses: ./.github/actions/registry-login
+        with:
+          registry: ${{ inputs.source_login_registry }}
+          username: ${{ secrets.source_registry_username }}
+          password: ${{ secrets.source_registry_password }}
+          with-oras: ${{ inputs.copy_referrers }}
 
       - name: Log in to GHCR
-        env:
-          COPY_REFERRERS: "${{ inputs.copy_referrers }}"
-        run: |
-          set -euo pipefail
-          echo "${{ github.token }}" | crane auth login ghcr.io \
-            --username "${{ github.actor }}" --password-stdin
-          if [ "${COPY_REFERRERS}" = "true" ]; then
-            echo "${{ github.token }}" | oras login ghcr.io \
-              --username "${{ github.actor }}" --password-stdin
-          fi
+        uses: ./.github/actions/registry-login
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+          with-oras: ${{ inputs.copy_referrers }}
 
-      - name: Compare digests and copy if changed
+      - name: Mirror image
+        id: mirror
+        uses: ./.github/actions/mirror-image
+        with:
+          source-image: ${{ inputs.source_image }}
+          source-tag: ${{ inputs.source_tag }}
+          dest-image: ${{ inputs.dest_image }}
+          dest-tag: ${{ inputs.dest_tag }}
+          force: ${{ inputs.force }}
+          copy-referrers: ${{ inputs.copy_referrers }}
+
+      - name: Write job summary
         env:
-          SOURCE_IMAGE: "${{ inputs.source_image }}"
-          DEST_IMAGE: "${{ inputs.dest_image }}"
           SOURCE_REF: "${{ inputs.source_image }}:${{ inputs.source_tag }}"
           DEST_REF: "${{ inputs.dest_image }}:${{ inputs.dest_tag }}"
-          FORCE: "${{ inputs.force }}"
-          COPY_REFERRERS: "${{ inputs.copy_referrers }}"
+          COPIED: "${{ steps.mirror.outputs.copied }}"
+          DIGEST: "${{ steps.mirror.outputs.digest }}"
+          PREVIOUS_DIGEST: "${{ steps.mirror.outputs.previous-digest }}"
+          REFERRERS_NOTE: "${{ steps.mirror.outputs.referrers-note }}"
         run: |
           set -euo pipefail
-
-          echo "Source:      ${SOURCE_REF}"
-          echo "Destination: ${DEST_REF}"
-
-          source_digest="$(crane digest "${SOURCE_REF}")"
-          echo "Source digest:      ${source_digest}"
-
-          if dest_digest="$(crane digest "${DEST_REF}" 2>/dev/null)"; then
-            echo "Destination digest: ${dest_digest}"
+          if [ "${COPIED}" = "true" ]; then
+            {
+              echo "### Mirror image: copied :inbox_tray:"
+              echo ""
+              echo "- **Source:** \`${SOURCE_REF}\`"
+              echo "- **Destination:** \`${DEST_REF}\`"
+              echo "- **Previous digest:** \`${PREVIOUS_DIGEST}\`"
+              echo "- **New digest:** \`${DIGEST}\`"
+              if [ -n "${REFERRERS_NOTE}" ]; then echo "- **Referrers:** ${REFERRERS_NOTE}"; fi
+            } >> "${GITHUB_STEP_SUMMARY}"
           else
-            dest_digest=""
-            echo "Destination digest: <not present>"
-          fi
-
-          # The digest short-circuit is intentionally skipped when copying
-          # referrers: OCI referrers (SBOM/VEX/provenance/signatures) can change
-          # independently of the subject manifest digest, so a matching image
-          # digest does not guarantee the referrers are in sync. In that mode we
-          # always re-run the referrer-aware copy (oras cp is itself idempotent).
-          if [ "${FORCE}" != "true" ] && [ "${COPY_REFERRERS}" != "true" ] && [ "${source_digest}" = "${dest_digest}" ]; then
-            echo "Image is already up to date; nothing to copy."
             {
               echo "### Mirror image: up to date :white_check_mark:"
               echo ""
               echo "- **Source:** \`${SOURCE_REF}\`"
               echo "- **Destination:** \`${DEST_REF}\`"
-              echo "- **Digest:** \`${source_digest}\`"
+              echo "- **Digest:** \`${DIGEST}\`"
             } >> "${GITHUB_STEP_SUMMARY}"
-            exit 0
           fi
-
-          if [ "${FORCE}" = "true" ]; then
-            echo "Force enabled; copying regardless of digest match."
-          elif [ "${COPY_REFERRERS}" = "true" ] && [ "${source_digest}" = "${dest_digest}" ]; then
-            echo "Image digest matches, but copy_referrers is enabled; re-syncing image and referrers."
-          else
-            echo "Digests differ; copying updated image."
-          fi
-
-          referrers_note=""
-          if [ "${COPY_REFERRERS}" = "true" ]; then
-            # Some registries (notably dhi.io) intermittently return transient
-            # "not found"/5xx errors while oras fans out the many blob requests
-            # an `oras cp -r` makes. Retry the copy a few times with backoff so a
-            # single flaky response does not fail the whole mirror.
-            oras_cp_retry() {
-              local attempt=1 max=4 delay=5
-              while true; do
-                if oras cp -r "$1" "$2"; then
-                  return 0
-                fi
-                if [ "${attempt}" -ge "${max}" ]; then
-                  echo "::error::oras cp -r '$1' -> '$2' failed after ${max} attempts."
-                  return 1
-                fi
-                echo "::warning::oras cp -r '$1' -> '$2' failed (attempt ${attempt}/${max}); retrying in ${delay}s."
-                sleep "${delay}"
-                attempt=$((attempt + 1))
-                delay=$((delay * 2))
-              done
-            }
-
-            # Copy the image graph and all referrers with oras. `oras cp -r`
-            # copies the index, its child manifests/blobs, and the referrers of
-            # the index itself.
-            echo "Copying image and referrers with oras."
-            oras_cp_retry "${SOURCE_REF}" "${DEST_REF}"
-
-            # Referrers attached to each per-platform child manifest (e.g. DHI
-            # cosign SBOM/provenance/VEX attestations whose subject is a platform
-            # digest) are not pulled by the index-level copy, so copy each child
-            # manifest and its referrers explicitly. Digests are preserved, so
-            # every referrer's subject link stays valid against the copied image.
-            child_digests="$(crane manifest "${SOURCE_REF}" | jq -r '.manifests[]?.digest // empty')"
-            child_count=0
-            for d in ${child_digests}; do
-              [ -n "${d}" ] || continue
-              echo "Copying child manifest ${d} and its referrers."
-              oras_cp_retry "${SOURCE_IMAGE}@${d}" "${DEST_IMAGE}@${d}"
-              child_count=$((child_count + 1))
-            done
-
-            # Best-effort count of referrers now on the destination image.
-            ref_count="$(oras discover --format json "${DEST_REF}" 2>/dev/null \
-              | jq '[.. | objects | select(has("artifactType")) | .artifactType] | length' 2>/dev/null || echo "")"
-            referrers_note="- **Referrers:** copied (child manifests processed: ${child_count}${ref_count:+, image-level referrers: ${ref_count}})"
-          else
-            crane copy "${SOURCE_REF}" "${DEST_REF}"
-          fi
-
-          new_digest="$(crane digest "${DEST_REF}")"
-          echo "Copied. New destination digest: ${new_digest}"
-          {
-            echo "### Mirror image: copied :inbox_tray:"
-            echo ""
-            echo "- **Source:** \`${SOURCE_REF}\`"
-            echo "- **Destination:** \`${DEST_REF}\`"
-            echo "- **Previous digest:** \`${dest_digest:-<none>}\`"
-            echo "- **New digest:** \`${new_digest}\`"
-            # Use an `if` rather than `[ ... ] && echo`: the latter returns a
-            # non-zero status when referrers_note is empty, and as the final
-            # command in this step that would fail the job under `set -e`.
-            if [ -n "${referrers_note}" ]; then echo "${referrers_note}"; fi
-          } >> "${GITHUB_STEP_SUMMARY}"

@@ -4,14 +4,22 @@
 # not meant to be triggered directly. It is called by per-image "scan-*"
 # workflows via `uses:`.
 #
-# For every tag in `source_repo` it:
-#   1. scans the image with Trivy,
-#   2. applies a severity threshold plus an optional CVE exception list,
-#   3. promotes passing images into `dest_repo` with `crane copy`,
-#   4. attaches an empty OCI scan-report referrer with `oras attach`, and
-#   5. deletes the promoted tag from quarantine (when a delete token is set).
+# It orchestrates the shared composite actions under .github/actions/ and fans
+# the work out across a job matrix: an "enumerate" job lists the quarantine tags
+# (enumerate-tags) and a "scan" job runs once per tag, in parallel, performing
+# scan-image -> evaluate-findings -> mirror-image (promote) -> attach-scan-report
+# -> delete-image. A final "summary" job aggregates the per-tag results.
 #
-# See docs/architecture/workflows/scan-and-promote-workflows.md.
+# For every tag in `source_repo` it:
+#   1. scans the image with Trivy (scan-image),
+#   2. applies a severity threshold plus an optional CVE exception list
+#      (evaluate-findings),
+#   3. promotes passing images into `dest_repo` (mirror-image, force),
+#   4. attaches an OCI scan-report referrer (attach-scan-report), and
+#   5. deletes the promoted tag from quarantine (delete-image).
+#
+# Terminology and the action catalogue: see docs/reference/workflow-actions.md.
+# See also docs/architecture/workflows/scan-and-promote-workflows.md.
 name: _reusable / scan-image
 
 on:
@@ -56,35 +64,98 @@ on:
         required: false
 
 jobs:
+  # --- Phase 1: list the quarantine tags and resolve the severity set. --------
+  # Distinguishes an empty / not-yet-created repository (expected, has_tags
+  # false) from a real failure such as an auth or transient registry error.
+  enumerate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      tags-json: ${{ steps.enumerate.outputs.tags-json }}
+      has-tags: ${{ steps.enumerate.outputs.has-tags }}
+      severities: ${{ steps.config.outputs.severities }}
+    steps:
+      - name: Check out actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up crane
+        uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
+
+      - name: Log in to GHCR
+        uses: ./.github/actions/registry-login
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Resolve severity set
+        id: config
+        env:
+          THRESHOLD: "${{ inputs.severity_threshold }}"
+        run: |
+          set -euo pipefail
+          case "${THRESHOLD}" in
+            LOW)      severities="LOW,MEDIUM,HIGH,CRITICAL" ;;
+            MEDIUM)   severities="MEDIUM,HIGH,CRITICAL" ;;
+            HIGH)     severities="HIGH,CRITICAL" ;;
+            CRITICAL) severities="CRITICAL" ;;
+            *) echo "::error::Invalid severity_threshold '${THRESHOLD}' (expected LOW|MEDIUM|HIGH|CRITICAL)"; exit 1 ;;
+          esac
+          echo "severities=${severities}" >> "${GITHUB_OUTPUT}"
+
+      - name: Enumerate quarantine tags
+        id: enumerate
+        uses: ./.github/actions/enumerate-tags
+        with:
+          repository: ${{ inputs.source_repo }}
+
+      - name: Note empty repository
+        if: steps.enumerate.outputs.has-tags != 'true'
+        env:
+          SOURCE_REPO: "${{ inputs.source_repo }}"
+          DEST_REPO: "${{ inputs.dest_repo }}"
+        run: |
+          set -euo pipefail
+          {
+            echo "### Scan & promote: \`${SOURCE_REPO}\` → \`${DEST_REPO}\`"
+            echo ""
+            echo "No tags found in the source repository; nothing to do."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  # --- Phase 2: scan, gate, promote, attest, and clean up — one job per tag. ---
   scan:
+    needs: enumerate
+    if: needs.enumerate.outputs.has-tags == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-    # Shared across every step in this job. Step-local state (the work dir, the
-    # resolved severity set, GHCR package coordinates) is computed in "Prepare"
-    # and exported via $GITHUB_ENV so later standalone steps can read it.
+    strategy:
+      fail-fast: false
+      matrix:
+        tag: ${{ fromJSON(needs.enumerate.outputs.tags-json) }}
     env:
       SOURCE_REPO: "${{ inputs.source_repo }}"
       DEST_REPO: "${{ inputs.dest_repo }}"
       THRESHOLD: "${{ inputs.severity_threshold }}"
-      EXCEPTIONS: "${{ inputs.cve_exceptions }}"
-      DELETE_SOURCE: "${{ inputs.delete_source }}"
+      SEVERITIES: "${{ needs.enumerate.outputs.severities }}"
+      TAG: "${{ matrix.tag }}"
       DRY_RUN: "${{ inputs.dry_run }}"
-      TRIVY_VERSION: "${{ inputs.trivy_version }}"
       # Authenticate Trivy's remote image pulls to GHCR.
       TRIVY_USERNAME: "${{ github.actor }}"
       TRIVY_PASSWORD: "${{ github.token }}"
     steps:
+      - name: Check out actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
       - name: Set up crane
         uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
 
       - name: Set up oras
         uses: oras-project/setup-oras@38de303aac69abb66f3e6255b7198bff35f323e3 # v2.0.0
         with:
-          # ORAS CLI version (independent of the setup-oras action version above).
-          # Must be a version known to the pinned setup-oras action; v2.0.0
-          # supports ORAS CLI up to 1.3.1.
           version: 1.3.1
 
       - name: Set up Trivy
@@ -93,162 +164,153 @@ jobs:
           version: ${{ inputs.trivy_version }}
 
       - name: Log in to GHCR
-        run: |
-          set -euo pipefail
-          echo "${{ github.token }}" | crane auth login ghcr.io \
-            --username "${{ github.actor }}" --password-stdin
-          echo "${{ github.token }}" | oras login ghcr.io \
-            --username "${{ github.actor }}" --password-stdin
+        uses: ./.github/actions/registry-login
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+          with-oras: "true"
 
-      # --- Phase 1: resolve config, exceptions, and deletion coordinates. -----
-      # Exports the work dir, severity set, resolved Trivy version, and GHCR
-      # package coordinates via $GITHUB_ENV so the standalone steps below can
-      # consume them without recomputing.
-      - name: Prepare scan environment
+      # Normalise the exception list and resolve the actual Trivy version for the
+      # referrer annotation; both feed the per-tag actions below.
+      - name: Prepare gate inputs
+        id: prepare
         env:
-          DELETE_TOKEN: "${{ secrets.ghcr_delete_token }}"
+          EXCEPTIONS: "${{ inputs.cve_exceptions }}"
+          TRIVY_VERSION: "${{ inputs.trivy_version }}"
         run: |
           set -euo pipefail
           export LC_ALL=C
 
           work="${RUNNER_TEMP}/cssc-scan"
-          mkdir -p "${work}/state"
+          mkdir -p "${work}"
           echo "WORK=${work}" >> "${GITHUB_ENV}"
 
-          # --- Resolve the blocking severity set from the threshold floor. ------
-          case "${THRESHOLD}" in
-            LOW)      severities="LOW,MEDIUM,HIGH,CRITICAL" ;;
-            MEDIUM)   severities="MEDIUM,HIGH,CRITICAL" ;;
-            HIGH)     severities="HIGH,CRITICAL" ;;
-            CRITICAL) severities="CRITICAL" ;;
-            *) echo "::error::Invalid severity_threshold '${THRESHOLD}' (expected LOW|MEDIUM|HIGH|CRITICAL)"; exit 1 ;;
-          esac
-          echo "SEVERITIES=${severities}" >> "${GITHUB_ENV}"
-
-          # --- Normalise the exception list into a sorted, deduped file. --------
           exceptions_file="${work}/exceptions.txt"
           : > "${exceptions_file}"
           if [ -n "${EXCEPTIONS}" ]; then
             printf '%s\n' "${EXCEPTIONS}" | tr '|' '\n' | sed '/^[[:space:]]*$/d' \
               | tr -d '[:space:]' | sort -u > "${exceptions_file}"
           fi
+          echo "EXCEPTIONS_FILE=${exceptions_file}" >> "${GITHUB_ENV}"
+          echo "exceptions-file=${exceptions_file}" >> "${GITHUB_OUTPUT}"
 
-          # --- Resolve the actual Trivy version for the referrer annotation. ----
           trivy_resolved="$(trivy version -f json 2>/dev/null | jq -r '.Version // empty' || true)"
           [ -n "${trivy_resolved}" ] || trivy_resolved="${TRIVY_VERSION#v}"
           echo "TRIVY_RESOLVED=${trivy_resolved}" >> "${GITHUB_ENV}"
+          echo "trivy-resolved=${trivy_resolved}" >> "${GITHUB_OUTPUT}"
 
-          # --- Work out the GHCR package coordinates for deletion. --------------
-          owner="$(printf '%s' "${SOURCE_REPO}" | awk -F/ '{print $2}')"
-          pkg_path="$(printf '%s' "${SOURCE_REPO}" | cut -d/ -f3-)"
-          pkg_enc="$(printf '%s' "${pkg_path}" | sed 's:/:%2F:g')"
-          owner_type=""
-          if [ "${DELETE_SOURCE}" = "true" ] && [ -n "${DELETE_TOKEN}" ]; then
-            owner_type="$(GH_TOKEN="${DELETE_TOKEN}" gh api "users/${owner}" --jq '.type' 2>/dev/null || true)"
-          fi
-          {
-            echo "PKG_OWNER=${owner}"
-            echo "PKG_ENC=${pkg_enc}"
-            echo "OWNER_TYPE=${owner_type}"
-          } >> "${GITHUB_ENV}"
+      - name: Scan image
+        id: scan
+        uses: ./.github/actions/scan-image
+        with:
+          image-ref: ${{ inputs.source_repo }}:${{ matrix.tag }}
+          severities: ${{ needs.enumerate.outputs.severities }}
+          output-dir: ${{ runner.temp }}/cssc-scan/state
 
-      # --- Phase 2: list the quarantine tags. ---------------------------------
-      # Distinguish an empty / not-yet-created repository (expected, has_tags
-      # false) from a real failure such as an auth or transient registry error
-      # (must fail loudly rather than silently scanning nothing).
-      - name: Enumerate quarantine tags
-        id: enumerate
+      - name: Evaluate findings
+        id: evaluate
+        uses: ./.github/actions/evaluate-findings
+        with:
+          blocking-ids-file: ${{ steps.scan.outputs.blocking-ids-path }}
+          exceptions-file: ${{ steps.prepare.outputs.exceptions-file }}
+          dry-run: ${{ inputs.dry_run }}
+          output-dir: ${{ runner.temp }}/cssc-scan/state
+
+      - name: Promote passing image
+        id: promote
+        if: steps.evaluate.outputs.decision == 'promote'
+        uses: ./.github/actions/mirror-image
+        with:
+          source-image: ${{ inputs.source_repo }}
+          source-tag: ${{ matrix.tag }}
+          dest-image: ${{ inputs.dest_repo }}
+          dest-tag: ${{ matrix.tag }}
+          force: "true"
+
+      - name: Attach scan-report attestation
+        if: steps.evaluate.outputs.decision == 'promote'
+        uses: ./.github/actions/attach-scan-report
+        with:
+          image-ref: ${{ inputs.dest_repo }}:${{ matrix.tag }}
+          source-repo: ${{ inputs.source_repo }}
+          tag: ${{ matrix.tag }}
+          threshold: ${{ inputs.severity_threshold }}
+          excepted-str: ${{ steps.evaluate.outputs.excepted-str }}
+          scanner-version: ${{ steps.prepare.outputs.trivy-resolved }}
+          method: image
+
+      - name: Delete promoted tag from quarantine
+        id: delete
+        if: steps.evaluate.outputs.decision == 'promote' && inputs.delete_source
+        uses: ./.github/actions/delete-image
+        with:
+          repository: ${{ inputs.source_repo }}
+          tag: ${{ matrix.tag }}
+          token: ${{ secrets.ghcr_delete_token }}
+
+      # Render this tag's run log + result fragment and upload it for the summary
+      # job to aggregate. Runs even if an earlier step failed so partial results
+      # are still reported.
+      - name: Record result
+        if: always()
+        env:
+          DECISION: "${{ steps.evaluate.outputs.decision }}"
+          BLOCKING_COUNT: "${{ steps.evaluate.outputs.blocking-count }}"
+          REMAINING_COUNT: "${{ steps.evaluate.outputs.remaining-count }}"
+          EXCEPTED_COUNT: "${{ steps.evaluate.outputs.excepted-count }}"
+          REMAINING_MD: "${{ steps.evaluate.outputs.remaining-md }}"
+          EXCEPTED_MD: "${{ steps.evaluate.outputs.excepted-md }}"
+          REPORT_PATH: "${{ steps.scan.outputs.report-path }}"
+          DEL_STATUS: "${{ steps.delete.outputs.status }}"
         run: |
           set -euo pipefail
           export LC_ALL=C
 
-          ls_err="${WORK}/crane-ls.err"
-          if tags="$(crane ls "${SOURCE_REPO}" 2>"${ls_err}")"; then
-            :
-          else
-            if grep -qiE 'NAME_UNKNOWN|not found|MANIFEST_UNKNOWN|UNAUTHORIZED.*not found|repository name not known' "${ls_err}"; then
-              echo "Source repository ${SOURCE_REPO} has no tags yet; nothing to scan."
-              tags=""
-            else
-              echo "::error::Failed to list tags for ${SOURCE_REPO}:"
-              cat "${ls_err}" >&2
-              exit 1
-            fi
-          fi
+          safe="${TAG//[^A-Za-z0-9_.-]/_}"
+          out="${RUNNER_TEMP}/result/${safe}"
+          mkdir -p "${out}"
 
-          if [ -z "${tags}" ]; then
-            echo "No tags found in ${SOURCE_REPO}; nothing to scan."
-            {
-              echo "### Scan & promote: \`${SOURCE_REPO}\` → \`${DEST_REPO}\`"
-              echo ""
-              echo "No tags found in the source repository; nothing to do."
-            } >> "${GITHUB_STEP_SUMMARY}"
-            echo "has_tags=false" >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
+          src="${SOURCE_REPO}:${TAG}"
+          dest="${DEST_REPO}:${TAG}"
+          decision="${DECISION:-unknown}"
+          blocking_count="${BLOCKING_COUNT:-0}"
+          remaining_count="${REMAINING_COUNT:-0}"
+          excepted_count="${EXCEPTED_COUNT:-0}"
+          remaining_md="${REMAINING_MD:-}"
+          excepted_md="${EXCEPTED_MD:-}"
 
-          printf '%s\n' "${tags}" > "${WORK}/tags.txt"
-          echo "has_tags=true" >> "${GITHUB_OUTPUT}"
+          # Map delete-image's raw status to user-facing wording for the report.
+          case "${DEL_STATUS:-}" in
+            deleted) del_msg="source deleted" ;;
+            skipped) del_msg="source kept (deletion skipped)" ;;
+            failed)  del_msg="source kept (delete failed)" ;;
+            *)       del_msg="source kept" ;;
+          esac
 
-      # --- Phase 3: scan each tag with Trivy. ---------------------------------
-      # Per-tag state lives under ${WORK}/state/<safe>/ so later steps can pick
-      # up where this one left off.
-      - name: Scan images with Trivy
-        if: steps.enumerate.outputs.has_tags == 'true'
-        run: |
-          set -euo pipefail
-          export LC_ALL=C
+          case "${decision}" in
+            blocked)
+              result_class="blocked"; result="blocked"; icon=":no_entry:"
+              promoted_yesno="no (left in quarantine)" ;;
+            dryrun)
+              result_class="promoted"; result="would promote"; icon=":mag:"
+              promoted_yesno="no (dry run)" ;;
+            promote)
+              result_class="promoted"
+              result="promoted (${del_msg})"
+              icon=":white_check_mark:"
+              promoted_yesno="yes → ${dest}" ;;
+            *)
+              result_class="unknown"; result="unknown (scan failed?)"; icon=":grey_question:"
+              promoted_yesno="—" ;;
+          esac
+          printf '%s' "${result_class}" > "${out}/result_class"
+          printf '%s' "${TRIVY_RESOLVED:-}" > "${out}/scanner"
 
-          while IFS= read -r tag; do
-            [ -n "${tag}" ] || continue
-            src="${SOURCE_REPO}:${tag}"
-            safe="${tag//[^A-Za-z0-9_.-]/_}"
-            state="${WORK}/state/${safe}"
-            mkdir -p "${state}"
-            printf '%s' "${tag}" > "${state}/tag"
-
-            echo "::group::Scanning ${src}"
-            trivy image --quiet --scanners vuln --severity "${SEVERITIES}" \
-              --format json --output "${state}/report.json" "${src}"
-            echo "::endgroup::"
-          done < "${WORK}/tags.txt"
-
-      # --- Phase 4: apply the threshold + exception gate. ---------------------
-      # Records per-tag counts and a decision (blocked | dryrun | promote) that
-      # the promote/attest/cleanup steps act on. Does not itself fail the job on
-      # a blocked image — blocked tags are simply left in quarantine.
-      - name: Gate on scan findings
-        if: steps.enumerate.outputs.has_tags == 'true'
-        run: |
-          set -euo pipefail
-          export LC_ALL=C
-
-          exceptions_file="${WORK}/exceptions.txt"
-          for state in "${WORK}"/state/*/; do
-            [ -d "${state}" ] || continue
-            tag="$(cat "${state}/tag")"
-            report="${state}/report.json"
-
-            jq -r '[.Results[]?.Vulnerabilities[]?.VulnerabilityID] | unique | .[]' \
-              "${report}" | sort -u > "${state}/blocking.txt"
-            comm -23 "${state}/blocking.txt" "${exceptions_file}" > "${state}/remaining.txt"
-            comm -12 "${state}/blocking.txt" "${exceptions_file}" > "${state}/excepted.txt"
-
-            blocking_count="$(wc -l < "${state}/blocking.txt" | tr -d ' ')"
-            remaining_count="$(wc -l < "${state}/remaining.txt" | tr -d ' ')"
-            excepted_count="$(wc -l < "${state}/excepted.txt" | tr -d ' ')"
-            printf '%s' "${blocking_count}" > "${state}/blocking_count"
-            printf '%s' "${remaining_count}" > "${state}/remaining_count"
-            printf '%s' "${excepted_count}" > "${state}/excepted_count"
-
-            # Pipe-separated form is used only for the oras annotation.
-            paste -sd '|' "${state}/excepted.txt" > "${state}/excepted_str"
-            # Comma-separated, Markdown-safe display forms for the summary tables
-            # (CVE IDs contain no '|', so a comma join keeps table columns intact).
-            paste -sd ',' "${state}/remaining.txt" | sed 's/,/, /g' > "${state}/remaining_md"
-            paste -sd ',' "${state}/excepted.txt" | sed 's/,/, /g' > "${state}/excepted_md"
-
-            # Per-CVE detail: id, severity, package, installed, fixed (deduped, ranked).
+          # Per-CVE detail (id, severity, package, installed, fixed) from the report.
+          vulns_tsv="${out}/vulns.tsv"
+          : > "${vulns_tsv}"
+          if [ -n "${REPORT_PATH}" ] && [ -s "${REPORT_PATH}" ]; then
             jq -r '
               [ .Results[]? | (.Vulnerabilities[]? | {
                   id: .VulnerabilityID,
@@ -261,216 +323,120 @@ jobs:
               | map(. + {rank: ({"CRITICAL":0,"HIGH":1,"MEDIUM":2,"LOW":3}[.sev] // 9)})
               | sort_by(.rank, .id)
               | .[] | [.id, .sev, .pkg, .installed, .fixed] | @tsv
-            ' "${report}" > "${state}/vulns.tsv"
+            ' "${REPORT_PATH}" > "${vulns_tsv}" || true
+          fi
 
-            if [ "${remaining_count}" -gt 0 ]; then
-              echo "blocked" > "${state}/decision"
-            elif [ "${DRY_RUN}" = "true" ]; then
-              echo "dryrun" > "${state}/decision"
+          # --- Human-readable report to the run log. ---------------------------
+          {
+            echo "================================================================"
+            echo "Image:            ${src}"
+            echo "Result:           ${result}"
+            echo "Promoted:         ${promoted_yesno}"
+            echo "Threshold:        ${THRESHOLD} (severities: ${SEVERITIES})"
+            echo "CVEs ≥ ${THRESHOLD}:   ${blocking_count} (blocking: ${remaining_count}, excepted: ${excepted_count})"
+            if [ -s "${vulns_tsv}" ]; then
+              printf '  %-22s %-9s %-28s %-18s %s\n' "CVE" "SEVERITY" "PACKAGE" "INSTALLED" "STATUS"
+              while IFS="$(printf '\t')" read -r id sev pkg installed fixed; do
+                if [ -s "${EXCEPTIONS_FILE}" ] && grep -qxF "${id}" "${EXCEPTIONS_FILE}"; then st="EXCEPTED"; else st="BLOCKING"; fi
+                printf '  %-22s %-9s %-28s %-18s %s\n' "${id}" "${sev}" "${pkg}" "${installed:-—}" "${st}"
+              done < "${vulns_tsv}"
             else
-              echo "promote" > "${state}/decision"
+              echo "  (no vulnerabilities at or above the threshold)"
             fi
-            echo "Gate ${SOURCE_REPO}:${tag} -> $(cat "${state}/decision") (blocking ${remaining_count}, excepted ${excepted_count})"
-          done
-
-      # --- Phase 5: promote passing images. -----------------------------------
-      # Skipped entirely on a dry run. Only tags whose gate decision is
-      # "promote" are copied; a "promoted" marker drives the later steps.
-      - name: Promote passing images
-        if: steps.enumerate.outputs.has_tags == 'true' && !inputs.dry_run
-        run: |
-          set -euo pipefail
-          export LC_ALL=C
-
-          for state in "${WORK}"/state/*/; do
-            [ -d "${state}" ] || continue
-            [ "$(cat "${state}/decision")" = "promote" ] || continue
-            tag="$(cat "${state}/tag")"
-            src="${SOURCE_REPO}:${tag}"
-            dest="${DEST_REPO}:${tag}"
-            echo "Promoting ${src} -> ${dest}"
-            crane copy "${src}" "${dest}"
-            printf '%s' "${dest}" > "${state}/promoted"
-          done
-
-      # --- Phase 6: attach the scan-report referrer to promoted images. -------
-      - name: Attach scan-report attestation
-        if: steps.enumerate.outputs.has_tags == 'true' && !inputs.dry_run
-        run: |
-          set -euo pipefail
-          export LC_ALL=C
-
-          for state in "${WORK}"/state/*/; do
-            [ -d "${state}" ] || continue
-            [ -f "${state}/promoted" ] || continue
-            tag="$(cat "${state}/tag")"
-            dest="$(cat "${state}/promoted")"
-            excepted_str="$(cat "${state}/excepted_str")"
-            created="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            echo "Attaching scan report to ${dest}"
-            oras attach --artifact-type application/vnd.cssc.scan-report.v1+json \
-              --annotation "org.opencontainers.image.created=${created}" \
-              --annotation "com.cssc.scan.source=${SOURCE_REPO}" \
-              --annotation "com.cssc.scan.tag=${tag}" \
-              --annotation "com.cssc.scan.threshold=${THRESHOLD}" \
-              --annotation "com.cssc.scan.exceptions=${excepted_str}" \
-              --annotation "com.cssc.scan.scanner=trivy" \
-              --annotation "com.cssc.scan.scanner-version=${TRIVY_RESOLVED}" \
-              "${dest}"
-          done
-
-      # --- Phase 7: delete promoted tags from quarantine. ---------------------
-      - name: Delete promoted tags from quarantine
-        if: steps.enumerate.outputs.has_tags == 'true' && !inputs.dry_run && inputs.delete_source
-        env:
-          DELETE_TOKEN: "${{ secrets.ghcr_delete_token }}"
-        run: |
-          set -euo pipefail
-          export LC_ALL=C
-
-          delete_quarantine_tag() {
-            local tag="$1" base vid
-            if [ "${OWNER_TYPE}" = "Organization" ]; then
-              base="orgs/${PKG_OWNER}/packages/container/${PKG_ENC}"
-            else
-              base="user/packages/container/${PKG_ENC}"
-            fi
-            vid="$(GH_TOKEN="${DELETE_TOKEN}" gh api --paginate "${base}/versions" \
-                   --jq ".[] | select(.metadata.container.tags[]? == \"${tag}\") | .id" 2>/dev/null \
-                   | head -n1 || true)"
-            if [ -z "${vid}" ]; then
-              echo "::warning::Could not resolve a package version id for tag '${tag}'; skipping deletion."
-              return 1
-            fi
-            GH_TOKEN="${DELETE_TOKEN}" gh api -X DELETE "${base}/versions/${vid}" >/dev/null
           }
 
-          for state in "${WORK}"/state/*/; do
-            [ -d "${state}" ] || continue
-            [ -f "${state}/promoted" ] || continue
-            tag="$(cat "${state}/tag")"
-            if [ -z "${DELETE_TOKEN}" ]; then
-              echo "::warning::delete_source=true but no ghcr_delete_token provided; skipping deletion of ${SOURCE_REPO}:${tag}."
-              printf '%s' "skipped (no token)" > "${state}/del_status"
-            elif delete_quarantine_tag "${tag}"; then
-              printf '%s' "deleted" > "${state}/del_status"
-            else
-              printf '%s' "delete failed" > "${state}/del_status"
-            fi
-          done
+          # --- Summary table row. ----------------------------------------------
+          printf '| `%s` | %s %s | %s | %s | %s |\n' \
+            "${TAG}" "${icon}" "${result}" "${blocking_count}" \
+            "${remaining_md:-—}" "${excepted_md:-—}" > "${out}/row.md"
 
-      # --- Phase 8: render the run log and job summary. -----------------------
-      # Runs even if an earlier phase failed (as long as tags were enumerated)
-      # so partial results are still reported.
+          # --- Collapsible per-image detail for the job summary. ----------------
+          {
+            echo ""
+            echo "<details><summary><code>${TAG}</code> — ${icon} ${result} · ${blocking_count} CVE(s) ≥ ${THRESHOLD}</summary>"
+            echo ""
+            echo "- **Source:** \`${src}\`"
+            echo "- **Destination:** \`${dest}\`"
+            echo "- **Promoted:** ${promoted_yesno}"
+            echo "- **Blocking (not excepted):** ${remaining_count} · **Excepted:** ${excepted_count}"
+            echo ""
+            echo "| CVE | Severity | Package | Installed | Fixed | Status |"
+            echo "| --- | --- | --- | --- | --- | --- |"
+            if [ -s "${vulns_tsv}" ]; then
+              while IFS="$(printf '\t')" read -r id sev pkg installed fixed; do
+                if [ -s "${EXCEPTIONS_FILE}" ] && grep -qxF "${id}" "${EXCEPTIONS_FILE}"; then
+                  st=":large_yellow_circle: excepted"
+                else
+                  st=":red_circle: blocking"
+                fi
+                printf '| %s | %s | `%s` | %s | %s | %s |\n' \
+                  "${id}" "${sev}" "${pkg}" "${installed:-—}" "${fixed:-—}" "${st}"
+              done < "${vulns_tsv}"
+            else
+              echo "| — | — | — | — | — | none ≥ ${THRESHOLD} |"
+            fi
+            echo ""
+            echo "</details>"
+          } > "${out}/detail.md"
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: scan-result-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/result
+          retention-days: 1
+
+  # --- Phase 3: aggregate the per-tag results into one job summary. -----------
+  summary:
+    needs: [enumerate, scan]
+    if: always() && needs.enumerate.outputs.has-tags == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download results
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: scan-result-*
+          path: ${{ runner.temp }}/results
+          merge-multiple: true
+
       - name: Write job summary
-        if: always() && steps.enumerate.outputs.has_tags == 'true'
+        env:
+          SOURCE_REPO: "${{ inputs.source_repo }}"
+          DEST_REPO: "${{ inputs.dest_repo }}"
+          THRESHOLD: "${{ inputs.severity_threshold }}"
+          SEVERITIES: "${{ needs.enumerate.outputs.severities }}"
+          DRY_RUN: "${{ inputs.dry_run }}"
         run: |
           set -euo pipefail
           export LC_ALL=C
 
-          exceptions_file="${WORK}/exceptions.txt"
+          results="${RUNNER_TEMP}/results"
           promoted=0
           blocked=0
-          rows="${WORK}/rows.md"
-          details_md="${WORK}/details.md"
+          rows="${RUNNER_TEMP}/rows.md"
+          details_md="${RUNNER_TEMP}/details.md"
           : > "${rows}"
           : > "${details_md}"
 
-          for state in "${WORK}"/state/*/; do
-            [ -d "${state}" ] || continue
-            tag="$(cat "${state}/tag")"
-            src="${SOURCE_REPO}:${tag}"
-            dest="${DEST_REPO}:${tag}"
-            decision="$(cat "${state}/decision" 2>/dev/null || echo "")"
-            blocking_count="$(cat "${state}/blocking_count" 2>/dev/null || echo 0)"
-            remaining_count="$(cat "${state}/remaining_count" 2>/dev/null || echo 0)"
-            excepted_count="$(cat "${state}/excepted_count" 2>/dev/null || echo 0)"
-            remaining_md="$(cat "${state}/remaining_md" 2>/dev/null || true)"
-            excepted_md="$(cat "${state}/excepted_md" 2>/dev/null || true)"
-            vulns_tsv="${state}/vulns.tsv"
-
-            case "${decision}" in
-              blocked)
-                blocked=$((blocked + 1))
-                result="blocked"
-                icon=":no_entry:"
-                promoted_yesno="no (left in quarantine)" ;;
-              dryrun)
-                promoted=$((promoted + 1))
-                result="would promote"
-                icon=":mag:"
-                promoted_yesno="no (dry run)" ;;
-              promote)
-                promoted=$((promoted + 1))
-                del_status="$(cat "${state}/del_status" 2>/dev/null || echo "kept")"
-                result="promoted (source ${del_status})"
-                icon=":white_check_mark:"
-                promoted_yesno="yes → ${dest}" ;;
-              *)
-                result="unknown"
-                icon=":grey_question:"
-                promoted_yesno="—" ;;
+          scanner=""
+          for d in "${results}"/*/; do
+            [ -d "${d}" ] || continue
+            [ -f "${d}/row.md" ] || continue
+            cat "${d}/row.md" >> "${rows}"
+            [ -f "${d}/detail.md" ] && cat "${d}/detail.md" >> "${details_md}"
+            [ -z "${scanner}" ] && [ -f "${d}/scanner" ] && scanner="$(cat "${d}/scanner")"
+            case "$(cat "${d}/result_class" 2>/dev/null || echo unknown)" in
+              promoted) promoted=$((promoted + 1)) ;;
+              blocked)  blocked=$((blocked + 1)) ;;
             esac
-
-            # --- Human-readable report to the run log. ---------------------------
-            {
-              echo "================================================================"
-              echo "Image:            ${src}"
-              echo "Result:           ${result}"
-              echo "Promoted:         ${promoted_yesno}"
-              echo "Threshold:        ${THRESHOLD} (severities: ${SEVERITIES})"
-              echo "CVEs ≥ ${THRESHOLD}:   ${blocking_count} (blocking: ${remaining_count}, excepted: ${excepted_count})"
-              if [ -s "${vulns_tsv}" ]; then
-                printf '  %-22s %-9s %-28s %-18s %s\n' "CVE" "SEVERITY" "PACKAGE" "INSTALLED" "STATUS"
-                while IFS="$(printf '\t')" read -r id sev pkg installed fixed; do
-                  if grep -qxF "${id}" "${exceptions_file}"; then st="EXCEPTED"; else st="BLOCKING"; fi
-                  printf '  %-22s %-9s %-28s %-18s %s\n' "${id}" "${sev}" "${pkg}" "${installed:-—}" "${st}"
-                done < "${vulns_tsv}"
-              else
-                echo "  (no vulnerabilities at or above the threshold)"
-              fi
-            }
-
-            # --- Summary table row. ----------------------------------------------
-            printf '| `%s` | %s %s | %s | %s | %s |\n' \
-              "${tag}" "${icon}" "${result}" "${blocking_count}" \
-              "${remaining_md:-—}" "${excepted_md:-—}" >> "${rows}"
-
-            # --- Collapsible per-image detail for the job summary. ----------------
-            {
-              echo ""
-              echo "<details><summary><code>${tag}</code> — ${icon} ${result} · ${blocking_count} CVE(s) ≥ ${THRESHOLD}</summary>"
-              echo ""
-              echo "- **Source:** \`${src}\`"
-              echo "- **Destination:** \`${dest}\`"
-              echo "- **Promoted:** ${promoted_yesno}"
-              echo "- **Blocking (not excepted):** ${remaining_count} · **Excepted:** ${excepted_count}"
-              echo ""
-              echo "| CVE | Severity | Package | Installed | Fixed | Status |"
-              echo "| --- | --- | --- | --- | --- | --- |"
-              if [ -s "${vulns_tsv}" ]; then
-                while IFS="$(printf '\t')" read -r id sev pkg installed fixed; do
-                  if grep -qxF "${id}" "${exceptions_file}"; then
-                    st=":large_yellow_circle: excepted"
-                  else
-                    st=":red_circle: blocking"
-                  fi
-                  printf '| %s | %s | `%s` | %s | %s | %s |\n' \
-                    "${id}" "${sev}" "${pkg}" "${installed:-—}" "${fixed:-—}" "${st}"
-                done < "${vulns_tsv}"
-              else
-                echo "| — | — | — | — | — | none ≥ ${THRESHOLD} |"
-              fi
-              echo ""
-              echo "</details>"
-            } >> "${details_md}"
           done
 
           {
             echo "### Scan & promote: \`${SOURCE_REPO}\` → \`${DEST_REPO}\`"
             echo ""
             echo "- **Threshold:** \`${THRESHOLD}\` (severities scanned: \`${SEVERITIES}\`)"
-            echo "- **Scanner:** trivy \`${TRIVY_RESOLVED}\`"
+            if [ -n "${scanner}" ]; then echo "- **Scanner:** trivy \`${scanner}\`"; fi
             echo "- **Dry run:** \`${DRY_RUN}\`"
             echo "- **Promoted:** ${promoted} · **Blocked:** ${blocked}"
             echo ""

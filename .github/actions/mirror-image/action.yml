@@ -1,0 +1,169 @@
+# Composite action: mirror-image
+#
+# Copy a single container image from a source ref to a destination ref. The copy
+# is idempotent: unless `force` is set, the source and destination digests are
+# compared and the copy is skipped when they already match. `crane copy`
+# preserves multi-architecture manifest lists.
+#
+# When `copy-referrers` is true the copy is performed with `oras cp -r` instead,
+# carrying the image graph and all OCI referrers (SBOMs, provenance, VEX,
+# signatures) for the index and each per-platform child manifest, with retry to
+# absorb transient registry errors. In that mode the digest short-circuit is
+# always skipped, because referrers can change independently of the subject
+# digest.
+#
+# This action backs both the upstream -> quarantine mirror and the
+# quarantine -> golden/base promotion (promotion is a mirror with force=true).
+#
+# Terminology: see docs/reference/workflow-actions.md.
+name: mirror-image
+description: Idempotently copy one image (optionally with its referrers) between registries.
+
+inputs:
+  source-image:
+    description: "Fully qualified source image without tag (e.g. docker.io/library/python)."
+    required: true
+  source-tag:
+    description: "Source image tag (e.g. 3.14-slim)."
+    required: true
+  dest-image:
+    description: "Fully qualified destination image without tag (e.g. ghcr.io/owner/quarantine/python)."
+    required: true
+  dest-tag:
+    description: "Destination image tag."
+    required: true
+  force:
+    description: "Copy even when the source and destination digests match."
+    required: false
+    default: "false"
+  copy-referrers:
+    description: "Copy OCI referrers (SBOMs/provenance/VEX/signatures) with oras instead of a plain crane copy."
+    required: false
+    default: "false"
+
+outputs:
+  copied:
+    description: "'true' when a copy was performed, 'false' when the destination was already up to date."
+    value: ${{ steps.mirror.outputs.copied }}
+  digest:
+    description: "Digest of the image at the destination after the action ran."
+    value: ${{ steps.mirror.outputs.digest }}
+  previous-digest:
+    description: "Digest previously at the destination ('<none>' when it did not exist)."
+    value: ${{ steps.mirror.outputs.previous-digest }}
+  referrers-note:
+    description: "Human-readable note about copied referrers (empty when copy-referrers is false)."
+    value: ${{ steps.mirror.outputs.referrers-note }}
+
+runs:
+  using: composite
+  steps:
+    - name: Mirror ${{ inputs.source-image }}:${{ inputs.source-tag }} -> ${{ inputs.dest-image }}:${{ inputs.dest-tag }}
+      id: mirror
+      shell: bash
+      env:
+        SOURCE_IMAGE: "${{ inputs.source-image }}"
+        DEST_IMAGE: "${{ inputs.dest-image }}"
+        SOURCE_REF: "${{ inputs.source-image }}:${{ inputs.source-tag }}"
+        DEST_REF: "${{ inputs.dest-image }}:${{ inputs.dest-tag }}"
+        FORCE: "${{ inputs.force }}"
+        COPY_REFERRERS: "${{ inputs.copy-referrers }}"
+      run: |
+        set -euo pipefail
+
+        echo "Source:      ${SOURCE_REF}"
+        echo "Destination: ${DEST_REF}"
+
+        source_digest="$(crane digest "${SOURCE_REF}")"
+        echo "Source digest:      ${source_digest}"
+
+        if dest_digest="$(crane digest "${DEST_REF}" 2>/dev/null)"; then
+          echo "Destination digest: ${dest_digest}"
+        else
+          dest_digest=""
+          echo "Destination digest: <not present>"
+        fi
+
+        # The digest short-circuit is intentionally skipped when copying
+        # referrers: OCI referrers (SBOM/VEX/provenance/signatures) can change
+        # independently of the subject manifest digest, so a matching image
+        # digest does not guarantee the referrers are in sync. In that mode we
+        # always re-run the referrer-aware copy (oras cp is itself idempotent).
+        if [ "${FORCE}" != "true" ] && [ "${COPY_REFERRERS}" != "true" ] && [ "${source_digest}" = "${dest_digest}" ]; then
+          echo "Image is already up to date; nothing to copy."
+          {
+            echo "copied=false"
+            echo "digest=${source_digest}"
+            echo "previous-digest=${dest_digest:-<none>}"
+            echo "referrers-note="
+          } >> "${GITHUB_OUTPUT}"
+          exit 0
+        fi
+
+        if [ "${FORCE}" = "true" ]; then
+          echo "Force enabled; copying regardless of digest match."
+        elif [ "${COPY_REFERRERS}" = "true" ] && [ "${source_digest}" = "${dest_digest}" ]; then
+          echo "Image digest matches, but copy-referrers is enabled; re-syncing image and referrers."
+        else
+          echo "Digests differ; copying updated image."
+        fi
+
+        referrers_note=""
+        if [ "${COPY_REFERRERS}" = "true" ]; then
+          # Some registries (notably dhi.io) intermittently return transient
+          # "not found"/5xx errors while oras fans out the many blob requests an
+          # `oras cp -r` makes. Retry the copy a few times with backoff so a
+          # single flaky response does not fail the whole mirror.
+          oras_cp_retry() {
+            local attempt=1 max=4 delay=5
+            while true; do
+              if oras cp -r "$1" "$2"; then
+                return 0
+              fi
+              if [ "${attempt}" -ge "${max}" ]; then
+                echo "::error::oras cp -r '$1' -> '$2' failed after ${max} attempts."
+                return 1
+              fi
+              echo "::warning::oras cp -r '$1' -> '$2' failed (attempt ${attempt}/${max}); retrying in ${delay}s."
+              sleep "${delay}"
+              attempt=$((attempt + 1))
+              delay=$((delay * 2))
+            done
+          }
+
+          # Copy the image graph and all referrers with oras. `oras cp -r` copies
+          # the index, its child manifests/blobs, and the referrers of the index
+          # itself.
+          echo "Copying image and referrers with oras."
+          oras_cp_retry "${SOURCE_REF}" "${DEST_REF}"
+
+          # Referrers attached to each per-platform child manifest (e.g. DHI
+          # cosign SBOM/provenance/VEX attestations whose subject is a platform
+          # digest) are not pulled by the index-level copy, so copy each child
+          # manifest and its referrers explicitly. Digests are preserved, so
+          # every referrer's subject link stays valid against the copied image.
+          child_digests="$(crane manifest "${SOURCE_REF}" | jq -r '.manifests[]?.digest // empty')"
+          child_count=0
+          for d in ${child_digests}; do
+            [ -n "${d}" ] || continue
+            echo "Copying child manifest ${d} and its referrers."
+            oras_cp_retry "${SOURCE_IMAGE}@${d}" "${DEST_IMAGE}@${d}"
+            child_count=$((child_count + 1))
+          done
+
+          # Best-effort count of referrers now on the destination image.
+          ref_count="$(oras discover --format json "${DEST_REF}" 2>/dev/null \
+            | jq '[.. | objects | select(has("artifactType")) | .artifactType] | length' 2>/dev/null || echo "")"
+          referrers_note="copied (child manifests processed: ${child_count}${ref_count:+, image-level referrers: ${ref_count}})"
+        else
+          crane copy "${SOURCE_REF}" "${DEST_REF}"
+        fi
+
+        new_digest="$(crane digest "${DEST_REF}")"
+        echo "Copied. New destination digest: ${new_digest}"
+        {
+          echo "copied=true"
+          echo "digest=${new_digest}"
+          echo "previous-digest=${dest_digest:-<none>}"
+          echo "referrers-note=${referrers_note}"
+        } >> "${GITHUB_OUTPUT}"

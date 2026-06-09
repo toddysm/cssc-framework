@@ -21,16 +21,23 @@ rather than pulling directly from Docker Hub.
 
 ## How are the actions structured
 
-The mirror workflows follow a **caller + reusable workflow** pattern. All shared
-logic lives in a single reusable workflow, and each mirrored image gets a thin
-caller workflow that only supplies configuration.
+The mirror workflows follow a **caller + reusable workflow** pattern, and the
+reusable workflow is in turn assembled from small, single-purpose **composite
+actions** under [`.github/actions/`](../../../.github/actions/) (see the
+[action catalogue](../../reference/workflow-actions.md)). All shared logic lives
+in the composite actions; the reusable workflow orchestrates them, and each
+mirrored image gets a thin caller workflow that only supplies configuration.
 
 ```text
-.github/workflows/
-├── _mirror-image.yml     # reusable workflow — all the logic
-├── mirror-python.yml     # caller — docker.io/library/python  → quarantine/python
-├── mirror-node.yml       # caller — docker.io/library/node    → quarantine/node
-└── mirror-openjdk.yml    # caller — docker.io/library/openjdk → quarantine/openjdk
+.github/
+├── actions/                 # composite actions (reusable steps)
+│   ├── registry-login/
+│   └── mirror-image/
+└── workflows/
+    ├── _mirror-image.yml     # reusable workflow — orchestrates the actions
+    ├── mirror-python.yml     # caller — docker.io/library/python  → quarantine/python
+    ├── mirror-node.yml       # caller — docker.io/library/node    → quarantine/node
+    └── mirror-openjdk.yml    # caller — docker.io/library/openjdk → quarantine/openjdk
 ```
 
 ### Reusable workflow (`_mirror-image.yml`)
@@ -59,17 +66,21 @@ It also accepts two optional secrets, used only for authenticated sources:
 It defines a single `mirror` job that runs on `ubuntu-latest` with the minimal
 permissions `contents: read` and `packages: write`, and performs these steps:
 
-1. **Set up crane** — installs the `crane` CLI.
-2. **Set up oras** — installs `oras`, only when `copy_referrers` is `true`.
-3. **Log in to source registry** — only when `source_login_registry` is set
-   (e.g. Docker Hardened Images on `dhi.io`); authenticates `crane` (and `oras`
-   when copying referrers).
-4. **Log in to GHCR** — authenticates to `ghcr.io` using the built-in
-   `GITHUB_TOKEN` and the triggering actor.
-5. **Compare digests and copy if changed** — the core idempotent-sync logic
+1. **Check out actions** — checks out the repository so the local composite
+   actions are available.
+2. **Set up crane** — installs the `crane` CLI.
+3. **Set up oras** — installs `oras`, only when `copy_referrers` is `true`.
+4. **Log in to source registry** (`registry-login`) — only when
+   `source_login_registry` is set (e.g. Docker Hardened Images on `dhi.io`);
+   authenticates `crane` (and `oras` when copying referrers).
+5. **Log in to GHCR** (`registry-login`) — authenticates to `ghcr.io` using the
+   built-in `GITHUB_TOKEN` and the triggering actor.
+6. **Mirror image** (`mirror-image`) — the core idempotent-sync logic
    (described below). When `copy_referrers` is `true` the copy uses
    `oras cp -r` for the index and each per-platform child manifest so the
    attached referrers travel with the image; otherwise it uses `crane copy`.
+7. **Write job summary** — renders the copied / up-to-date outcome from the
+   `mirror-image` outputs.
 
 ### Caller workflows (`mirror-<image>.yml`)
 
@@ -104,13 +115,13 @@ flowchart TD
     A[schedule 06:00 UTC] --> C[caller mirror-image.yml]
     B[workflow_dispatch + force] --> C
     C -->|uses: with inputs| D[_mirror-image.yml]
-    D --> E[setup crane]
-    E --> F[crane auth login ghcr.io]
-    F --> G[crane digest source]
+    D --> E[checkout + setup crane]
+    E --> F[registry-login ghcr.io]
+    F --> G[mirror-image: crane digest source]
     G --> H[crane digest destination]
     H --> I{force or digests differ?}
     I -->|no| J[skip: up to date]
-    I -->|yes| K[crane copy source dest]
+    I -->|yes| K[crane copy / oras cp -r]
     K --> L[write job summary]
     J --> L
 ```
