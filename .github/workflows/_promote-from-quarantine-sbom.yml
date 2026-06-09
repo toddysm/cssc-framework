@@ -1,36 +1,35 @@
-# Reusable workflow: scan a quarantined repository and promote clean images.
+# Reusable workflow: scan a quarantined image via its SBOM attestation and
+# promote clean images.
 #
 # This workflow is internal (note the leading underscore in the filename) and is
-# not meant to be triggered directly. It is called by per-image "scan-*"
-# workflows via `uses:`.
+# not meant to be triggered directly. It is called by per-image
+# "promote-from-quarantine-*" workflows via `uses:`.
+#
+# Unlike _promote-from-quarantine.yml (which runs `trivy image` against the image filesystem),
+# this workflow is built for distroless / hardened images such as Docker
+# Hardened Images (DHI), which contain no package-manager metadata. Instead it
+# scans the SBOM attestation that the mirror copied alongside the image.
 #
 # It orchestrates the shared composite actions under .github/actions/ and fans
-# the work out across a job matrix: an "enumerate" job lists the quarantine tags
-# (enumerate-tags) and a "scan" job runs once per tag, in parallel, performing
-# scan-image -> evaluate-findings -> mirror-image (promote) -> attach-scan-report
-# -> delete-image. A final "summary" job aggregates the per-tag results.
-#
-# For every tag in `source_repo` it:
-#   1. scans the image with Trivy (scan-image),
-#   2. applies a severity threshold plus an optional CVE exception list
-#      (evaluate-findings),
-#   3. promotes passing images into `dest_repo` (mirror-image, force),
-#   4. attaches an OCI scan-report referrer (attach-scan-report), and
-#   5. deletes the promoted tag from quarantine (delete-image).
+# the work out across a job matrix: an "enumerate" job lists the quarantine image
+# tags (enumerate-tags) and a "scan" job runs once per tag, in parallel,
+# performing scan-sbom -> evaluate-findings -> mirror-image (promote, with
+# referrers) -> attach-scan-report -> delete-image. A final "summary" job
+# aggregates the per-tag results.
 #
 # Terminology and the action catalogue: see docs/reference/workflow-actions.md.
-# See also docs/architecture/workflows/scan-and-promote-workflows.md.
-name: _reusable / scan-image
+# See also docs/architecture/workflows/promote-from-quarantine-workflows.md.
+name: _reusable / promote-from-quarantine-sbom
 
 on:
   workflow_call:
     inputs:
       source_repo:
-        description: "Quarantine repository to scan, without tag (e.g. ghcr.io/toddysm/quarantine/python)."
+        description: "Quarantine repository to scan, without tag (e.g. ghcr.io/toddysm/quarantine/hardened/python)."
         required: true
         type: string
       dest_repo:
-        description: "Promotion-target repository, without tag (e.g. ghcr.io/toddysm/golden/python)."
+        description: "Promotion-target repository, without tag (e.g. ghcr.io/toddysm/base/hardened/python)."
         required: true
         type: string
       severity_threshold:
@@ -42,6 +41,11 @@ on:
         description: "Pipe-separated allow-list of CVE IDs (e.g. CVE-2024-1234|CVE-2024-5678)."
         required: false
         default: ""
+        type: string
+      sbom_predicate_type:
+        description: "in-toto predicate type of the SBOM attestation to scan (e.g. https://cyclonedx.org/bom/v1.6 or https://spdx.dev/Document)."
+        required: false
+        default: https://cyclonedx.org/bom/v1.6
         type: string
       delete_source:
         description: "Delete the tag from quarantine after a successful promotion."
@@ -64,9 +68,9 @@ on:
         required: false
 
 jobs:
-  # --- Phase 1: list the quarantine tags and resolve the severity set. --------
-  # Distinguishes an empty / not-yet-created repository (expected, has_tags
-  # false) from a real failure such as an auth or transient registry error.
+  # --- Phase 1: list the quarantine image tags and resolve the severity set. ---
+  # Drops sha256-* referrer fallback tags. Distinguishes an empty repository
+  # (expected, has_tags false) from a real failure.
   enumerate:
     runs-on: ubuntu-latest
     permissions:
@@ -105,11 +109,12 @@ jobs:
           esac
           echo "severities=${severities}" >> "${GITHUB_OUTPUT}"
 
-      - name: Enumerate quarantine tags
+      - name: Enumerate quarantine image tags
         id: enumerate
         uses: ./.github/actions/enumerate-tags
         with:
           repository: ${{ inputs.source_repo }}
+          exclude-referrer-tags: "true"
 
       - name: Note empty repository
         if: steps.enumerate.outputs.has-tags != 'true'
@@ -119,12 +124,12 @@ jobs:
         run: |
           set -euo pipefail
           {
-            echo "### Scan & promote: \`${SOURCE_REPO}\` → \`${DEST_REPO}\`"
+            echo "### SBOM scan & promote: \`${SOURCE_REPO}\` → \`${DEST_REPO}\`"
             echo ""
-            echo "No tags found in the source repository; nothing to do."
+            echo "No image tags found in the source repository; nothing to do."
           } >> "${GITHUB_STEP_SUMMARY}"
 
-  # --- Phase 2: scan, gate, promote, attest, and clean up — one job per tag. ---
+  # --- Phase 2: scan SBOMs, gate, promote, attest, and clean up — per tag. -----
   scan:
     needs: enumerate
     if: needs.enumerate.outputs.has-tags == 'true'
@@ -141,11 +146,9 @@ jobs:
       DEST_REPO: "${{ inputs.dest_repo }}"
       THRESHOLD: "${{ inputs.severity_threshold }}"
       SEVERITIES: "${{ needs.enumerate.outputs.severities }}"
+      SBOM_PREDICATE_TYPE: "${{ inputs.sbom_predicate_type }}"
       TAG: "${{ matrix.tag }}"
       DRY_RUN: "${{ inputs.dry_run }}"
-      # Authenticate Trivy's remote image pulls to GHCR.
-      TRIVY_USERNAME: "${{ github.actor }}"
-      TRIVY_PASSWORD: "${{ github.token }}"
     steps:
       - name: Check out actions
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -171,8 +174,6 @@ jobs:
           password: ${{ github.token }}
           with-oras: "true"
 
-      # Normalise the exception list and resolve the actual Trivy version for the
-      # referrer annotation; both feed the per-tag actions below.
       - name: Prepare gate inputs
         id: prepare
         env:
@@ -192,7 +193,6 @@ jobs:
             printf '%s\n' "${EXCEPTIONS}" | tr '|' '\n' | sed '/^[[:space:]]*$/d' \
               | tr -d '[:space:]' | sort -u > "${exceptions_file}"
           fi
-          echo "EXCEPTIONS_FILE=${exceptions_file}" >> "${GITHUB_ENV}"
           echo "exceptions-file=${exceptions_file}" >> "${GITHUB_OUTPUT}"
 
           trivy_resolved="$(trivy version -f json 2>/dev/null | jq -r '.Version // empty' || true)"
@@ -200,12 +200,15 @@ jobs:
           echo "TRIVY_RESOLVED=${trivy_resolved}" >> "${GITHUB_ENV}"
           echo "trivy-resolved=${trivy_resolved}" >> "${GITHUB_OUTPUT}"
 
-      - name: Scan image
+      - name: Scan SBOMs
         id: scan
-        uses: ./.github/actions/scan-image
+        uses: ./.github/actions/scan-sbom
         with:
           image-ref: ${{ inputs.source_repo }}:${{ matrix.tag }}
+          repository: ${{ inputs.source_repo }}
           severities: ${{ needs.enumerate.outputs.severities }}
+          sbom-predicate-type: ${{ inputs.sbom_predicate_type }}
+          exceptions-file: ${{ steps.prepare.outputs.exceptions-file }}
           output-dir: ${{ runner.temp }}/cssc-scan/state
 
       - name: Evaluate findings
@@ -215,6 +218,7 @@ jobs:
           blocking-ids-file: ${{ steps.scan.outputs.blocking-ids-path }}
           exceptions-file: ${{ steps.prepare.outputs.exceptions-file }}
           dry-run: ${{ inputs.dry_run }}
+          missing-sbom-count: ${{ steps.scan.outputs.missing-sbom-count }}
           output-dir: ${{ runner.temp }}/cssc-scan/state
 
       - name: Promote passing image
@@ -227,6 +231,7 @@ jobs:
           dest-image: ${{ inputs.dest_repo }}
           dest-tag: ${{ matrix.tag }}
           force: "true"
+          copy-referrers: "true"
 
       - name: Attach scan-report attestation
         if: steps.evaluate.outputs.decision == 'promote'
@@ -238,7 +243,8 @@ jobs:
           threshold: ${{ inputs.severity_threshold }}
           excepted-str: ${{ steps.evaluate.outputs.excepted-str }}
           scanner-version: ${{ steps.prepare.outputs.trivy-resolved }}
-          method: image
+          method: sbom
+          sbom-predicate-type: ${{ inputs.sbom_predicate_type }}
 
       - name: Delete promoted tag from quarantine
         id: delete
@@ -249,9 +255,6 @@ jobs:
           tag: ${{ matrix.tag }}
           token: ${{ secrets.ghcr_delete_token }}
 
-      # Render this tag's run log + result fragment and upload it for the summary
-      # job to aggregate. Runs even if an earlier step failed so partial results
-      # are still reported.
       - name: Record result
         if: always()
         env:
@@ -261,7 +264,9 @@ jobs:
           EXCEPTED_COUNT: "${{ steps.evaluate.outputs.excepted-count }}"
           REMAINING_MD: "${{ steps.evaluate.outputs.remaining-md }}"
           EXCEPTED_MD: "${{ steps.evaluate.outputs.excepted-md }}"
-          REPORT_PATH: "${{ steps.scan.outputs.report-path }}"
+          PLATFORM_COUNT: "${{ steps.scan.outputs.platform-count }}"
+          MISSING_SBOM: "${{ steps.scan.outputs.missing-sbom-count }}"
+          PLATFORM_DETAIL_PATH: "${{ steps.scan.outputs.platform-detail-path }}"
           DEL_STATUS: "${{ steps.delete.outputs.status }}"
         run: |
           set -euo pipefail
@@ -279,6 +284,8 @@ jobs:
           excepted_count="${EXCEPTED_COUNT:-0}"
           remaining_md="${REMAINING_MD:-}"
           excepted_md="${EXCEPTED_MD:-}"
+          platform_count="${PLATFORM_COUNT:-0}"
+          missing_sbom="${MISSING_SBOM:-0}"
 
           # Map delete-image's raw status to user-facing wording for the report.
           case "${DEL_STATUS:-}" in
@@ -289,6 +296,9 @@ jobs:
           esac
 
           case "${decision}" in
+            blocked-missing-sbom)
+              result_class="blocked"; result="blocked (missing SBOM)"; icon=":no_entry:"
+              promoted_yesno="no (left in quarantine)" ;;
             blocked)
               result_class="blocked"; result="blocked"; icon=":no_entry:"
               promoted_yesno="no (left in quarantine)" ;;
@@ -307,73 +317,40 @@ jobs:
           printf '%s' "${result_class}" > "${out}/result_class"
           printf '%s' "${TRIVY_RESOLVED:-}" > "${out}/scanner"
 
-          # Per-CVE detail (id, severity, package, installed, fixed) from the report.
-          vulns_tsv="${out}/vulns.tsv"
-          : > "${vulns_tsv}"
-          if [ -n "${REPORT_PATH}" ] && [ -s "${REPORT_PATH}" ]; then
-            jq -r '
-              [ .Results[]? | (.Vulnerabilities[]? | {
-                  id: .VulnerabilityID,
-                  sev: (.Severity // "UNKNOWN"),
-                  pkg: (.PkgName // ""),
-                  installed: (.InstalledVersion // ""),
-                  fixed: (.FixedVersion // "")
-                }) ]
-              | unique_by("\(.id)|\(.pkg)|\(.installed)")
-              | map(. + {rank: ({"CRITICAL":0,"HIGH":1,"MEDIUM":2,"LOW":3}[.sev] // 9)})
-              | sort_by(.rank, .id)
-              | .[] | [.id, .sev, .pkg, .installed, .fixed] | @tsv
-            ' "${REPORT_PATH}" > "${vulns_tsv}" || true
-          fi
-
           # --- Human-readable report to the run log. ---------------------------
           {
             echo "================================================================"
             echo "Image:            ${src}"
             echo "Result:           ${result}"
             echo "Promoted:         ${promoted_yesno}"
+            echo "SBOM predicate:   ${SBOM_PREDICATE_TYPE}"
+            echo "Platforms:        ${platform_count} (missing SBOM: ${missing_sbom})"
             echo "Threshold:        ${THRESHOLD} (severities: ${SEVERITIES})"
             echo "CVEs ≥ ${THRESHOLD}:   ${blocking_count} (blocking: ${remaining_count}, excepted: ${excepted_count})"
-            if [ -s "${vulns_tsv}" ]; then
-              printf '  %-22s %-9s %-28s %-18s %s\n' "CVE" "SEVERITY" "PACKAGE" "INSTALLED" "STATUS"
-              while IFS="$(printf '\t')" read -r id sev pkg installed fixed; do
-                if [ -s "${EXCEPTIONS_FILE}" ] && grep -qxF "${id}" "${EXCEPTIONS_FILE}"; then st="EXCEPTED"; else st="BLOCKING"; fi
-                printf '  %-22s %-9s %-28s %-18s %s\n' "${id}" "${sev}" "${pkg}" "${installed:-—}" "${st}"
-              done < "${vulns_tsv}"
-            else
-              echo "  (no vulnerabilities at or above the threshold)"
-            fi
           }
 
           # --- Summary table row. ----------------------------------------------
-          printf '| `%s` | %s %s | %s | %s | %s |\n' \
-            "${TAG}" "${icon}" "${result}" "${blocking_count}" \
+          printf '| `%s` | %s %s | %s | %s | %s | %s |\n' \
+            "${TAG}" "${icon}" "${result}" "${platform_count}" "${blocking_count}" \
             "${remaining_md:-—}" "${excepted_md:-—}" > "${out}/row.md"
 
           # --- Collapsible per-image detail for the job summary. ----------------
           {
             echo ""
-            echo "<details><summary><code>${TAG}</code> — ${icon} ${result} · ${blocking_count} CVE(s) ≥ ${THRESHOLD}</summary>"
+            echo "<details><summary><code>${TAG}</code> — ${icon} ${result} · ${blocking_count} CVE(s) ≥ ${THRESHOLD} across ${platform_count} platform(s)</summary>"
             echo ""
             echo "- **Source:** \`${src}\`"
             echo "- **Destination:** \`${dest}\`"
             echo "- **Promoted:** ${promoted_yesno}"
+            echo "- **SBOM predicate type:** \`${SBOM_PREDICATE_TYPE}\`"
             echo "- **Blocking (not excepted):** ${remaining_count} · **Excepted:** ${excepted_count}"
             echo ""
-            echo "| CVE | Severity | Package | Installed | Fixed | Status |"
-            echo "| --- | --- | --- | --- | --- | --- |"
-            if [ -s "${vulns_tsv}" ]; then
-              while IFS="$(printf '\t')" read -r id sev pkg installed fixed; do
-                if [ -s "${EXCEPTIONS_FILE}" ] && grep -qxF "${id}" "${EXCEPTIONS_FILE}"; then
-                  st=":large_yellow_circle: excepted"
-                else
-                  st=":red_circle: blocking"
-                fi
-                printf '| %s | %s | `%s` | %s | %s | %s |\n' \
-                  "${id}" "${sev}" "${pkg}" "${installed:-—}" "${fixed:-—}" "${st}"
-              done < "${vulns_tsv}"
+            echo "| Platform | CVEs ≥ ${THRESHOLD} | Blocking | Blocking CVE IDs |"
+            echo "| --- | --- | --- | --- |"
+            if [ -n "${PLATFORM_DETAIL_PATH}" ] && [ -s "${PLATFORM_DETAIL_PATH}" ]; then
+              cat "${PLATFORM_DETAIL_PATH}"
             else
-              echo "| — | — | — | — | — | none ≥ ${THRESHOLD} |"
+              echo "| — | — | — | (no platform detail recorded) |"
             fi
             echo ""
             echo "</details>"
@@ -381,7 +358,7 @@ jobs:
 
       - name: Upload result
         if: always()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: scan-result-${{ strategy.job-index }}
           path: ${{ runner.temp }}/result
@@ -394,7 +371,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download results
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: scan-result-*
           path: ${{ runner.temp }}/results
@@ -406,6 +383,7 @@ jobs:
           DEST_REPO: "${{ inputs.dest_repo }}"
           THRESHOLD: "${{ inputs.severity_threshold }}"
           SEVERITIES: "${{ needs.enumerate.outputs.severities }}"
+          SBOM_PREDICATE_TYPE: "${{ inputs.sbom_predicate_type }}"
           DRY_RUN: "${{ inputs.dry_run }}"
         run: |
           set -euo pipefail
@@ -414,12 +392,12 @@ jobs:
           results="${RUNNER_TEMP}/results"
           promoted=0
           blocked=0
+          scanner=""
           rows="${RUNNER_TEMP}/rows.md"
           details_md="${RUNNER_TEMP}/details.md"
           : > "${rows}"
           : > "${details_md}"
 
-          scanner=""
           for d in "${results}"/*/; do
             [ -d "${d}" ] || continue
             [ -f "${d}/row.md" ] || continue
@@ -433,19 +411,19 @@ jobs:
           done
 
           {
-            echo "### Scan & promote: \`${SOURCE_REPO}\` → \`${DEST_REPO}\`"
+            echo "### SBOM scan & promote: \`${SOURCE_REPO}\` → \`${DEST_REPO}\`"
             echo ""
+            echo "- **Scan method:** SBOM (\`trivy sbom\`)"
+            echo "- **SBOM predicate type:** \`${SBOM_PREDICATE_TYPE}\`"
             echo "- **Threshold:** \`${THRESHOLD}\` (severities scanned: \`${SEVERITIES}\`)"
             if [ -n "${scanner}" ]; then echo "- **Scanner:** trivy \`${scanner}\`"; fi
             echo "- **Dry run:** \`${DRY_RUN}\`"
             echo "- **Promoted:** ${promoted} · **Blocked:** ${blocked}"
             echo ""
-            echo "| Tag | Result | CVEs ≥ ${THRESHOLD} | Blocking CVEs | Excepted |"
-            echo "| --- | ------ | --- | --- | --- |"
+            echo "| Tag | Result | Platforms | CVEs ≥ ${THRESHOLD} | Blocking CVEs | Excepted |"
+            echo "| --- | ------ | --- | --- | --- | --- |"
             cat "${rows}"
             echo ""
-            echo "#### Per-image vulnerability detail"
-            echo ""
-            echo "Status legend: :red_circle: blocking (counts against the threshold) · :large_yellow_circle: excepted (matched the exception list)."
+            echo "#### Per-image platform detail"
             cat "${details_md}"
           } >> "${GITHUB_STEP_SUMMARY}"

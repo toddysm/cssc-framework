@@ -149,7 +149,7 @@ Attach an empty OCI scan-report referrer to a promoted image.
 | `sbom-predicate-type` | no | `""` | Recorded only when `method` is `sbom`. |
 
 The referrer artifact type is `application/vnd.cssc.scan-report.v1+json`; see the
-[scan-and-promote architecture](../architecture/workflows/scan-and-promote-workflows.md#scan-report-referrer-artifact)
+[promote-from-quarantine architecture](../architecture/workflows/promote-from-quarantine-workflows.md#scan-report-referrer-artifact)
 for the full annotation schema.
 
 ### delete-image
@@ -172,7 +172,7 @@ A single job: check out, set up `crane` (and `oras` when copying referrers), run
 **registry-login** for the source (when authenticated) and GHCR, then
 **mirror-image**, then write a summary from its outputs.
 
-### Scan workflows (`_scan-image.yml`, `_scan-sbom-image.yml`)
+### Promote-from-quarantine workflows (`_promote-from-quarantine.yml`, `_promote-from-quarantine-sbom.yml`)
 
 A matrix fan-out across three jobs:
 
