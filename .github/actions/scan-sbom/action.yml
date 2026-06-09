@@ -159,6 +159,10 @@ runs:
         done < "${platforms_file}"
         echo "::endgroup::"
 
+        # De-duplicate the cross-platform union so the same CVE found on several
+        # platforms is reported once (matches the documented output semantics).
+        sort -u "${tag_blocking}" -o "${tag_blocking}"
+
         echo "missing-sbom-count=${missing_sbom}" >> "${GITHUB_OUTPUT}"
         echo "platform-count=${platform_count}" >> "${GITHUB_OUTPUT}"
         echo "blocking-ids-path=${tag_blocking}" >> "${GITHUB_OUTPUT}"

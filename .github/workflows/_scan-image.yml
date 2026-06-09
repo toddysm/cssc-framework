@@ -280,6 +280,14 @@ jobs:
           remaining_md="${REMAINING_MD:-}"
           excepted_md="${EXCEPTED_MD:-}"
 
+          # Map delete-image's raw status to user-facing wording for the report.
+          case "${DEL_STATUS:-}" in
+            deleted) del_msg="source deleted" ;;
+            skipped) del_msg="source kept (deletion skipped)" ;;
+            failed)  del_msg="source kept (delete failed)" ;;
+            *)       del_msg="source kept" ;;
+          esac
+
           case "${decision}" in
             blocked)
               result_class="blocked"; result="blocked"; icon=":no_entry:"
@@ -289,7 +297,7 @@ jobs:
               promoted_yesno="no (dry run)" ;;
             promote)
               result_class="promoted"
-              result="promoted (source ${DEL_STATUS:-kept})"
+              result="promoted (${del_msg})"
               icon=":white_check_mark:"
               promoted_yesno="yes → ${dest}" ;;
             *)

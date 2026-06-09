@@ -209,8 +209,8 @@ source deletion, and reporting) with these differences:
   `oras cp -r` (index plus per-platform children) so the SBOMs, provenance, VEX,
   and signatures travel into the destination alongside the scan-report referrer.
 
-The scan-report referrer adds two annotations on top of the common set:
-`com.cssc.scan.method=sbom` and
+The scan-report referrer records the scan method in `com.cssc.scan.method`
+(`image` for `_scan-image.yml`, `sbom` here) and, for SBOM scans, adds
 `com.cssc.scan.sbom-predicate-type=<predicate type>`.
 
 The `scan-hardened-python.yml` caller wires this workflow for
@@ -259,6 +259,7 @@ referrer of the image.
 | `com.cssc.scan.exceptions` | `CVE-2024-1234\|CVE-2024-5678` | Pipe-separated CVEs found in the image at/above the threshold but cleared via the exception list (empty if none). |
 | `com.cssc.scan.scanner` | `trivy` | Scanner name. |
 | `com.cssc.scan.scanner-version` | `0.52.0` | Scanner version. |
+| `com.cssc.scan.method` | `image` | Scan method: `image` (filesystem) or `sbom` (SBOM attestation). |
 
 ## What functionality is implemented and what is not
 

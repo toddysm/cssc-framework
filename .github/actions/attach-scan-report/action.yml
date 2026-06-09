@@ -68,10 +68,10 @@ runs:
           --annotation "com.cssc.scan.exceptions=${EXCEPTED_STR}"
           --annotation "com.cssc.scan.scanner=trivy"
           --annotation "com.cssc.scan.scanner-version=${SCANNER_VERSION}"
+          --annotation "com.cssc.scan.method=${METHOD}"
         )
         if [ "${METHOD}" = "sbom" ]; then
           args+=(
-            --annotation "com.cssc.scan.method=sbom"
             --annotation "com.cssc.scan.sbom-predicate-type=${SBOM_PREDICATE_TYPE}"
           )
         fi
