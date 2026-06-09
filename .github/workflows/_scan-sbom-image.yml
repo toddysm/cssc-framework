@@ -78,6 +78,18 @@ jobs:
     permissions:
       contents: read
       packages: write
+    # Shared across every step in this job. Step-local state (the work dir, the
+    # resolved severity set, GHCR package coordinates) is computed in "Prepare"
+    # and exported via $GITHUB_ENV so later standalone steps can read it.
+    env:
+      SOURCE_REPO: "${{ inputs.source_repo }}"
+      DEST_REPO: "${{ inputs.dest_repo }}"
+      THRESHOLD: "${{ inputs.severity_threshold }}"
+      EXCEPTIONS: "${{ inputs.cve_exceptions }}"
+      SBOM_PREDICATE_TYPE: "${{ inputs.sbom_predicate_type }}"
+      DELETE_SOURCE: "${{ inputs.delete_source }}"
+      DRY_RUN: "${{ inputs.dry_run }}"
+      TRIVY_VERSION: "${{ inputs.trivy_version }}"
     steps:
       - name: Set up crane
         uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
@@ -100,31 +112,30 @@ jobs:
           echo "${{ github.token }}" | oras login ghcr.io \
             --username "${{ github.actor }}" --password-stdin
 
-      - name: Scan SBOMs, gate, promote, attest, and clean up
+      # --- Phase 1: resolve config, exceptions, and deletion coordinates. -----
+      # Exports the work dir, severity set, resolved Trivy version, and GHCR
+      # package coordinates via $GITHUB_ENV so the standalone steps below can
+      # consume them without recomputing.
+      - name: Prepare scan environment
         env:
-          SOURCE_REPO: "${{ inputs.source_repo }}"
-          DEST_REPO: "${{ inputs.dest_repo }}"
-          THRESHOLD: "${{ inputs.severity_threshold }}"
-          EXCEPTIONS: "${{ inputs.cve_exceptions }}"
-          SBOM_PREDICATE_TYPE: "${{ inputs.sbom_predicate_type }}"
-          DELETE_SOURCE: "${{ inputs.delete_source }}"
-          DRY_RUN: "${{ inputs.dry_run }}"
-          TRIVY_VERSION: "${{ inputs.trivy_version }}"
           DELETE_TOKEN: "${{ secrets.ghcr_delete_token }}"
         run: |
           set -euo pipefail
           export LC_ALL=C
 
-          work="$(mktemp -d)"
+          work="${RUNNER_TEMP}/cssc-scan"
+          mkdir -p "${work}/state"
+          echo "WORK=${work}" >> "${GITHUB_ENV}"
 
           # --- Resolve the blocking severity set from the threshold floor. ------
           case "${THRESHOLD}" in
-            LOW)      SEVERITIES="LOW,MEDIUM,HIGH,CRITICAL" ;;
-            MEDIUM)   SEVERITIES="MEDIUM,HIGH,CRITICAL" ;;
-            HIGH)     SEVERITIES="HIGH,CRITICAL" ;;
-            CRITICAL) SEVERITIES="CRITICAL" ;;
+            LOW)      severities="LOW,MEDIUM,HIGH,CRITICAL" ;;
+            MEDIUM)   severities="MEDIUM,HIGH,CRITICAL" ;;
+            HIGH)     severities="HIGH,CRITICAL" ;;
+            CRITICAL) severities="CRITICAL" ;;
             *) echo "::error::Invalid severity_threshold '${THRESHOLD}' (expected LOW|MEDIUM|HIGH|CRITICAL)"; exit 1 ;;
           esac
+          echo "SEVERITIES=${severities}" >> "${GITHUB_ENV}"
 
           # --- Normalise the exception list into a sorted, deduped file. --------
           exceptions_file="${work}/exceptions.txt"
@@ -137,6 +148,7 @@ jobs:
           # --- Resolve the actual Trivy version for the referrer annotation. ----
           trivy_resolved="$(trivy version -f json 2>/dev/null | jq -r '.Version // empty' || true)"
           [ -n "${trivy_resolved}" ] || trivy_resolved="${TRIVY_VERSION#v}"
+          echo "TRIVY_RESOLVED=${trivy_resolved}" >> "${GITHUB_ENV}"
 
           # --- Work out the GHCR package coordinates for deletion. --------------
           owner="$(printf '%s' "${SOURCE_REPO}" | awk -F/ '{print $2}')"
@@ -146,23 +158,215 @@ jobs:
           if [ "${DELETE_SOURCE}" = "true" ] && [ -n "${DELETE_TOKEN}" ]; then
             owner_type="$(GH_TOKEN="${DELETE_TOKEN}" gh api "users/${owner}" --jq '.type' 2>/dev/null || true)"
           fi
+          {
+            echo "PKG_OWNER=${owner}"
+            echo "PKG_ENC=${pkg_enc}"
+            echo "OWNER_TYPE=${owner_type}"
+          } >> "${GITHUB_ENV}"
 
-          delete_quarantine_tag() {
-            local tag="$1" base vid
-            if [ "${owner_type}" = "Organization" ]; then
-              base="orgs/${owner}/packages/container/${pkg_enc}"
+      # --- Phase 2: list the quarantine image tags (skip referrer fallbacks). --
+      # Distinguish an empty / not-yet-created repository (expected, has_tags
+      # false) from a real failure such as an auth or transient registry error.
+      - name: Enumerate quarantine tags
+        id: enumerate
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+          ls_err="${WORK}/crane-ls.err"
+          if all_tags="$(crane ls "${SOURCE_REPO}" 2>"${ls_err}")"; then
+            :
+          else
+            if grep -qiE 'NAME_UNKNOWN|not found|MANIFEST_UNKNOWN|UNAUTHORIZED.*not found|repository name not known' "${ls_err}"; then
+              echo "Source repository ${SOURCE_REPO} has no tags yet; nothing to scan."
+              all_tags=""
             else
-              base="user/packages/container/${pkg_enc}"
+              echo "::error::Failed to list tags for ${SOURCE_REPO}:"
+              cat "${ls_err}" >&2
+              exit 1
             fi
-            vid="$(GH_TOKEN="${DELETE_TOKEN}" gh api --paginate "${base}/versions" \
-                   --jq ".[] | select(.metadata.container.tags[]? == \"${tag}\") | .id" 2>/dev/null \
-                   | head -n1 || true)"
-            if [ -z "${vid}" ]; then
-              echo "::warning::Could not resolve a package version id for tag '${tag}'; skipping deletion."
-              return 1
+          fi
+
+          tags="$(printf '%s\n' "${all_tags}" | grep -vE '^sha256-' || true)"
+          if [ -z "${tags}" ]; then
+            echo "No image tags found in ${SOURCE_REPO}; nothing to scan."
+            {
+              echo "### SBOM scan & promote: \`${SOURCE_REPO}\` → \`${DEST_REPO}\`"
+              echo ""
+              echo "No image tags found in the source repository; nothing to do."
+            } >> "${GITHUB_STEP_SUMMARY}"
+            echo "has_tags=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          printf '%s\n' "${tags}" > "${WORK}/tags.txt"
+          echo "has_tags=true" >> "${GITHUB_OUTPUT}"
+
+      # --- Phase 3: extract and scan the per-platform SBOMs. ------------------
+      # For each tag, enumerate the platforms in the image index, locate each
+      # platform's SBOM referrer (an in-toto attestation whose predicate type
+      # matches sbom_predicate_type), extract the BOM, and scan it with
+      # `trivy sbom`. Per-tag state lives under ${WORK}/state/<safe>/.
+      - name: Scan platform SBOMs with Trivy
+        if: steps.enumerate.outputs.has_tags == 'true'
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+          # --- Extract the SBOM predicate for one platform manifest. ------------
+          # Echoes the path to a written SBOM file on success; returns non-zero
+          # when no SBOM referrer of the requested predicate type is found.
+          extract_platform_sbom() {
+            local plat_digest="$1" out="$2" ref_digest layer_digest stmt
+            ref_digest="$(oras discover --format json "${SOURCE_REPO}@${plat_digest}" 2>/dev/null \
+              | jq -r --arg PT "${SBOM_PREDICATE_TYPE}" '
+                  [.. | objects | select(.artifactType? == "application/vnd.in-toto+json")]
+                  | map(select(.annotations["in-toto.io/predicate-type"] == $PT))
+                  | .[0].digest // empty')"
+            [ -n "${ref_digest}" ] || return 1
+            layer_digest="$(oras manifest fetch "${SOURCE_REPO}@${ref_digest}" \
+              | jq -r '.layers[0].digest // empty')"
+            [ -n "${layer_digest}" ] || return 1
+            stmt="${WORK}/stmt.json"
+            oras blob fetch --output "${stmt}" "${SOURCE_REPO}@${layer_digest}"
+            # The blob is an in-toto Statement (DHI) or a DSSE envelope wrapping
+            # one. Extract the `.predicate` (the actual CycloneDX/SPDX BOM).
+            if jq -e '.payload and .payloadType' "${stmt}" >/dev/null 2>&1; then
+              jq -r '.payload' "${stmt}" | base64 -d | jq '.predicate' > "${out}"
+            else
+              jq '.predicate' "${stmt}" > "${out}"
             fi
-            GH_TOKEN="${DELETE_TOKEN}" gh api -X DELETE "${base}/versions/${vid}" >/dev/null
+            [ -s "${out}" ] || return 1
+            return 0
           }
+
+          exceptions_file="${WORK}/exceptions.txt"
+          while IFS= read -r tag; do
+            [ -n "${tag}" ] || continue
+            src="${SOURCE_REPO}:${tag}"
+            safe="${tag//[^A-Za-z0-9_.-]/_}"
+            state="${WORK}/state/${safe}"
+            mkdir -p "${state}"
+            printf '%s' "${tag}" > "${state}/tag"
+
+            echo "::group::Scanning SBOMs for ${src}"
+
+            # --- Determine the platforms to scan. ------------------------------
+            manifest_json="$(crane manifest "${src}")"
+            media_type="$(printf '%s' "${manifest_json}" | jq -r '.mediaType // empty')"
+            platforms_file="${state}/platforms.tsv"   # digest<TAB>platform
+            : > "${platforms_file}"
+            case "${media_type}" in
+              *image.index*|*manifest.list*)
+                printf '%s' "${manifest_json}" | jq -r '
+                  .manifests[]
+                  | select((.platform.os // "") != "" and (.platform.os // "") != "unknown")
+                  | [ .digest, "\(.platform.os)/\(.platform.architecture)\(if .platform.variant then "/"+.platform.variant else "" end)" ]
+                  | @tsv' >> "${platforms_file}"
+                ;;
+              *)
+                printf '%s\t%s\n' "$(crane digest "${src}")" "single" >> "${platforms_file}"
+                ;;
+            esac
+
+            tag_blocking="${state}/blocking.txt"   # union across platforms
+            : > "${tag_blocking}"
+            plat_detail="${state}/platdetail.md"
+            : > "${plat_detail}"
+            missing_sbom=0
+            platform_count=0
+
+            while IFS="$(printf '\t')" read -r plat_digest plat_name; do
+              [ -n "${plat_digest}" ] || continue
+              platform_count=$((platform_count + 1))
+              echo "Platform ${plat_name} (${plat_digest})"
+
+              sbom_file="${state}/sbom-$(printf '%s' "${plat_name}" | tr '/' '_').json"
+              if ! extract_platform_sbom "${plat_digest}" "${sbom_file}"; then
+                echo "::warning::No SBOM referrer of type ${SBOM_PREDICATE_TYPE} found for ${src} (${plat_name})."
+                missing_sbom=$((missing_sbom + 1))
+                printf '| `%s` | :warning: no SBOM | — | — |\n' "${plat_name}" >> "${plat_detail}"
+                continue
+              fi
+
+              report="${state}/report-$(printf '%s' "${plat_name}" | tr '/' '_').json"
+              trivy sbom --quiet --scanners vuln --severity "${SEVERITIES}" \
+                --format json --output "${report}" "${sbom_file}"
+
+              plat_ids="${state}/ids.txt"
+              jq -r '[.Results[]?.Vulnerabilities[]?.VulnerabilityID] | unique | .[]' \
+                "${report}" | sort -u > "${plat_ids}"
+              cat "${plat_ids}" >> "${tag_blocking}"
+
+              # Per-platform counts that mirror the gate: total findings at/above
+              # the threshold, and the blocking subset after removing exceptions.
+              plat_total_ids="${state}/plattotal.txt"
+              plat_block_ids="${state}/platblock.txt"
+              sort -u "${plat_ids}" > "${plat_total_ids}"
+              comm -23 "${plat_total_ids}" "${exceptions_file}" > "${plat_block_ids}"
+              plat_total="$(wc -l < "${plat_total_ids}" | tr -d ' ')"
+              plat_block="$(wc -l < "${plat_block_ids}" | tr -d ' ')"
+              plat_block_list="$(paste -sd ',' "${plat_block_ids}" | sed 's/,/, /g')"
+              printf '| `%s` | %s | %s | %s |\n' \
+                "${plat_name}" "${plat_total}" "${plat_block}" "${plat_block_list:-—}" >> "${plat_detail}"
+            done < "${platforms_file}"
+            echo "::endgroup::"
+
+            printf '%s' "${missing_sbom}" > "${state}/missing_sbom"
+            printf '%s' "${platform_count}" > "${state}/platform_count"
+          done < "${WORK}/tags.txt"
+
+      # --- Phase 4: apply the threshold + exception gate across all platforms. -
+      # A missing SBOM is treated as a blocking failure: we cannot gate an image
+      # whose SBOM we cannot read. Records a per-tag decision (blocked | dryrun |
+      # promote) that the promote/attest/cleanup steps act on.
+      - name: Gate on scan findings
+        if: steps.enumerate.outputs.has_tags == 'true'
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+          exceptions_file="${WORK}/exceptions.txt"
+          for state in "${WORK}"/state/*/; do
+            [ -d "${state}" ] || continue
+            tag="$(cat "${state}/tag")"
+            missing_sbom="$(cat "${state}/missing_sbom" 2>/dev/null || echo 0)"
+
+            sort -u "${state}/blocking.txt" > "${state}/blockingall.txt"
+            comm -23 "${state}/blockingall.txt" "${exceptions_file}" > "${state}/remaining.txt"
+            comm -12 "${state}/blockingall.txt" "${exceptions_file}" > "${state}/excepted.txt"
+
+            blocking_count="$(wc -l < "${state}/blockingall.txt" | tr -d ' ')"
+            remaining_count="$(wc -l < "${state}/remaining.txt" | tr -d ' ')"
+            excepted_count="$(wc -l < "${state}/excepted.txt" | tr -d ' ')"
+            printf '%s' "${blocking_count}" > "${state}/blocking_count"
+            printf '%s' "${remaining_count}" > "${state}/remaining_count"
+            printf '%s' "${excepted_count}" > "${state}/excepted_count"
+            paste -sd '|' "${state}/excepted.txt" > "${state}/excepted_str"
+            paste -sd ',' "${state}/remaining.txt" | sed 's/,/, /g' > "${state}/remaining_md"
+            paste -sd ',' "${state}/excepted.txt" | sed 's/,/, /g' > "${state}/excepted_md"
+
+            if [ "${missing_sbom}" -gt 0 ]; then
+              echo "blocked-missing-sbom" > "${state}/decision"
+            elif [ "${remaining_count}" -gt 0 ]; then
+              echo "blocked" > "${state}/decision"
+            elif [ "${DRY_RUN}" = "true" ]; then
+              echo "dryrun" > "${state}/decision"
+            else
+              echo "promote" > "${state}/decision"
+            fi
+            echo "Gate ${SOURCE_REPO}:${tag} -> $(cat "${state}/decision") (blocking ${remaining_count}, excepted ${excepted_count}, missing SBOM ${missing_sbom})"
+          done
+
+      # --- Phase 5: promote passing images with all their referrers. ----------
+      # Skipped entirely on a dry run. `oras cp -r` carries the image and its
+      # referrers (SBOMs, provenance, VEX, signatures), per index and per
+      # platform child manifest, with retry to absorb transient registry errors.
+      - name: Promote passing images
+        if: steps.enumerate.outputs.has_tags == 'true' && !inputs.dry_run
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
 
           # --- Retry an oras cp -r to absorb transient registry errors. --------
           # An `oras cp -r` fans out many blob requests; registries occasionally
@@ -199,200 +403,142 @@ jobs:
             done
           }
 
-          # --- Extract the SBOM predicate for one platform manifest. ------------
-          # Echoes the path to a written SBOM file on success; returns non-zero
-          # when no SBOM referrer of the requested predicate type is found.
-          extract_platform_sbom() {
-            local plat_digest="$1" out="$2" ref_digest layer_digest stmt
-            ref_digest="$(oras discover --format json "${SOURCE_REPO}@${plat_digest}" 2>/dev/null \
-              | jq -r --arg PT "${SBOM_PREDICATE_TYPE}" '
-                  [.. | objects | select(.artifactType? == "application/vnd.in-toto+json")]
-                  | map(select(.annotations["in-toto.io/predicate-type"] == $PT))
-                  | .[0].digest // empty')"
-            [ -n "${ref_digest}" ] || return 1
-            layer_digest="$(oras manifest fetch "${SOURCE_REPO}@${ref_digest}" \
-              | jq -r '.layers[0].digest // empty')"
-            [ -n "${layer_digest}" ] || return 1
-            stmt="${work}/stmt.json"
-            oras blob fetch --output "${stmt}" "${SOURCE_REPO}@${layer_digest}"
-            # The blob is an in-toto Statement (DHI) or a DSSE envelope wrapping
-            # one. Extract the `.predicate` (the actual CycloneDX/SPDX BOM).
-            if jq -e '.payload and .payloadType' "${stmt}" >/dev/null 2>&1; then
-              jq -r '.payload' "${stmt}" | base64 -d | jq '.predicate' > "${out}"
+          for state in "${WORK}"/state/*/; do
+            [ -d "${state}" ] || continue
+            [ "$(cat "${state}/decision")" = "promote" ] || continue
+            tag="$(cat "${state}/tag")"
+            src="${SOURCE_REPO}:${tag}"
+            dest="${DEST_REPO}:${tag}"
+            echo "Promoting ${src} -> ${dest} (with referrers)"
+            copy_with_referrers "${src}" "${dest}"
+            printf '%s' "${dest}" > "${state}/promoted"
+          done
+
+      # --- Phase 6: attach the scan-report referrer to promoted images. -------
+      - name: Attach scan-report attestation
+        if: steps.enumerate.outputs.has_tags == 'true' && !inputs.dry_run
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+          for state in "${WORK}"/state/*/; do
+            [ -d "${state}" ] || continue
+            [ -f "${state}/promoted" ] || continue
+            tag="$(cat "${state}/tag")"
+            dest="$(cat "${state}/promoted")"
+            excepted_str="$(cat "${state}/excepted_str")"
+            created="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "Attaching scan report to ${dest}"
+            oras attach --artifact-type application/vnd.cssc.scan-report.v1+json \
+              --annotation "org.opencontainers.image.created=${created}" \
+              --annotation "com.cssc.scan.source=${SOURCE_REPO}" \
+              --annotation "com.cssc.scan.tag=${tag}" \
+              --annotation "com.cssc.scan.threshold=${THRESHOLD}" \
+              --annotation "com.cssc.scan.exceptions=${excepted_str}" \
+              --annotation "com.cssc.scan.scanner=trivy" \
+              --annotation "com.cssc.scan.scanner-version=${TRIVY_RESOLVED}" \
+              --annotation "com.cssc.scan.method=sbom" \
+              --annotation "com.cssc.scan.sbom-predicate-type=${SBOM_PREDICATE_TYPE}" \
+              "${dest}"
+          done
+
+      # --- Phase 7: delete promoted tags from quarantine. ---------------------
+      - name: Delete promoted tags from quarantine
+        if: steps.enumerate.outputs.has_tags == 'true' && !inputs.dry_run && inputs.delete_source
+        env:
+          DELETE_TOKEN: "${{ secrets.ghcr_delete_token }}"
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+          delete_quarantine_tag() {
+            local tag="$1" base vid
+            if [ "${OWNER_TYPE}" = "Organization" ]; then
+              base="orgs/${PKG_OWNER}/packages/container/${PKG_ENC}"
             else
-              jq '.predicate' "${stmt}" > "${out}"
+              base="user/packages/container/${PKG_ENC}"
             fi
-            [ -s "${out}" ] || return 1
-            return 0
+            vid="$(GH_TOKEN="${DELETE_TOKEN}" gh api --paginate "${base}/versions" \
+                   --jq ".[] | select(.metadata.container.tags[]? == \"${tag}\") | .id" 2>/dev/null \
+                   | head -n1 || true)"
+            if [ -z "${vid}" ]; then
+              echo "::warning::Could not resolve a package version id for tag '${tag}'; skipping deletion."
+              return 1
+            fi
+            GH_TOKEN="${DELETE_TOKEN}" gh api -X DELETE "${base}/versions/${vid}" >/dev/null
           }
 
-          # --- Enumerate the quarantine tags (skip referrer fallback tags). -----
-          ls_err="${work}/crane-ls.err"
-          if all_tags="$(crane ls "${SOURCE_REPO}" 2>"${ls_err}")"; then
-            :
-          else
-            if grep -qiE 'NAME_UNKNOWN|not found|MANIFEST_UNKNOWN|UNAUTHORIZED.*not found|repository name not known' "${ls_err}"; then
-              echo "Source repository ${SOURCE_REPO} has no tags yet; nothing to scan."
-              all_tags=""
+          for state in "${WORK}"/state/*/; do
+            [ -d "${state}" ] || continue
+            [ -f "${state}/promoted" ] || continue
+            tag="$(cat "${state}/tag")"
+            if [ -z "${DELETE_TOKEN}" ]; then
+              echo "::warning::delete_source=true but no ghcr_delete_token provided; skipping deletion of ${SOURCE_REPO}:${tag}."
+              printf '%s' "skipped (no token)" > "${state}/del_status"
+            elif delete_quarantine_tag "${tag}"; then
+              printf '%s' "deleted" > "${state}/del_status"
             else
-              echo "::error::Failed to list tags for ${SOURCE_REPO}:"
-              cat "${ls_err}" >&2
-              exit 1
+              printf '%s' "delete failed" > "${state}/del_status"
             fi
-          fi
-          tags="$(printf '%s\n' "${all_tags}" | grep -vE '^sha256-' || true)"
-          if [ -z "${tags}" ]; then
-            echo "No image tags found in ${SOURCE_REPO}; nothing to scan."
-            {
-              echo "### SBOM scan & promote: \`${SOURCE_REPO}\` → \`${DEST_REPO}\`"
-              echo ""
-              echo "No image tags found in the source repository; nothing to do."
-            } >> "${GITHUB_STEP_SUMMARY}"
-            exit 0
-          fi
+          done
+
+      # --- Phase 8: render the run log and job summary. -----------------------
+      # Runs even if an earlier phase failed (as long as tags were enumerated)
+      # so partial results are still reported.
+      - name: Write job summary
+        if: always() && steps.enumerate.outputs.has_tags == 'true'
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
 
           promoted=0
           blocked=0
-          rows="${work}/rows.md"
-          details_md="${work}/details.md"
+          rows="${WORK}/rows.md"
+          details_md="${WORK}/details.md"
           : > "${rows}"
           : > "${details_md}"
 
-          while IFS= read -r tag; do
-            [ -n "${tag}" ] || continue
+          for state in "${WORK}"/state/*/; do
+            [ -d "${state}" ] || continue
+            tag="$(cat "${state}/tag")"
             src="${SOURCE_REPO}:${tag}"
             dest="${DEST_REPO}:${tag}"
-            safe="${tag//[^A-Za-z0-9_.-]/_}"
+            decision="$(cat "${state}/decision" 2>/dev/null || echo "")"
+            blocking_count="$(cat "${state}/blocking_count" 2>/dev/null || echo 0)"
+            remaining_count="$(cat "${state}/remaining_count" 2>/dev/null || echo 0)"
+            excepted_count="$(cat "${state}/excepted_count" 2>/dev/null || echo 0)"
+            platform_count="$(cat "${state}/platform_count" 2>/dev/null || echo 0)"
+            missing_sbom="$(cat "${state}/missing_sbom" 2>/dev/null || echo 0)"
+            remaining_md="$(cat "${state}/remaining_md" 2>/dev/null || true)"
+            excepted_md="$(cat "${state}/excepted_md" 2>/dev/null || true)"
 
-            echo "::group::Scanning SBOMs for ${src}"
-
-            # --- Determine the platforms to scan. ------------------------------
-            manifest_json="$(crane manifest "${src}")"
-            media_type="$(printf '%s' "${manifest_json}" | jq -r '.mediaType // empty')"
-            platforms_file="${work}/platforms-${safe}.tsv"   # digest<TAB>platform
-            : > "${platforms_file}"
-            case "${media_type}" in
-              *image.index*|*manifest.list*)
-                printf '%s' "${manifest_json}" | jq -r '
-                  .manifests[]
-                  | select((.platform.os // "") != "" and (.platform.os // "") != "unknown")
-                  | [ .digest, "\(.platform.os)/\(.platform.architecture)\(if .platform.variant then "/"+.platform.variant else "" end)" ]
-                  | @tsv' >> "${platforms_file}"
-                ;;
+            case "${decision}" in
+              blocked-missing-sbom)
+                blocked=$((blocked + 1))
+                result="blocked (missing SBOM)"
+                icon=":no_entry:"
+                promoted_yesno="no (left in quarantine)" ;;
+              blocked)
+                blocked=$((blocked + 1))
+                result="blocked"
+                icon=":no_entry:"
+                promoted_yesno="no (left in quarantine)" ;;
+              dryrun)
+                promoted=$((promoted + 1))
+                result="would promote"
+                icon=":mag:"
+                promoted_yesno="no (dry run)" ;;
+              promote)
+                promoted=$((promoted + 1))
+                del_status="$(cat "${state}/del_status" 2>/dev/null || echo "kept")"
+                result="promoted (source ${del_status})"
+                icon=":white_check_mark:"
+                promoted_yesno="yes → ${dest}" ;;
               *)
-                printf '%s\t%s\n' "$(crane digest "${src}")" "single" >> "${platforms_file}"
-                ;;
+                result="unknown"
+                icon=":grey_question:"
+                promoted_yesno="—" ;;
             esac
-
-            tag_blocking="${work}/blocking-${safe}.txt"   # union across platforms
-            : > "${tag_blocking}"
-            plat_detail="${work}/platdetail-${safe}.md"
-            : > "${plat_detail}"
-            missing_sbom=0
-            platform_count=0
-
-            while IFS="$(printf '\t')" read -r plat_digest plat_name; do
-              [ -n "${plat_digest}" ] || continue
-              platform_count=$((platform_count + 1))
-              echo "Platform ${plat_name} (${plat_digest})"
-
-              sbom_file="${work}/sbom-${safe}-$(printf '%s' "${plat_name}" | tr '/' '_').json"
-              if ! extract_platform_sbom "${plat_digest}" "${sbom_file}"; then
-                echo "::warning::No SBOM referrer of type ${SBOM_PREDICATE_TYPE} found for ${src} (${plat_name})."
-                missing_sbom=$((missing_sbom + 1))
-                printf '| `%s` | :warning: no SBOM | — | — |\n' "${plat_name}" >> "${plat_detail}"
-                continue
-              fi
-
-              report="${work}/report-${safe}-$(printf '%s' "${plat_name}" | tr '/' '_').json"
-              trivy sbom --quiet --scanners vuln --severity "${SEVERITIES}" \
-                --format json --output "${report}" "${sbom_file}"
-
-              plat_ids="${work}/ids-${safe}.txt"
-              jq -r '[.Results[]?.Vulnerabilities[]?.VulnerabilityID] | unique | .[]' \
-                "${report}" | sort -u > "${plat_ids}"
-              cat "${plat_ids}" >> "${tag_blocking}"
-
-              # Per-platform counts that mirror the gate: total findings at/above
-              # the threshold, and the blocking subset after removing exceptions.
-              plat_total_ids="${work}/plattotal-${safe}.txt"
-              plat_block_ids="${work}/platblock-${safe}.txt"
-              sort -u "${plat_ids}" > "${plat_total_ids}"
-              comm -23 "${plat_total_ids}" "${exceptions_file}" > "${plat_block_ids}"
-              plat_total="$(wc -l < "${plat_total_ids}" | tr -d ' ')"
-              plat_block="$(wc -l < "${plat_block_ids}" | tr -d ' ')"
-              plat_block_list="$(paste -sd ',' "${plat_block_ids}" | sed 's/,/, /g')"
-              printf '| `%s` | %s | %s | %s |\n' \
-                "${plat_name}" "${plat_total}" "${plat_block}" "${plat_block_list:-—}" >> "${plat_detail}"
-            done < "${platforms_file}"
-            echo "::endgroup::"
-
-            # --- Aggregate the gate across all platforms. ----------------------
-            blocking_file="${work}/blockingall-${safe}.txt"
-            remaining_file="${work}/remaining-${safe}.txt"
-            excepted_file="${work}/excepted-${safe}.txt"
-            sort -u "${tag_blocking}" > "${blocking_file}"
-            comm -23 "${blocking_file}" "${exceptions_file}" > "${remaining_file}"
-            comm -12 "${blocking_file}" "${exceptions_file}" > "${excepted_file}"
-
-            blocking_count="$(wc -l < "${blocking_file}" | tr -d ' ')"
-            remaining_count="$(wc -l < "${remaining_file}" | tr -d ' ')"
-            excepted_count="$(wc -l < "${excepted_file}" | tr -d ' ')"
-            excepted_str="$(paste -sd '|' "${excepted_file}")"
-            remaining_md="$(paste -sd ',' "${remaining_file}" | sed 's/,/, /g')"
-            excepted_md="$(paste -sd ',' "${excepted_file}" | sed 's/,/, /g')"
-
-            # --- Decide the outcome for this tag. ------------------------------
-            # A missing SBOM is treated as a blocking failure: we cannot gate an
-            # image whose SBOM we cannot read.
-            if [ "${missing_sbom}" -gt 0 ]; then
-              blocked=$((blocked + 1))
-              result="blocked (missing SBOM)"
-              icon=":no_entry:"
-              promoted_yesno="no (left in quarantine)"
-            elif [ "${remaining_count}" -gt 0 ]; then
-              blocked=$((blocked + 1))
-              result="blocked"
-              icon=":no_entry:"
-              promoted_yesno="no (left in quarantine)"
-            elif [ "${DRY_RUN}" = "true" ]; then
-              promoted=$((promoted + 1))
-              result="would promote"
-              icon=":mag:"
-              promoted_yesno="no (dry run)"
-            else
-              copy_with_referrers "${src}" "${dest}"
-
-              created="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-              oras attach --artifact-type application/vnd.cssc.scan-report.v1+json \
-                --annotation "org.opencontainers.image.created=${created}" \
-                --annotation "com.cssc.scan.source=${SOURCE_REPO}" \
-                --annotation "com.cssc.scan.tag=${tag}" \
-                --annotation "com.cssc.scan.threshold=${THRESHOLD}" \
-                --annotation "com.cssc.scan.exceptions=${excepted_str}" \
-                --annotation "com.cssc.scan.scanner=trivy" \
-                --annotation "com.cssc.scan.scanner-version=${trivy_resolved}" \
-                --annotation "com.cssc.scan.method=sbom" \
-                --annotation "com.cssc.scan.sbom-predicate-type=${SBOM_PREDICATE_TYPE}" \
-                "${dest}"
-
-              del_status="kept"
-              if [ "${DELETE_SOURCE}" = "true" ]; then
-                if [ -z "${DELETE_TOKEN}" ]; then
-                  echo "::warning::delete_source=true but no ghcr_delete_token provided; skipping deletion of ${src}."
-                  del_status="skipped (no token)"
-                elif delete_quarantine_tag "${tag}"; then
-                  del_status="deleted"
-                else
-                  del_status="delete failed"
-                fi
-              fi
-
-              promoted=$((promoted + 1))
-              result="promoted (source ${del_status})"
-              icon=":white_check_mark:"
-              promoted_yesno="yes → ${dest}"
-            fi
 
             # --- Human-readable report to the run log. -------------------------
             {
@@ -424,13 +570,18 @@ jobs:
               echo ""
               echo "| Platform | CVEs ≥ ${THRESHOLD} | Blocking | Blocking CVE IDs |"
               echo "| --- | --- | --- | --- |"
-              cat "${plat_detail}"
+              # The scan step may have failed before writing platdetail.md (e.g. a
+              # `crane manifest` error). Guard the read so this always()-summary
+              # still renders instead of aborting under `set -e`.
+              if [ -s "${state}/platdetail.md" ]; then
+                cat "${state}/platdetail.md"
+              else
+                echo "| — | — | — | (no platform detail recorded) |"
+              fi
               echo ""
               echo "</details>"
             } >> "${details_md}"
-          done <<EOF
-          ${tags}
-          EOF
+          done
 
           {
             echo "### SBOM scan & promote: \`${SOURCE_REPO}\` → \`${DEST_REPO}\`"
@@ -438,7 +589,7 @@ jobs:
             echo "- **Scan method:** SBOM (\`trivy sbom\`)"
             echo "- **SBOM predicate type:** \`${SBOM_PREDICATE_TYPE}\`"
             echo "- **Threshold:** \`${THRESHOLD}\` (severities scanned: \`${SEVERITIES}\`)"
-            echo "- **Scanner:** trivy \`${trivy_resolved}\`"
+            echo "- **Scanner:** trivy \`${TRIVY_RESOLVED}\`"
             echo "- **Dry run:** \`${DRY_RUN}\`"
             echo "- **Promoted:** ${promoted} · **Blocked:** ${blocked}"
             echo ""

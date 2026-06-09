@@ -61,6 +61,20 @@ jobs:
     permissions:
       contents: read
       packages: write
+    # Shared across every step in this job. Step-local state (the work dir, the
+    # resolved severity set, GHCR package coordinates) is computed in "Prepare"
+    # and exported via $GITHUB_ENV so later standalone steps can read it.
+    env:
+      SOURCE_REPO: "${{ inputs.source_repo }}"
+      DEST_REPO: "${{ inputs.dest_repo }}"
+      THRESHOLD: "${{ inputs.severity_threshold }}"
+      EXCEPTIONS: "${{ inputs.cve_exceptions }}"
+      DELETE_SOURCE: "${{ inputs.delete_source }}"
+      DRY_RUN: "${{ inputs.dry_run }}"
+      TRIVY_VERSION: "${{ inputs.trivy_version }}"
+      # Authenticate Trivy's remote image pulls to GHCR.
+      TRIVY_USERNAME: "${{ github.actor }}"
+      TRIVY_PASSWORD: "${{ github.token }}"
     steps:
       - name: Set up crane
         uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
@@ -86,33 +100,30 @@ jobs:
           echo "${{ github.token }}" | oras login ghcr.io \
             --username "${{ github.actor }}" --password-stdin
 
-      - name: Scan, gate, promote, attest, and clean up
+      # --- Phase 1: resolve config, exceptions, and deletion coordinates. -----
+      # Exports the work dir, severity set, resolved Trivy version, and GHCR
+      # package coordinates via $GITHUB_ENV so the standalone steps below can
+      # consume them without recomputing.
+      - name: Prepare scan environment
         env:
-          SOURCE_REPO: "${{ inputs.source_repo }}"
-          DEST_REPO: "${{ inputs.dest_repo }}"
-          THRESHOLD: "${{ inputs.severity_threshold }}"
-          EXCEPTIONS: "${{ inputs.cve_exceptions }}"
-          DELETE_SOURCE: "${{ inputs.delete_source }}"
-          DRY_RUN: "${{ inputs.dry_run }}"
-          TRIVY_VERSION: "${{ inputs.trivy_version }}"
           DELETE_TOKEN: "${{ secrets.ghcr_delete_token }}"
-          # Authenticate Trivy's remote image pulls to GHCR.
-          TRIVY_USERNAME: "${{ github.actor }}"
-          TRIVY_PASSWORD: "${{ github.token }}"
         run: |
           set -euo pipefail
           export LC_ALL=C
 
-          work="$(mktemp -d)"
+          work="${RUNNER_TEMP}/cssc-scan"
+          mkdir -p "${work}/state"
+          echo "WORK=${work}" >> "${GITHUB_ENV}"
 
           # --- Resolve the blocking severity set from the threshold floor. ------
           case "${THRESHOLD}" in
-            LOW)      SEVERITIES="LOW,MEDIUM,HIGH,CRITICAL" ;;
-            MEDIUM)   SEVERITIES="MEDIUM,HIGH,CRITICAL" ;;
-            HIGH)     SEVERITIES="HIGH,CRITICAL" ;;
-            CRITICAL) SEVERITIES="CRITICAL" ;;
+            LOW)      severities="LOW,MEDIUM,HIGH,CRITICAL" ;;
+            MEDIUM)   severities="MEDIUM,HIGH,CRITICAL" ;;
+            HIGH)     severities="HIGH,CRITICAL" ;;
+            CRITICAL) severities="CRITICAL" ;;
             *) echo "::error::Invalid severity_threshold '${THRESHOLD}' (expected LOW|MEDIUM|HIGH|CRITICAL)"; exit 1 ;;
           esac
+          echo "SEVERITIES=${severities}" >> "${GITHUB_ENV}"
 
           # --- Normalise the exception list into a sorted, deduped file. --------
           exceptions_file="${work}/exceptions.txt"
@@ -125,6 +136,7 @@ jobs:
           # --- Resolve the actual Trivy version for the referrer annotation. ----
           trivy_resolved="$(trivy version -f json 2>/dev/null | jq -r '.Version // empty' || true)"
           [ -n "${trivy_resolved}" ] || trivy_resolved="${TRIVY_VERSION#v}"
+          echo "TRIVY_RESOLVED=${trivy_resolved}" >> "${GITHUB_ENV}"
 
           # --- Work out the GHCR package coordinates for deletion. --------------
           owner="$(printf '%s' "${SOURCE_REPO}" | awk -F/ '{print $2}')"
@@ -134,29 +146,23 @@ jobs:
           if [ "${DELETE_SOURCE}" = "true" ] && [ -n "${DELETE_TOKEN}" ]; then
             owner_type="$(GH_TOKEN="${DELETE_TOKEN}" gh api "users/${owner}" --jq '.type' 2>/dev/null || true)"
           fi
+          {
+            echo "PKG_OWNER=${owner}"
+            echo "PKG_ENC=${pkg_enc}"
+            echo "OWNER_TYPE=${owner_type}"
+          } >> "${GITHUB_ENV}"
 
-          delete_quarantine_tag() {
-            local tag="$1" base vid
-            if [ "${owner_type}" = "Organization" ]; then
-              base="orgs/${owner}/packages/container/${pkg_enc}"
-            else
-              base="user/packages/container/${pkg_enc}"
-            fi
-            vid="$(GH_TOKEN="${DELETE_TOKEN}" gh api --paginate "${base}/versions" \
-                   --jq ".[] | select(.metadata.container.tags[]? == \"${tag}\") | .id" 2>/dev/null \
-                   | head -n1 || true)"
-            if [ -z "${vid}" ]; then
-              echo "::warning::Could not resolve a package version id for tag '${tag}'; skipping deletion."
-              return 1
-            fi
-            GH_TOKEN="${DELETE_TOKEN}" gh api -X DELETE "${base}/versions/${vid}" >/dev/null
-          }
+      # --- Phase 2: list the quarantine tags. ---------------------------------
+      # Distinguish an empty / not-yet-created repository (expected, has_tags
+      # false) from a real failure such as an auth or transient registry error
+      # (must fail loudly rather than silently scanning nothing).
+      - name: Enumerate quarantine tags
+        id: enumerate
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
 
-          # --- Enumerate the quarantine tags. ----------------------------------
-          # Distinguish an empty / not-yet-created repository (expected, exit 0)
-          # from a real failure such as an auth or transient registry error
-          # (must fail loudly rather than silently scanning nothing).
-          ls_err="${work}/crane-ls.err"
+          ls_err="${WORK}/crane-ls.err"
           if tags="$(crane ls "${SOURCE_REPO}" 2>"${ls_err}")"; then
             :
           else
@@ -169,6 +175,7 @@ jobs:
               exit 1
             fi
           fi
+
           if [ -z "${tags}" ]; then
             echo "No tags found in ${SOURCE_REPO}; nothing to scan."
             {
@@ -176,47 +183,72 @@ jobs:
               echo ""
               echo "No tags found in the source repository; nothing to do."
             } >> "${GITHUB_STEP_SUMMARY}"
+            echo "has_tags=false" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
 
-          promoted=0
-          blocked=0
-          rows="${work}/rows.md"
-          details_md="${work}/details.md"
-          : > "${rows}"
-          : > "${details_md}"
+          printf '%s\n' "${tags}" > "${WORK}/tags.txt"
+          echo "has_tags=true" >> "${GITHUB_OUTPUT}"
+
+      # --- Phase 3: scan each tag with Trivy. ---------------------------------
+      # Per-tag state lives under ${WORK}/state/<safe>/ so later steps can pick
+      # up where this one left off.
+      - name: Scan images with Trivy
+        if: steps.enumerate.outputs.has_tags == 'true'
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
 
           while IFS= read -r tag; do
             [ -n "${tag}" ] || continue
             src="${SOURCE_REPO}:${tag}"
-            dest="${DEST_REPO}:${tag}"
             safe="${tag//[^A-Za-z0-9_.-]/_}"
+            state="${WORK}/state/${safe}"
+            mkdir -p "${state}"
+            printf '%s' "${tag}" > "${state}/tag"
 
             echo "::group::Scanning ${src}"
-            report="${work}/report-${safe}.json"
             trivy image --quiet --scanners vuln --severity "${SEVERITIES}" \
-              --format json --output "${report}" "${src}"
+              --format json --output "${state}/report.json" "${src}"
+            echo "::endgroup::"
+          done < "${WORK}/tags.txt"
 
-            blocking_file="${work}/blocking-${safe}.txt"
-            remaining_file="${work}/remaining-${safe}.txt"
-            excepted_file="${work}/excepted-${safe}.txt"
+      # --- Phase 4: apply the threshold + exception gate. ---------------------
+      # Records per-tag counts and a decision (blocked | dryrun | promote) that
+      # the promote/attest/cleanup steps act on. Does not itself fail the job on
+      # a blocked image — blocked tags are simply left in quarantine.
+      - name: Gate on scan findings
+        if: steps.enumerate.outputs.has_tags == 'true'
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+          exceptions_file="${WORK}/exceptions.txt"
+          for state in "${WORK}"/state/*/; do
+            [ -d "${state}" ] || continue
+            tag="$(cat "${state}/tag")"
+            report="${state}/report.json"
+
             jq -r '[.Results[]?.Vulnerabilities[]?.VulnerabilityID] | unique | .[]' \
-              "${report}" | sort -u > "${blocking_file}"
-            comm -23 "${blocking_file}" "${exceptions_file}" > "${remaining_file}"
-            comm -12 "${blocking_file}" "${exceptions_file}" > "${excepted_file}"
+              "${report}" | sort -u > "${state}/blocking.txt"
+            comm -23 "${state}/blocking.txt" "${exceptions_file}" > "${state}/remaining.txt"
+            comm -12 "${state}/blocking.txt" "${exceptions_file}" > "${state}/excepted.txt"
 
-            blocking_count="$(wc -l < "${blocking_file}" | tr -d ' ')"
-            remaining_count="$(wc -l < "${remaining_file}" | tr -d ' ')"
-            excepted_count="$(wc -l < "${excepted_file}" | tr -d ' ')"
+            blocking_count="$(wc -l < "${state}/blocking.txt" | tr -d ' ')"
+            remaining_count="$(wc -l < "${state}/remaining.txt" | tr -d ' ')"
+            excepted_count="$(wc -l < "${state}/excepted.txt" | tr -d ' ')"
+            printf '%s' "${blocking_count}" > "${state}/blocking_count"
+            printf '%s' "${remaining_count}" > "${state}/remaining_count"
+            printf '%s' "${excepted_count}" > "${state}/excepted_count"
+
             # Pipe-separated form is used only for the oras annotation.
-            excepted_str="$(paste -sd '|' "${excepted_file}")"
+            paste -sd '|' "${state}/excepted.txt" > "${state}/excepted_str"
             # Comma-separated, Markdown-safe display forms for the summary tables
             # (CVE IDs contain no '|', so a comma join keeps table columns intact).
-            remaining_md="$(paste -sd ',' "${remaining_file}" | sed 's/,/, /g')"
-            excepted_md="$(paste -sd ',' "${excepted_file}" | sed 's/,/, /g')"
+            paste -sd ',' "${state}/remaining.txt" | sed 's/,/, /g' > "${state}/remaining_md"
+            paste -sd ',' "${state}/excepted.txt" | sed 's/,/, /g' > "${state}/excepted_md"
 
             # Per-CVE detail: id, severity, package, installed, fixed (deduped, ranked).
-            vulns_tsv="${work}/vulns-${safe}.tsv"
             jq -r '
               [ .Results[]? | (.Vulnerabilities[]? | {
                   id: .VulnerabilityID,
@@ -229,51 +261,156 @@ jobs:
               | map(. + {rank: ({"CRITICAL":0,"HIGH":1,"MEDIUM":2,"LOW":3}[.sev] // 9)})
               | sort_by(.rank, .id)
               | .[] | [.id, .sev, .pkg, .installed, .fixed] | @tsv
-            ' "${report}" > "${vulns_tsv}"
-            echo "::endgroup::"
+            ' "${report}" > "${state}/vulns.tsv"
 
-            # --- Decide the outcome for this tag. --------------------------------
             if [ "${remaining_count}" -gt 0 ]; then
-              blocked=$((blocked + 1))
-              result="blocked"
-              icon=":no_entry:"
-              promoted_yesno="no (left in quarantine)"
+              echo "blocked" > "${state}/decision"
             elif [ "${DRY_RUN}" = "true" ]; then
-              promoted=$((promoted + 1))
-              result="would promote"
-              icon=":mag:"
-              promoted_yesno="no (dry run)"
+              echo "dryrun" > "${state}/decision"
             else
-              crane copy "${src}" "${dest}"
-
-              created="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-              oras attach --artifact-type application/vnd.cssc.scan-report.v1+json \
-                --annotation "org.opencontainers.image.created=${created}" \
-                --annotation "com.cssc.scan.source=${SOURCE_REPO}" \
-                --annotation "com.cssc.scan.tag=${tag}" \
-                --annotation "com.cssc.scan.threshold=${THRESHOLD}" \
-                --annotation "com.cssc.scan.exceptions=${excepted_str}" \
-                --annotation "com.cssc.scan.scanner=trivy" \
-                --annotation "com.cssc.scan.scanner-version=${trivy_resolved}" \
-                "${dest}"
-
-              del_status="kept"
-              if [ "${DELETE_SOURCE}" = "true" ]; then
-                if [ -z "${DELETE_TOKEN}" ]; then
-                  echo "::warning::delete_source=true but no ghcr_delete_token provided; skipping deletion of ${src}."
-                  del_status="skipped (no token)"
-                elif delete_quarantine_tag "${tag}"; then
-                  del_status="deleted"
-                else
-                  del_status="delete failed"
-                fi
-              fi
-
-              promoted=$((promoted + 1))
-              result="promoted (source ${del_status})"
-              icon=":white_check_mark:"
-              promoted_yesno="yes → ${dest}"
+              echo "promote" > "${state}/decision"
             fi
+            echo "Gate ${SOURCE_REPO}:${tag} -> $(cat "${state}/decision") (blocking ${remaining_count}, excepted ${excepted_count})"
+          done
+
+      # --- Phase 5: promote passing images. -----------------------------------
+      # Skipped entirely on a dry run. Only tags whose gate decision is
+      # "promote" are copied; a "promoted" marker drives the later steps.
+      - name: Promote passing images
+        if: steps.enumerate.outputs.has_tags == 'true' && !inputs.dry_run
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+          for state in "${WORK}"/state/*/; do
+            [ -d "${state}" ] || continue
+            [ "$(cat "${state}/decision")" = "promote" ] || continue
+            tag="$(cat "${state}/tag")"
+            src="${SOURCE_REPO}:${tag}"
+            dest="${DEST_REPO}:${tag}"
+            echo "Promoting ${src} -> ${dest}"
+            crane copy "${src}" "${dest}"
+            printf '%s' "${dest}" > "${state}/promoted"
+          done
+
+      # --- Phase 6: attach the scan-report referrer to promoted images. -------
+      - name: Attach scan-report attestation
+        if: steps.enumerate.outputs.has_tags == 'true' && !inputs.dry_run
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+          for state in "${WORK}"/state/*/; do
+            [ -d "${state}" ] || continue
+            [ -f "${state}/promoted" ] || continue
+            tag="$(cat "${state}/tag")"
+            dest="$(cat "${state}/promoted")"
+            excepted_str="$(cat "${state}/excepted_str")"
+            created="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "Attaching scan report to ${dest}"
+            oras attach --artifact-type application/vnd.cssc.scan-report.v1+json \
+              --annotation "org.opencontainers.image.created=${created}" \
+              --annotation "com.cssc.scan.source=${SOURCE_REPO}" \
+              --annotation "com.cssc.scan.tag=${tag}" \
+              --annotation "com.cssc.scan.threshold=${THRESHOLD}" \
+              --annotation "com.cssc.scan.exceptions=${excepted_str}" \
+              --annotation "com.cssc.scan.scanner=trivy" \
+              --annotation "com.cssc.scan.scanner-version=${TRIVY_RESOLVED}" \
+              "${dest}"
+          done
+
+      # --- Phase 7: delete promoted tags from quarantine. ---------------------
+      - name: Delete promoted tags from quarantine
+        if: steps.enumerate.outputs.has_tags == 'true' && !inputs.dry_run && inputs.delete_source
+        env:
+          DELETE_TOKEN: "${{ secrets.ghcr_delete_token }}"
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+          delete_quarantine_tag() {
+            local tag="$1" base vid
+            if [ "${OWNER_TYPE}" = "Organization" ]; then
+              base="orgs/${PKG_OWNER}/packages/container/${PKG_ENC}"
+            else
+              base="user/packages/container/${PKG_ENC}"
+            fi
+            vid="$(GH_TOKEN="${DELETE_TOKEN}" gh api --paginate "${base}/versions" \
+                   --jq ".[] | select(.metadata.container.tags[]? == \"${tag}\") | .id" 2>/dev/null \
+                   | head -n1 || true)"
+            if [ -z "${vid}" ]; then
+              echo "::warning::Could not resolve a package version id for tag '${tag}'; skipping deletion."
+              return 1
+            fi
+            GH_TOKEN="${DELETE_TOKEN}" gh api -X DELETE "${base}/versions/${vid}" >/dev/null
+          }
+
+          for state in "${WORK}"/state/*/; do
+            [ -d "${state}" ] || continue
+            [ -f "${state}/promoted" ] || continue
+            tag="$(cat "${state}/tag")"
+            if [ -z "${DELETE_TOKEN}" ]; then
+              echo "::warning::delete_source=true but no ghcr_delete_token provided; skipping deletion of ${SOURCE_REPO}:${tag}."
+              printf '%s' "skipped (no token)" > "${state}/del_status"
+            elif delete_quarantine_tag "${tag}"; then
+              printf '%s' "deleted" > "${state}/del_status"
+            else
+              printf '%s' "delete failed" > "${state}/del_status"
+            fi
+          done
+
+      # --- Phase 8: render the run log and job summary. -----------------------
+      # Runs even if an earlier phase failed (as long as tags were enumerated)
+      # so partial results are still reported.
+      - name: Write job summary
+        if: always() && steps.enumerate.outputs.has_tags == 'true'
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+          exceptions_file="${WORK}/exceptions.txt"
+          promoted=0
+          blocked=0
+          rows="${WORK}/rows.md"
+          details_md="${WORK}/details.md"
+          : > "${rows}"
+          : > "${details_md}"
+
+          for state in "${WORK}"/state/*/; do
+            [ -d "${state}" ] || continue
+            tag="$(cat "${state}/tag")"
+            src="${SOURCE_REPO}:${tag}"
+            dest="${DEST_REPO}:${tag}"
+            decision="$(cat "${state}/decision" 2>/dev/null || echo "")"
+            blocking_count="$(cat "${state}/blocking_count" 2>/dev/null || echo 0)"
+            remaining_count="$(cat "${state}/remaining_count" 2>/dev/null || echo 0)"
+            excepted_count="$(cat "${state}/excepted_count" 2>/dev/null || echo 0)"
+            remaining_md="$(cat "${state}/remaining_md" 2>/dev/null || true)"
+            excepted_md="$(cat "${state}/excepted_md" 2>/dev/null || true)"
+            vulns_tsv="${state}/vulns.tsv"
+
+            case "${decision}" in
+              blocked)
+                blocked=$((blocked + 1))
+                result="blocked"
+                icon=":no_entry:"
+                promoted_yesno="no (left in quarantine)" ;;
+              dryrun)
+                promoted=$((promoted + 1))
+                result="would promote"
+                icon=":mag:"
+                promoted_yesno="no (dry run)" ;;
+              promote)
+                promoted=$((promoted + 1))
+                del_status="$(cat "${state}/del_status" 2>/dev/null || echo "kept")"
+                result="promoted (source ${del_status})"
+                icon=":white_check_mark:"
+                promoted_yesno="yes → ${dest}" ;;
+              *)
+                result="unknown"
+                icon=":grey_question:"
+                promoted_yesno="—" ;;
+            esac
 
             # --- Human-readable report to the run log. ---------------------------
             {
@@ -327,15 +464,13 @@ jobs:
               echo ""
               echo "</details>"
             } >> "${details_md}"
-          done <<EOF
-          ${tags}
-          EOF
+          done
 
           {
             echo "### Scan & promote: \`${SOURCE_REPO}\` → \`${DEST_REPO}\`"
             echo ""
             echo "- **Threshold:** \`${THRESHOLD}\` (severities scanned: \`${SEVERITIES}\`)"
-            echo "- **Scanner:** trivy \`${trivy_resolved}\`"
+            echo "- **Scanner:** trivy \`${TRIVY_RESOLVED}\`"
             echo "- **Dry run:** \`${DRY_RUN}\`"
             echo "- **Promoted:** ${promoted} · **Blocked:** ${blocked}"
             echo ""
