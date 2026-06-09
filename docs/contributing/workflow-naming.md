@@ -11,7 +11,7 @@ both in the file system and in the Actions UI.
 | Category | Purpose | Workflow file | Display `name:` | Concurrency group |
 | -------- | ------- | ------------- | --------------- | ----------------- |
 | **Mirror** | Copy / refresh a base image from an upstream registry into GHCR | `mirror-<image>.yml` | `mirror / quarantine/<image>` | `mirror-quarantine-<image>` |
-| **Scan** | Scan a quarantined image and promote it into `golden/<image>` when it passes the vulnerability policy | `scan-<image>.yml` | `scan / quarantine/<image>` | `scan-quarantine-<image>` |
+| **Promote from quarantine** | Scan a quarantined image and promote it into its golden/base repository (`golden/<image>`, or `base/...` for base/hardened images) when it passes the vulnerability policy | `promote-from-quarantine-<image>.yml` | `promote from quarantine / quarantine/<image>` | `promote-from-quarantine-<image>` |
 | **Build** | Build an application image on top of a mirrored base | `build-<app>.yml` | `build / <app>` | `build-<app>` |
 | **Reusable** | Shared logic invoked by other workflows; never triggered directly | `_<purpose>.yml` (leading underscore) | `_reusable / <purpose>` | n/a |
 | **Composite action** | A single reusable step shared across workflows | `.github/actions/<verb-noun>/action.yml` | `name: <verb-noun>` | n/a |
@@ -19,7 +19,8 @@ both in the file system and in the Actions UI.
 ### Rules
 
 1. **Verb prefix.** Every workflow filename starts with a category verb:
-   `mirror-`, `scan-`, `build-`, or a leading underscore (`_`) for reusable
+   `mirror-`, `promote-from-quarantine-`, `build-`, or a leading underscore
+   (`_`) for reusable
    workflows. This groups related workflows together alphabetically and makes
    intent obvious at a glance.
 2. **Leading underscore = internal.** Reusable workflows (triggered by
@@ -31,8 +32,11 @@ both in the file system and in the Actions UI.
    job never overlap, while different images/apps run independently.
 5. **GHCR destination repositories** for mirrored base images follow the
    `quarantine/<image>` scheme, e.g. `ghcr.io/<owner>/quarantine/python`.
-   Images promoted out of quarantine by a scan workflow follow the
-   `golden/<image>` scheme, e.g. `ghcr.io/<owner>/golden/python`.
+   Images promoted out of quarantine by a promote-from-quarantine workflow
+   follow the
+   `golden/<image>` scheme, e.g. `ghcr.io/<owner>/golden/python`, except for
+   base/hardened images which are promoted into the `base/...` namespace, e.g.
+   `ghcr.io/<owner>/base/node` or `ghcr.io/<owner>/base/hardened/python`.
 
 ## Mirror workflows
 
@@ -61,20 +65,22 @@ Mirror workflows keep a copy of an upstream base image fresh in GHCR.
    (`source_image`, `source_tag`, `dest_image`, `dest_tag`).
 3. No logic changes are needed — the reusable workflow does the work.
 
-## Scan workflows
+## Promote-from-quarantine workflows
 
-Scan workflows gate images out of quarantine. They scan every tag in a
+Promote-from-quarantine workflows gate images out of quarantine. They scan every
+tag in a
 `quarantine/<image>` repository with Trivy and promote the images that pass a
 configurable severity threshold (plus an optional CVE exception list) into a
-`golden/<image>` repository.
+`golden/<image>` repository (or a `base/...` repository for base/hardened
+images).
 
 - **Structure.** Logic lives in a single reusable workflow,
-  [`_scan-image.yml`](../../.github/workflows/_scan-image.yml), which is
+  [`_promote-from-quarantine.yml`](../../.github/workflows/_promote-from-quarantine.yml), which is
   assembled from composite actions under `.github/actions/` (see
   [workflow actions](../reference/workflow-actions.md)) and fans the work out
   across a job matrix (one job per tag). Each scanned
   repository has a thin caller, e.g.
-  [`scan-python.yml`](../../.github/workflows/scan-python.yml), that only
+  [`promote-from-quarantine-python.yml`](../../.github/workflows/promote-from-quarantine-python.yml), that only
   declares triggers and the repository-specific inputs and calls the reusable
   workflow via `uses:`.
 - **Gate + promote.** Passing images are copied with `crane copy`, get an empty
@@ -86,11 +92,11 @@ configurable severity threshold (plus an optional CVE exception list) into a
 - **Auth.** GHCR scan/copy/attach use the built-in `GITHUB_TOKEN`
   (`packages: write`). Deleting quarantine tags needs a separate
   `delete:packages` PAT (see the
-  [scan-and-promote architecture](../architecture/workflows/scan-and-promote-workflows.md)).
+  [promote-from-quarantine architecture](../architecture/workflows/promote-from-quarantine-workflows.md)).
 
-### Adding a new scan workflow
+### Adding a new promote-from-quarantine workflow
 
-1. Copy `scan-python.yml` to `scan-<image>.yml`.
+1. Copy `promote-from-quarantine-python.yml` to `promote-from-quarantine-<image>.yml`.
 2. Update the display `name:`, the `concurrency.group`, and the inputs
    (`source_repo`, `dest_repo`, and any threshold/exception overrides).
 3. No logic changes are needed — the reusable workflow does the work.

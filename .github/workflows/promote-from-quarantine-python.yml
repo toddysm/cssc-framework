@@ -1,13 +1,14 @@
 # Scan quarantine/python with Trivy and promote clean images into golden/python.
 #
 # This caller only defines triggers and the repository-specific inputs; the
-# scan/gate/promote/attest/cleanup logic lives in the reusable _scan-image.yml
-# workflow.
+# scan/gate/promote/attest/cleanup logic lives in the reusable
+# _promote-from-quarantine.yml workflow.
 #
-# Naming convention: "scan-<image>.yml" for scan-and-promote workflows, kept
-# separate from "mirror-<image>.yml" and "build-<app>.yml". See
+# Naming convention: "promote-from-quarantine-<image>.yml" for
+# promote-from-quarantine workflows, kept separate from "mirror-<image>.yml" and
+# "build-<app>.yml". See
 # docs/contributing/workflow-naming.md.
-name: scan / quarantine/python
+name: promote from quarantine / quarantine/python
 
 on:
   # Daily scan at 07:00 UTC, after the 06:00 mirror has refreshed quarantine.
@@ -37,9 +38,9 @@ on:
         default: false
         type: boolean
 
-# Avoid overlapping runs for this specific scan.
+# Avoid overlapping runs for this specific promote-from-quarantine workflow.
 concurrency:
-  group: scan-quarantine-python
+  group: promote-from-quarantine-python
   cancel-in-progress: false
 
 permissions:
@@ -47,8 +48,8 @@ permissions:
   packages: write
 
 jobs:
-  scan-python:
-    uses: ./.github/workflows/_scan-image.yml
+  promote-from-quarantine-python:
+    uses: ./.github/workflows/_promote-from-quarantine.yml
     with:
       source_repo: ghcr.io/toddysm/quarantine/python
       dest_repo: ghcr.io/toddysm/golden/python

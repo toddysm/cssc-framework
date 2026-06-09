@@ -1,4 +1,4 @@
-# Scan-and-promote workflows architecture
+# Promote-from-quarantine workflows architecture
 
 This document describes the architecture of the GitHub Actions workflows that
 scan the container images sitting in a `quarantine/<image>` repository and
@@ -18,7 +18,8 @@ mirror workflows that populate quarantine in the first place, see
 
 The mirror workflows keep a private copy of upstream base images fresh inside
 `quarantine/<image>`. Quarantine is intentionally *untrusted*: an image landing
-there has only been copied, never inspected. The scan-and-promote workflows add
+there has only been copied, never inspected. The promote-from-quarantine
+workflows add
 the missing gate. They:
 
 - enumerate every tag in a `quarantine/<image>` repository,
@@ -41,7 +42,7 @@ referrer describing the decision.
 
 ## How are the actions structured
 
-The scan-and-promote workflows follow the same **caller + reusable workflow**
+The promote-from-quarantine workflows follow the same **caller + reusable workflow**
 pattern as the mirror workflows, and the reusable workflows are assembled from
 small, single-purpose **composite actions** under
 [`.github/actions/`](../../../.github/actions/) (see the
@@ -60,23 +61,23 @@ repository gets a thin caller that only supplies configuration.
 │   ├── attach-scan-report/
 │   └── delete-image/
 └── workflows/
-    ├── _scan-image.yml          # reusable workflow — image-filesystem scan
-    ├── _scan-sbom-image.yml     # reusable workflow — SBOM-attestation scan (hardened images)
-    ├── scan-python.yml          # caller — quarantine/python  → golden/python
-    ├── scan-node.yml            # caller — quarantine/node    → golden/node
-    ├── scan-openjdk.yml         # caller — quarantine/openjdk → golden/openjdk
-    └── scan-hardened-python.yml # caller — quarantine/hardened/python → base/hardened/python (SBOM-based)
+    ├── _promote-from-quarantine.yml      # reusable workflow — image-filesystem scan
+    ├── _promote-from-quarantine-sbom.yml # reusable workflow — SBOM-attestation scan (hardened images)
+    ├── promote-from-quarantine-python.yml          # caller — quarantine/python  → golden/python
+    ├── promote-from-quarantine-node.yml            # caller — quarantine/node    → golden/node
+    ├── promote-from-quarantine-openjdk.yml         # caller — quarantine/openjdk → golden/openjdk
+    └── promote-from-quarantine-hardened-python.yml # caller — quarantine/hardened/python → base/hardened/python (SBOM-based)
 ```
 
-- **Display name:** `scan / quarantine/<image>` (e.g. `scan / quarantine/python`).
-- **Concurrency group:** `scan-quarantine-<image>` (e.g. `scan-quarantine-python`).
+- **Display name:** `promote from quarantine / quarantine/<image>` (e.g. `promote from quarantine / quarantine/python`).
+- **Concurrency group:** `promote-from-quarantine-<image>` (e.g. `promote-from-quarantine-python`).
 
 This is the third workflow category, alongside `mirror` and `build`. See the
 [naming conventions](../../contributing/workflow-naming.md).
 
-### Reusable workflow (`_scan-image.yml`)
+### Reusable workflow (`_promote-from-quarantine.yml`)
 
-`_scan-image.yml` is an internal workflow (the leading underscore marks it as
+`_promote-from-quarantine.yml` is an internal workflow (the leading underscore marks it as
 "do not run directly"). It is triggered only through `workflow_call` and exposes
 the following inputs:
 
@@ -115,17 +116,17 @@ job matrix so each tag is processed in its own parallel job:
    severity, package, installed/fixed versions, and whether it was blocking or
    excepted).
 
-### Caller workflows (`scan-<image>.yml`)
+### Caller workflows (`promote-from-quarantine-<image>.yml`)
 
 Each caller contains no shell logic. A caller only declares:
 
 - **Triggers** — a daily `schedule` (07:00 UTC, after the 06:00 mirror) and a
   manual `workflow_dispatch` exposing overrides for `severity_threshold`,
   `cve_exceptions`, and `dry_run`.
-- **Concurrency** — a per-image group (`scan-quarantine-<image>`) with
+- **Concurrency** — a per-image group (`promote-from-quarantine-<image>`) with
   `cancel-in-progress: false`.
 - **Permissions** — `contents: read`, `packages: write`.
-- **A single job** that calls `./.github/workflows/_scan-image.yml` via `uses:`,
+- **A single job** that calls `./.github/workflows/_promote-from-quarantine.yml` via `uses:`,
   passes the image-specific inputs, and forwards the `ghcr_delete_token` secret.
 
 Adding a new scanned repository is a copy-and-edit operation on a caller file
@@ -139,9 +140,9 @@ the `scan` job then processes each tag independently and in parallel, and the
 
 ```mermaid
 flowchart TD
-    A[schedule 07:00 UTC] --> C[caller scan-image.yml]
+    A[schedule 07:00 UTC] --> C[caller promote-from-quarantine-image.yml]
     B[workflow_dispatch + overrides] --> C
-    C -->|uses: with inputs| D[_scan-image.yml]
+    C -->|uses: with inputs| D[_promote-from-quarantine.yml]
     D --> E[enumerate job: login + enumerate-tags]
     E -->|tags-json matrix| F[scan job: one parallel job per tag]
     F --> G[scan-image: trivy image]
@@ -174,7 +175,7 @@ For each tag the gate is evaluated as follows:
   offending CVEs. Blocked images never fail the whole job; the run finishes and
   the summary lists every outcome.
 
-## SBOM-based scanning for hardened images (`_scan-sbom-image.yml`)
+## SBOM-based scanning for hardened images (`_promote-from-quarantine-sbom.yml`)
 
 Distroless images such as [Docker Hardened Images](https://docs.docker.com/dhi/)
 (DHI) ship no package-manager metadata, so `trivy image` cannot enumerate their
@@ -182,10 +183,10 @@ packages. Those images instead carry their package inventory as an **SBOM
 attestation** — an in-toto statement attached to each platform manifest as an
 OCI referrer. The mirror copies these referrers into quarantine (see
 [`copy_referrers`](image-mirror-workflows.md)), and a dedicated reusable
-workflow, `_scan-sbom-image.yml`, gates on the SBOM rather than the image
+workflow, `_promote-from-quarantine-sbom.yml`, gates on the SBOM rather than the image
 filesystem.
 
-It mirrors `_scan-image.yml` (same inputs, gate semantics, scan-report referrer,
+It mirrors `_promote-from-quarantine.yml` (same inputs, gate semantics, scan-report referrer,
 source deletion, and reporting) with these differences:
 
 - **Extra input `sbom_predicate_type`** (default `https://cyclonedx.org/bom/v1.6`;
@@ -210,10 +211,10 @@ source deletion, and reporting) with these differences:
   and signatures travel into the destination alongside the scan-report referrer.
 
 The scan-report referrer records the scan method in `com.cssc.scan.method`
-(`image` for `_scan-image.yml`, `sbom` here) and, for SBOM scans, adds
+(`image` for `_promote-from-quarantine.yml`, `sbom` here) and, for SBOM scans, adds
 `com.cssc.scan.sbom-predicate-type=<predicate type>`.
 
-The `scan-hardened-python.yml` caller wires this workflow for
+The `promote-from-quarantine-hardened-python.yml` caller wires this workflow for
 `quarantine/hardened/python → base/hardened/python`. Hardened images are
 promoted into a dedicated `base/hardened/<image>` namespace rather than the
 `golden/<image>` scheme; see the
@@ -305,8 +306,8 @@ The workflow therefore treats deletion as configurable:
 ### Not implemented (deliberately out of scope)
 
 - **No signing.** Promoted images are not signed (e.g. cosign). The image-based
-  scanner (`_scan-image.yml`) produces no SBOM/provenance; the SBOM-based
-  scanner (`_scan-sbom-image.yml`) does not generate attestations but copies the
+  scanner (`_promote-from-quarantine.yml`) produces no SBOM/provenance; the SBOM-based
+  scanner (`_promote-from-quarantine-sbom.yml`) does not generate attestations but copies the
   upstream's existing SBOM/provenance/VEX/signature referrers verbatim during
   promotion.
 - **No automatic remediation.** Blocked images are left in quarantine; the
@@ -317,9 +318,9 @@ The workflow therefore treats deletion as configurable:
 - **No notification/alerting.** Failures and blocked images surface only through
   the normal GitHub Actions run status and the job summary.
 
-## Adding a new scanned repository
+## Adding a new promote-from-quarantine workflow
 
-1. Copy `scan-python.yml` to `scan-<image>.yml`.
+1. Copy `promote-from-quarantine-python.yml` to `promote-from-quarantine-<image>.yml`.
 2. Update the display `name:`, the `concurrency.group`, and the inputs
    (`source_repo`, `dest_repo`, and any threshold/exception overrides).
 3. No logic changes are needed — the reusable workflow does the work.
