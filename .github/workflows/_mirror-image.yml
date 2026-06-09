@@ -213,5 +213,8 @@ jobs:
             echo "- **Destination:** \`${DEST_REF}\`"
             echo "- **Previous digest:** \`${dest_digest:-<none>}\`"
             echo "- **New digest:** \`${new_digest}\`"
-            [ -n "${referrers_note}" ] && echo "${referrers_note}"
+            # Use an `if` rather than `[ ... ] && echo`: the latter returns a
+            # non-zero status when referrers_note is empty, and as the final
+            # command in this step that would fail the job under `set -e`.
+            if [ -n "${referrers_note}" ]; then echo "${referrers_note}"; fi
           } >> "${GITHUB_STEP_SUMMARY}"
