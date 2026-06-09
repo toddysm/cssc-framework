@@ -1,4 +1,4 @@
-# Scan quarantine/node with Trivy and promote clean images into golden/node.
+# Scan quarantine/node with Trivy and promote clean images into base/node.
 #
 # This caller only defines triggers and the repository-specific inputs; the
 # scan/gate/promote/attest/cleanup logic lives in the reusable _scan-image.yml
@@ -51,7 +51,7 @@ jobs:
     uses: ./.github/workflows/_scan-image.yml
     with:
       source_repo: ghcr.io/toddysm/quarantine/node
-      dest_repo: ghcr.io/toddysm/golden/node
+      dest_repo: ghcr.io/toddysm/base/node
       severity_threshold: ${{ github.event_name == 'workflow_dispatch' && inputs.severity_threshold || 'HIGH' }}
       cve_exceptions: ${{ github.event_name == 'workflow_dispatch' && inputs.cve_exceptions || '' }}
       dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
