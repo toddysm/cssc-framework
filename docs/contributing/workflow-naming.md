@@ -11,7 +11,7 @@ both in the file system and in the Actions UI.
 | Category | Purpose | Workflow file | Display `name:` | Concurrency group |
 | -------- | ------- | ------------- | --------------- | ----------------- |
 | **Mirror** | Copy / refresh a base image from an upstream registry into GHCR | `mirror-<image>.yml` | `mirror / quarantine/<image>` | `mirror-quarantine-<image>` |
-| **Promote from quarantine** | Scan a quarantined image and promote it into `golden/<image>` when it passes the vulnerability policy | `promote-from-quarantine-<image>.yml` | `promote from quarantine / quarantine/<image>` | `promote-from-quarantine-<image>` |
+| **Promote from quarantine** | Scan a quarantined image and promote it into its golden/base repository (`golden/<image>`, or `base/...` for base/hardened images) when it passes the vulnerability policy | `promote-from-quarantine-<image>.yml` | `promote from quarantine / quarantine/<image>` | `promote-from-quarantine-<image>` |
 | **Build** | Build an application image on top of a mirrored base | `build-<app>.yml` | `build / <app>` | `build-<app>` |
 | **Reusable** | Shared logic invoked by other workflows; never triggered directly | `_<purpose>.yml` (leading underscore) | `_reusable / <purpose>` | n/a |
 | **Composite action** | A single reusable step shared across workflows | `.github/actions/<verb-noun>/action.yml` | `name: <verb-noun>` | n/a |
@@ -34,7 +34,9 @@ both in the file system and in the Actions UI.
    `quarantine/<image>` scheme, e.g. `ghcr.io/<owner>/quarantine/python`.
    Images promoted out of quarantine by a promote-from-quarantine workflow
    follow the
-   `golden/<image>` scheme, e.g. `ghcr.io/<owner>/golden/python`.
+   `golden/<image>` scheme, e.g. `ghcr.io/<owner>/golden/python`, except for
+   base/hardened images which are promoted into the `base/...` namespace, e.g.
+   `ghcr.io/<owner>/base/node` or `ghcr.io/<owner>/base/hardened/python`.
 
 ## Mirror workflows
 
@@ -69,7 +71,8 @@ Promote-from-quarantine workflows gate images out of quarantine. They scan every
 tag in a
 `quarantine/<image>` repository with Trivy and promote the images that pass a
 configurable severity threshold (plus an optional CVE exception list) into a
-`golden/<image>` repository.
+`golden/<image>` repository (or a `base/...` repository for base/hardened
+images).
 
 - **Structure.** Logic lives in a single reusable workflow,
   [`_promote-from-quarantine.yml`](../../.github/workflows/_promote-from-quarantine.yml), which is

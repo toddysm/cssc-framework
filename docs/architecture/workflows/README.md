@@ -8,7 +8,7 @@ Workflows fall into three categories (see
 | Category | Purpose | Status |
 | -------- | ------- | ------ |
 | **Mirror** | Copy / refresh upstream base images from Docker Hub into GHCR | Implemented |
-| **Promote from quarantine** | Scan quarantined images and promote the ones that pass a vulnerability policy into `golden/<image>` | Implemented |
+| **Promote from quarantine** | Scan quarantined images and promote the ones that pass a vulnerability policy into `golden/<image>` (or `base/...` for base/hardened images) | Implemented |
 | **Build** | Build the demo applications under `apps/` on top of mirrored bases | Planned |
 
 ## Documents
@@ -18,5 +18,6 @@ Workflows fall into three categories (see
   and deliberately do not do.
 - [Promote-from-quarantine workflows](promote-from-quarantine-workflows.md) — how quarantined
   images are scanned with Trivy, gated on a severity threshold plus CVE
-  exceptions, promoted into `golden/<image>` with a scan-report referrer, and
+  exceptions, promoted into `golden/<image>` (or `base/...` for base/hardened
+  images) with a scan-report referrer, and
   removed from quarantine.
