@@ -1,0 +1,165 @@
+# Composite action: scan-sbom
+#
+# Scan a single container image via its SBOM attestation rather than its
+# filesystem. Built for distroless / hardened images (e.g. Docker Hardened
+# Images) that carry no package-manager metadata. For every platform in the
+# image index it locates the SBOM referrer whose in-toto predicate type matches
+# `sbom-predicate-type`, extracts the embedded BOM, and scans it with
+# `trivy sbom`.
+#
+# Emits the union of vulnerability IDs across all platforms, the number of
+# platforms whose SBOM could not be found (a blocking condition), the platform
+# count, and a Markdown fragment with the per-platform breakdown.
+#
+# Terminology: see docs/reference/workflow-actions.md.
+name: scan-sbom
+description: Scan one image's per-platform SBOM attestations with trivy sbom.
+
+inputs:
+  image-ref:
+    description: "Fully qualified image reference to scan (repo:tag)."
+    required: true
+  repository:
+    description: "Repository the image lives in, without tag (used to fetch referrers by digest)."
+    required: true
+  severities:
+    description: "Comma-separated severities to report (e.g. HIGH,CRITICAL)."
+    required: true
+  sbom-predicate-type:
+    description: "in-toto predicate type of the SBOM attestation to scan (e.g. https://cyclonedx.org/bom/v1.6)."
+    required: true
+  exceptions-file:
+    description: "Path to a sorted file of excepted CVE IDs; used only to render the per-platform blocking breakdown."
+    required: true
+  output-dir:
+    description: "Directory to write SBOMs, reports, and the blocking-ids list into."
+    required: true
+
+outputs:
+  blocking-ids-path:
+    description: "Path to the newline-separated union of vulnerability IDs across platforms."
+    value: ${{ steps.scan.outputs.blocking-ids-path }}
+  missing-sbom-count:
+    description: "Number of platforms with no SBOM referrer of the requested predicate type."
+    value: ${{ steps.scan.outputs.missing-sbom-count }}
+  platform-count:
+    description: "Number of platforms inspected."
+    value: ${{ steps.scan.outputs.platform-count }}
+  platform-detail-path:
+    description: "Path to a Markdown fragment with the per-platform findings table rows."
+    value: ${{ steps.scan.outputs.platform-detail-path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Scan SBOMs for ${{ inputs.image-ref }} with trivy sbom
+      id: scan
+      shell: bash
+      env:
+        IMAGE_REF: "${{ inputs.image-ref }}"
+        REPOSITORY: "${{ inputs.repository }}"
+        SEVERITIES: "${{ inputs.severities }}"
+        SBOM_PREDICATE_TYPE: "${{ inputs.sbom-predicate-type }}"
+        EXCEPTIONS_FILE: "${{ inputs.exceptions-file }}"
+        OUTPUT_DIR: "${{ inputs.output-dir }}"
+      run: |
+        set -euo pipefail
+        export LC_ALL=C
+
+        mkdir -p "${OUTPUT_DIR}"
+
+        # --- Extract the SBOM predicate for one platform manifest. ------------
+        # Echoes the path to a written SBOM file on success; returns non-zero
+        # when no SBOM referrer of the requested predicate type is found.
+        extract_platform_sbom() {
+          local plat_digest="$1" out="$2" ref_digest layer_digest stmt
+          ref_digest="$(oras discover --format json "${REPOSITORY}@${plat_digest}" 2>/dev/null \
+            | jq -r --arg PT "${SBOM_PREDICATE_TYPE}" '
+                [.. | objects | select(.artifactType? == "application/vnd.in-toto+json")]
+                | map(select(.annotations["in-toto.io/predicate-type"] == $PT))
+                | .[0].digest // empty')"
+          [ -n "${ref_digest}" ] || return 1
+          layer_digest="$(oras manifest fetch "${REPOSITORY}@${ref_digest}" \
+            | jq -r '.layers[0].digest // empty')"
+          [ -n "${layer_digest}" ] || return 1
+          stmt="${OUTPUT_DIR}/stmt.json"
+          oras blob fetch --output "${stmt}" "${REPOSITORY}@${layer_digest}"
+          # The blob is an in-toto Statement (DHI) or a DSSE envelope wrapping
+          # one. Extract the `.predicate` (the actual CycloneDX/SPDX BOM).
+          if jq -e '.payload and .payloadType' "${stmt}" >/dev/null 2>&1; then
+            jq -r '.payload' "${stmt}" | base64 -d | jq '.predicate' > "${out}"
+          else
+            jq '.predicate' "${stmt}" > "${out}"
+          fi
+          [ -s "${out}" ] || return 1
+          return 0
+        }
+
+        src="${IMAGE_REF}"
+        echo "::group::Scanning SBOMs for ${src}"
+
+        # --- Determine the platforms to scan. --------------------------------
+        manifest_json="$(crane manifest "${src}")"
+        media_type="$(printf '%s' "${manifest_json}" | jq -r '.mediaType // empty')"
+        platforms_file="${OUTPUT_DIR}/platforms.tsv"   # digest<TAB>platform
+        : > "${platforms_file}"
+        case "${media_type}" in
+          *image.index*|*manifest.list*)
+            printf '%s' "${manifest_json}" | jq -r '
+              .manifests[]
+              | select((.platform.os // "") != "" and (.platform.os // "") != "unknown")
+              | [ .digest, "\(.platform.os)/\(.platform.architecture)\(if .platform.variant then "/"+.platform.variant else "" end)" ]
+              | @tsv' >> "${platforms_file}"
+            ;;
+          *)
+            printf '%s\t%s\n' "$(crane digest "${src}")" "single" >> "${platforms_file}"
+            ;;
+        esac
+
+        tag_blocking="${OUTPUT_DIR}/blocking-ids.txt"   # union across platforms
+        : > "${tag_blocking}"
+        plat_detail="${OUTPUT_DIR}/platdetail.md"
+        : > "${plat_detail}"
+        missing_sbom=0
+        platform_count=0
+
+        while IFS="$(printf '\t')" read -r plat_digest plat_name; do
+          [ -n "${plat_digest}" ] || continue
+          platform_count=$((platform_count + 1))
+          echo "Platform ${plat_name} (${plat_digest})"
+
+          sbom_file="${OUTPUT_DIR}/sbom-$(printf '%s' "${plat_name}" | tr '/' '_').json"
+          if ! extract_platform_sbom "${plat_digest}" "${sbom_file}"; then
+            echo "::warning::No SBOM referrer of type ${SBOM_PREDICATE_TYPE} found for ${src} (${plat_name})."
+            missing_sbom=$((missing_sbom + 1))
+            printf '| `%s` | :warning: no SBOM | — | — |\n' "${plat_name}" >> "${plat_detail}"
+            continue
+          fi
+
+          report="${OUTPUT_DIR}/report-$(printf '%s' "${plat_name}" | tr '/' '_').json"
+          trivy sbom --quiet --scanners vuln --severity "${SEVERITIES}" \
+            --format json --output "${report}" "${sbom_file}"
+
+          plat_ids="${OUTPUT_DIR}/ids.txt"
+          jq -r '[.Results[]?.Vulnerabilities[]?.VulnerabilityID] | unique | .[]' \
+            "${report}" | sort -u > "${plat_ids}"
+          cat "${plat_ids}" >> "${tag_blocking}"
+
+          # Per-platform counts that mirror the gate: total findings at/above
+          # the threshold, and the blocking subset after removing exceptions.
+          plat_total_ids="${OUTPUT_DIR}/plattotal.txt"
+          plat_block_ids="${OUTPUT_DIR}/platblock.txt"
+          sort -u "${plat_ids}" > "${plat_total_ids}"
+          comm -23 "${plat_total_ids}" "${EXCEPTIONS_FILE}" > "${plat_block_ids}"
+          plat_total="$(wc -l < "${plat_total_ids}" | tr -d ' ')"
+          plat_block="$(wc -l < "${plat_block_ids}" | tr -d ' ')"
+          plat_block_list="$(paste -sd ',' "${plat_block_ids}" | sed 's/,/, /g')"
+          printf '| `%s` | %s | %s | %s |\n' \
+            "${plat_name}" "${plat_total}" "${plat_block}" "${plat_block_list:-—}" >> "${plat_detail}"
+        done < "${platforms_file}"
+        echo "::endgroup::"
+
+        echo "missing-sbom-count=${missing_sbom}" >> "${GITHUB_OUTPUT}"
+        echo "platform-count=${platform_count}" >> "${GITHUB_OUTPUT}"
+        echo "blocking-ids-path=${tag_blocking}" >> "${GITHUB_OUTPUT}"
+        echo "platform-detail-path=${plat_detail}" >> "${GITHUB_OUTPUT}"

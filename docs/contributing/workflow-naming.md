@@ -14,6 +14,7 @@ both in the file system and in the Actions UI.
 | **Scan** | Scan a quarantined image and promote it into `golden/<image>` when it passes the vulnerability policy | `scan-<image>.yml` | `scan / quarantine/<image>` | `scan-quarantine-<image>` |
 | **Build** | Build an application image on top of a mirrored base | `build-<app>.yml` | `build / <app>` | `build-<app>` |
 | **Reusable** | Shared logic invoked by other workflows; never triggered directly | `_<purpose>.yml` (leading underscore) | `_reusable / <purpose>` | n/a |
+| **Composite action** | A single reusable step shared across workflows | `.github/actions/<verb-noun>/action.yml` | `name: <verb-noun>` | n/a |
 
 ### Rules
 
@@ -38,7 +39,9 @@ both in the file system and in the Actions UI.
 Mirror workflows keep a copy of an upstream base image fresh in GHCR.
 
 - **Structure.** Logic lives in a single reusable workflow,
-  [`_mirror-image.yml`](../../.github/workflows/_mirror-image.yml). Each image
+  [`_mirror-image.yml`](../../.github/workflows/_mirror-image.yml), which is
+  assembled from composite actions under `.github/actions/` (see
+  [workflow actions](../reference/workflow-actions.md)). Each image
   has a thin caller, e.g.
   [`mirror-python.yml`](../../.github/workflows/mirror-python.yml), that only
   declares triggers and the image-specific inputs and calls the reusable
@@ -66,7 +69,10 @@ configurable severity threshold (plus an optional CVE exception list) into a
 `golden/<image>` repository.
 
 - **Structure.** Logic lives in a single reusable workflow,
-  [`_scan-image.yml`](../../.github/workflows/_scan-image.yml). Each scanned
+  [`_scan-image.yml`](../../.github/workflows/_scan-image.yml), which is
+  assembled from composite actions under `.github/actions/` (see
+  [workflow actions](../reference/workflow-actions.md)) and fans the work out
+  across a job matrix (one job per tag). Each scanned
   repository has a thin caller, e.g.
   [`scan-python.yml`](../../.github/workflows/scan-python.yml), that only
   declares triggers and the repository-specific inputs and calls the reusable
@@ -95,3 +101,28 @@ Build workflows (added later) build the demo applications under `apps/` on top
 of the mirrored base images. They use the `build-<app>.yml` filename and the
 `build / <app>` display name so they remain clearly separate from mirror
 workflows.
+
+## Composite actions
+
+The reusable steps shared across workflows live as **composite actions** under
+[`.github/actions/`](../../.github/actions/), one directory per action with an
+`action.yml` inside. They are the single source of truth for each operation
+(login, enumerate, copy, scan, gate, attach, delete); the reusable workflows
+only orchestrate them.
+
+### Rules
+
+1. **One verb-noun per action.** Action directory and `name:` use the standard
+   terminology verb-noun, e.g. `registry-login`, `enumerate-tags`,
+   `mirror-image`, `scan-image`, `scan-sbom`, `evaluate-findings`,
+   `attach-scan-report`, `delete-image`. The canonical glossary lives in
+   [workflow actions and terminology](../reference/workflow-actions.md).
+2. **kebab-case** for action directory names, inputs, and outputs.
+3. **Single responsibility.** An action does one thing on one image/repository;
+   looping over many tags is the orchestrating workflow's job (via a matrix).
+4. **No tool setup inside actions.** Actions assume the calling job has already
+   checked out the repo and installed the CLIs they need (`crane`, `oras`,
+   `trivy`); this lets several actions share one setup.
+5. **Document every action** in
+   [workflow actions and terminology](../reference/workflow-actions.md) when it
+   is added or its interface changes.

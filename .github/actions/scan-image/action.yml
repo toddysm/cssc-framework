@@ -1,0 +1,58 @@
+# Composite action: scan-image
+#
+# Scan a single container image's filesystem with `trivy image` and write the
+# JSON report plus the de-duplicated list of vulnerability IDs found at or above
+# the requested severity set. Suited to images that carry package-manager
+# metadata; for distroless / hardened images use scan-sbom instead.
+#
+# Terminology: see docs/reference/workflow-actions.md.
+name: scan-image
+description: Scan one image filesystem with trivy image and emit its findings.
+
+inputs:
+  image-ref:
+    description: "Fully qualified image reference to scan (repo:tag)."
+    required: true
+  severities:
+    description: "Comma-separated severities to report (e.g. HIGH,CRITICAL)."
+    required: true
+  output-dir:
+    description: "Directory to write report.json and blocking-ids.txt into."
+    required: true
+
+outputs:
+  report-path:
+    description: "Path to the Trivy JSON report."
+    value: ${{ steps.scan.outputs.report-path }}
+  blocking-ids-path:
+    description: "Path to the newline-separated, de-duplicated list of vulnerability IDs found."
+    value: ${{ steps.scan.outputs.blocking-ids-path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Scan ${{ inputs.image-ref }} with trivy image
+      id: scan
+      shell: bash
+      env:
+        IMAGE_REF: "${{ inputs.image-ref }}"
+        SEVERITIES: "${{ inputs.severities }}"
+        OUTPUT_DIR: "${{ inputs.output-dir }}"
+      run: |
+        set -euo pipefail
+        export LC_ALL=C
+
+        mkdir -p "${OUTPUT_DIR}"
+        report="${OUTPUT_DIR}/report.json"
+        ids="${OUTPUT_DIR}/blocking-ids.txt"
+
+        echo "::group::Scanning ${IMAGE_REF}"
+        trivy image --quiet --scanners vuln --severity "${SEVERITIES}" \
+          --format json --output "${report}" "${IMAGE_REF}"
+        echo "::endgroup::"
+
+        jq -r '[.Results[]?.Vulnerabilities[]?.VulnerabilityID] | unique | .[]' \
+          "${report}" | sort -u > "${ids}"
+
+        echo "report-path=${report}" >> "${GITHUB_OUTPUT}"
+        echo "blocking-ids-path=${ids}" >> "${GITHUB_OUTPUT}"

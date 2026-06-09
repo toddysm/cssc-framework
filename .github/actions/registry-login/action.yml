@@ -1,0 +1,47 @@
+# Composite action: registry-login
+#
+# Authenticate the local crane (and, optionally, oras) clients to a container
+# registry using a username + password/token. Used to log in to GHCR with the
+# built-in GITHUB_TOKEN and to authenticated upstream sources such as dhi.io.
+#
+# Terminology: see docs/reference/workflow-actions.md.
+name: registry-login
+description: Log in to a container registry with crane (and optionally oras).
+
+inputs:
+  registry:
+    description: "Registry hostname to authenticate to (e.g. ghcr.io, dhi.io)."
+    required: true
+  username:
+    description: "Username for the registry."
+    required: true
+  password:
+    description: "Password or token for the registry (passed via stdin)."
+    required: true
+  with-oras:
+    description: "Also log in oras (needed when copying referrers or attaching artifacts)."
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Log in to ${{ inputs.registry }}
+      shell: bash
+      env:
+        REGISTRY: "${{ inputs.registry }}"
+        USERNAME: "${{ inputs.username }}"
+        PASSWORD: "${{ inputs.password }}"
+        WITH_ORAS: "${{ inputs.with-oras }}"
+      run: |
+        set -euo pipefail
+        if [ -z "${USERNAME}" ] || [ -z "${PASSWORD}" ]; then
+          echo "::error::registry-login requires a non-empty username and password for '${REGISTRY}'."
+          exit 1
+        fi
+        echo "${PASSWORD}" | crane auth login "${REGISTRY}" \
+          --username "${USERNAME}" --password-stdin
+        if [ "${WITH_ORAS}" = "true" ]; then
+          echo "${PASSWORD}" | oras login "${REGISTRY}" \
+            --username "${USERNAME}" --password-stdin
+        fi

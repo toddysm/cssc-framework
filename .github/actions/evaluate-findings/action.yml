@@ -1,0 +1,111 @@
+# Composite action: evaluate-findings
+#
+# Apply the promotion gate to one image's scan findings. Given the
+# de-duplicated list of vulnerability IDs a scanner reported (at or above the
+# severity floor) and a normalised CVE exception list, it computes the blocking,
+# excepted, and remaining sets and emits a single decision the promote / attest
+# / delete steps act on:
+#
+#   promote               remaining set empty and not a dry run
+#   dryrun                remaining set empty but dry_run is set
+#   blocked               one or more blocking CVEs remain after exceptions
+#   blocked-missing-sbom  an SBOM could not be read (scan-sbom only)
+#
+# Terminology: see docs/reference/workflow-actions.md.
+name: evaluate-findings
+description: Gate one image's findings on remaining blocking CVEs after exceptions.
+
+inputs:
+  blocking-ids-file:
+    description: "Newline-separated list of vulnerability IDs the scanner reported."
+    required: true
+  exceptions-file:
+    description: "Path to a sorted, de-duplicated file of excepted CVE IDs (may be empty)."
+    required: true
+  dry-run:
+    description: "When 'true', a passing image yields decision 'dryrun' instead of 'promote'."
+    required: false
+    default: "false"
+  missing-sbom-count:
+    description: "Number of platforms with an unreadable SBOM; non-zero forces 'blocked-missing-sbom'."
+    required: false
+    default: "0"
+  output-dir:
+    description: "Directory to write the computed gate files into."
+    required: true
+
+outputs:
+  decision:
+    description: "promote | dryrun | blocked | blocked-missing-sbom."
+    value: ${{ steps.gate.outputs.decision }}
+  blocking-count:
+    description: "Total distinct CVE IDs found at or above the threshold."
+    value: ${{ steps.gate.outputs.blocking-count }}
+  remaining-count:
+    description: "Blocking CVEs left after removing exceptions."
+    value: ${{ steps.gate.outputs.remaining-count }}
+  excepted-count:
+    description: "Blocking CVEs cleared by the exception list."
+    value: ${{ steps.gate.outputs.excepted-count }}
+  excepted-str:
+    description: "Pipe-separated excepted CVE IDs (for the scan-report annotation)."
+    value: ${{ steps.gate.outputs.excepted-str }}
+  remaining-md:
+    description: "Comma-separated remaining CVE IDs for Markdown summaries."
+    value: ${{ steps.gate.outputs.remaining-md }}
+  excepted-md:
+    description: "Comma-separated excepted CVE IDs for Markdown summaries."
+    value: ${{ steps.gate.outputs.excepted-md }}
+
+runs:
+  using: composite
+  steps:
+    - name: Evaluate findings against the gate
+      id: gate
+      shell: bash
+      env:
+        BLOCKING_IDS_FILE: "${{ inputs.blocking-ids-file }}"
+        EXCEPTIONS_FILE: "${{ inputs.exceptions-file }}"
+        DRY_RUN: "${{ inputs.dry-run }}"
+        MISSING_SBOM_COUNT: "${{ inputs.missing-sbom-count }}"
+        OUTPUT_DIR: "${{ inputs.output-dir }}"
+      run: |
+        set -euo pipefail
+        export LC_ALL=C
+
+        mkdir -p "${OUTPUT_DIR}"
+
+        sort -u "${BLOCKING_IDS_FILE}" > "${OUTPUT_DIR}/blocking.txt"
+        comm -23 "${OUTPUT_DIR}/blocking.txt" "${EXCEPTIONS_FILE}" > "${OUTPUT_DIR}/remaining.txt"
+        comm -12 "${OUTPUT_DIR}/blocking.txt" "${EXCEPTIONS_FILE}" > "${OUTPUT_DIR}/excepted.txt"
+
+        blocking_count="$(wc -l < "${OUTPUT_DIR}/blocking.txt" | tr -d ' ')"
+        remaining_count="$(wc -l < "${OUTPUT_DIR}/remaining.txt" | tr -d ' ')"
+        excepted_count="$(wc -l < "${OUTPUT_DIR}/excepted.txt" | tr -d ' ')"
+
+        # Pipe-separated form for the oras annotation; comma-separated,
+        # Markdown-safe forms for the summary tables (CVE IDs contain no '|').
+        excepted_str="$(paste -sd '|' "${OUTPUT_DIR}/excepted.txt")"
+        remaining_md="$(paste -sd ',' "${OUTPUT_DIR}/remaining.txt" | sed 's/,/, /g')"
+        excepted_md="$(paste -sd ',' "${OUTPUT_DIR}/excepted.txt" | sed 's/,/, /g')"
+
+        if [ "${MISSING_SBOM_COUNT}" -gt 0 ]; then
+          decision="blocked-missing-sbom"
+        elif [ "${remaining_count}" -gt 0 ]; then
+          decision="blocked"
+        elif [ "${DRY_RUN}" = "true" ]; then
+          decision="dryrun"
+        else
+          decision="promote"
+        fi
+        echo "Gate decision: ${decision} (blocking ${remaining_count}, excepted ${excepted_count}, missing SBOM ${MISSING_SBOM_COUNT})"
+
+        {
+          echo "decision=${decision}"
+          echo "blocking-count=${blocking_count}"
+          echo "remaining-count=${remaining_count}"
+          echo "excepted-count=${excepted_count}"
+          echo "excepted-str=${excepted_str}"
+          echo "remaining-md=${remaining_md}"
+          echo "excepted-md=${excepted_md}"
+        } >> "${GITHUB_OUTPUT}"
