@@ -570,7 +570,14 @@ jobs:
               echo ""
               echo "| Platform | CVEs ≥ ${THRESHOLD} | Blocking | Blocking CVE IDs |"
               echo "| --- | --- | --- | --- |"
-              cat "${state}/platdetail.md"
+              # The scan step may have failed before writing platdetail.md (e.g. a
+              # `crane manifest` error). Guard the read so this always()-summary
+              # still renders instead of aborting under `set -e`.
+              if [ -s "${state}/platdetail.md" ]; then
+                cat "${state}/platdetail.md"
+              else
+                echo "| — | — | — | (no platform detail recorded) |"
+              fi
               echo ""
               echo "</details>"
             } >> "${details_md}"
