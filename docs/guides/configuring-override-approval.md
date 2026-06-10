@@ -54,7 +54,7 @@ flowchart LR
 ## Prerequisites
 
 - You can edit repository **secrets** (Settings → Secrets and variables →
-  Actions) — i.e. you have admin on the repo.
+  Actions) — that is, you are a repository administrator.
 - You can create a **Slack incoming webhook** in the target workspace.
 - The override actions and workflows are present in the repo (shipped together):
   `notify-slack`, `manage-issue`, `verify-approver`, the extended
@@ -67,7 +67,7 @@ flowchart LR
 The `notify-slack` action posts to a **Slack incoming webhook**. This is the only
 Slack configuration required to receive notifications.
 
-1. In Slack, go to <https://api.slack.com/apps\> and **Create New App** →
+1. In Slack, go to <https://api.slack.com/apps> and **Create New App** →
    *From scratch*. Give it a name (e.g. `cssc-promotion-bot`) and pick the
    workspace.
 2. Open **Incoming Webhooks** and toggle it **On**.
