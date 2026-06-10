@@ -1,0 +1,85 @@
+# Composite action: verify-approver
+#
+# Confirm that an actor has sufficient repository permission before an override
+# (promoting an image that failed the vulnerability gate) is honored. Anyone can
+# comment `/approve` or `/deny` on a tracking issue, so the override workflow
+# must check the commenter's permission before acting.
+#
+# Calls GET /repos/{owner}/{repo}/collaborators/{actor}/permission and compares
+# the returned role against `min-permission`. Sets output `authorized` and, by
+# default, fails the step when the actor is below the threshold.
+#
+# Terminology: see docs/reference/workflow-actions.md.
+name: verify-approver
+description: Verify an actor meets a minimum repository permission for overrides.
+
+inputs:
+  actor:
+    description: "The login that issued the command."
+    required: true
+  min-permission:
+    description: "Minimum permission: admin | maintain | write."
+    required: false
+    default: "maintain"
+  fail-on-unauthorized:
+    description: "Fail the step when the actor is below the threshold."
+    required: false
+    default: "true"
+  token:
+    description: "GITHUB_TOKEN (or PAT) able to read collaborator permissions."
+    required: true
+
+outputs:
+  authorized:
+    description: "true | false."
+    value: ${{ steps.verify.outputs.authorized }}
+
+runs:
+  using: composite
+  steps:
+    - name: Verify ${{ inputs.actor }} permission
+      id: verify
+      shell: bash
+      env:
+        GH_TOKEN: "${{ inputs.token }}"
+        GH_REPO: "${{ github.repository }}"
+        ACTOR: "${{ inputs.actor }}"
+        MIN_PERMISSION: "${{ inputs.min-permission }}"
+        FAIL_ON_UNAUTHORIZED: "${{ inputs.fail-on-unauthorized }}"
+      run: |
+        set -euo pipefail
+        export LC_ALL=C
+
+        # Map a permission name to a numeric rank for comparison.
+        rank () {
+          case "$1" in
+            admin)    echo 4 ;;
+            maintain) echo 3 ;;
+            write)    echo 2 ;;
+            read)     echo 1 ;;
+            *)        echo 0 ;;
+          esac
+        }
+
+        min_rank="$(rank "${MIN_PERMISSION}")"
+        if [ "${min_rank}" -eq 0 ]; then
+          echo "::error::Invalid min-permission '${MIN_PERMISSION}' (expected admin|maintain|write)"
+          exit 1
+        fi
+
+        # role_name reflects the highest base/role permission (admin|maintain|write|read|none).
+        role="$(gh api "repos/${GH_REPO}/collaborators/${ACTOR}/permission" \
+                --jq '.role_name // .permission // "none"' 2>/dev/null || echo "none")"
+        actor_rank="$(rank "${role}")"
+
+        if [ "${actor_rank}" -ge "${min_rank}" ]; then
+          echo "${ACTOR} has '${role}' permission (>= ${MIN_PERMISSION}); authorized."
+          echo "authorized=true" >> "${GITHUB_OUTPUT}"
+        else
+          echo "::warning::${ACTOR} has '${role}' permission (< ${MIN_PERMISSION}); not authorized."
+          echo "authorized=false" >> "${GITHUB_OUTPUT}"
+          if [ "${FAIL_ON_UNAUTHORIZED}" = "true" ]; then
+            echo "::error::${ACTOR} is not authorized to approve overrides."
+            exit 1
+          fi
+        fi

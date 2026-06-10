@@ -1,0 +1,120 @@
+# Composite action: notify-slack
+#
+# Post a formatted message to a Slack incoming webhook describing a
+# promote-from-quarantine override event. Three message templates are selected
+# by `status`:
+#   blocked-pending - an image failed the gate and awaits an approve/deny.
+#   approved        - an override was approved and the image was promoted.
+#   denied          - an override was denied; the image stays in quarantine.
+#
+# When `webhook-url` is empty the action is a no-op (with a warning) so callers
+# can leave Slack unconfigured without failing.
+#
+# Terminology: see docs/reference/workflow-actions.md.
+name: notify-slack
+description: Post an override-event message to a Slack incoming webhook.
+
+inputs:
+  webhook-url:
+    description: "Slack incoming webhook URL. When empty the action is a no-op."
+    required: false
+    default: ""
+  status:
+    description: "Message template: blocked-pending | approved | denied."
+    required: true
+  image:
+    description: "Source repository (e.g. ghcr.io/owner/quarantine/python)."
+    required: true
+  tag:
+    description: "Image tag."
+    required: true
+  threshold:
+    description: "Severity threshold the image failed (optional)."
+    required: false
+    default: ""
+  blocking-cves:
+    description: "Human-readable summary of blocking CVEs (optional)."
+    required: false
+    default: ""
+  issue-url:
+    description: "Link to the tracking issue (optional)."
+    required: false
+    default: ""
+  run-url:
+    description: "Link to the workflow run (optional)."
+    required: false
+    default: ""
+  approver:
+    description: "Login recorded for approved/denied messages (optional)."
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Post Slack message
+      shell: bash
+      env:
+        WEBHOOK_URL: "${{ inputs.webhook-url }}"
+        STATUS: "${{ inputs.status }}"
+        IMAGE: "${{ inputs.image }}"
+        TAG: "${{ inputs.tag }}"
+        THRESHOLD: "${{ inputs.threshold }}"
+        BLOCKING_CVES: "${{ inputs.blocking-cves }}"
+        ISSUE_URL: "${{ inputs.issue-url }}"
+        RUN_URL: "${{ inputs.run-url }}"
+        APPROVER: "${{ inputs.approver }}"
+      run: |
+        set -euo pipefail
+        export LC_ALL=C
+
+        if [ -z "${WEBHOOK_URL}" ]; then
+          echo "::warning::No Slack webhook configured; skipping ${STATUS} notification for ${IMAGE}:${TAG}."
+          exit 0
+        fi
+
+        case "${STATUS}" in
+          blocked-pending)
+            header=":no_entry: Promotion blocked — approval needed"
+            summary="*${IMAGE}:${TAG}* failed the \`${THRESHOLD:-?}\` vulnerability gate." ;;
+          approved)
+            header=":white_check_mark: Promotion override approved"
+            summary="*${IMAGE}:${TAG}* was promoted despite the gate${APPROVER:+ by ${APPROVER}}." ;;
+          denied)
+            header=":x: Promotion override denied"
+            summary="*${IMAGE}:${TAG}* stays in quarantine${APPROVER:+ (denied by ${APPROVER})}." ;;
+          *)
+            echo "::error::Invalid status '${STATUS}' (expected blocked-pending|approved|denied)"; exit 1 ;;
+        esac
+
+        # Assemble the context line (CVEs / links) from whichever fields are set.
+        context=""
+        [ -n "${BLOCKING_CVES}" ] && context="${context}Blocking CVEs: ${BLOCKING_CVES}\n"
+        [ -n "${ISSUE_URL}" ]     && context="${context}Issue: ${ISSUE_URL}\n"
+        [ -n "${RUN_URL}" ]       && context="${context}Run: ${RUN_URL}\n"
+
+        # Build the Block Kit payload with jq so all text is safely JSON-encoded.
+        payload="$(jq -n \
+          --arg header "${header}" \
+          --arg summary "${summary}" \
+          --arg context "${context}" \
+          '{
+            blocks: (
+              [
+                { type: "header", text: { type: "plain_text", text: $header, emoji: true } },
+                { type: "section", text: { type: "mrkdwn", text: $summary } }
+              ]
+              + (if ($context | length) > 0
+                 then [ { type: "section", text: { type: "mrkdwn", text: $context } } ]
+                 else [] end)
+            )
+          }')"
+
+        code="$(curl -sS -o /dev/null -w '%{http_code}' \
+          -X POST -H 'Content-Type: application/json' \
+          --data "${payload}" "${WEBHOOK_URL}")"
+        if [ "${code}" != "200" ]; then
+          echo "::error::Slack webhook returned HTTP ${code}."
+          exit 1
+        fi
+        echo "Posted ${STATUS} notification for ${IMAGE}:${TAG}."

@@ -1,0 +1,239 @@
+# Reusable workflow: act on a manual promotion-override decision.
+#
+# This workflow is internal (note the leading underscore) and is called by the
+# `promote-override.yml` caller via `uses:`. It performs the override decision
+# for one quarantined image+tag whose promotion was blocked by the vulnerability
+# gate and is being approved or denied by a maintainer.
+#
+# Flow:
+#   1. verify-approver  — confirm the approver has sufficient repo permission.
+#   2. manage-issue get — recover the promotion metadata recorded on the issue.
+#   3. approve: mirror-image (force) -> attach-scan-report (override annotations)
+#      -> delete-image (optional) -> manage-issue close (promotion-approved)
+#      -> notify-slack (approved).
+#   4. deny: manage-issue close (promotion-denied) -> notify-slack (denied).
+#
+# Terminology and the action catalogue: see docs/reference/workflow-actions.md.
+# See also docs/architecture/workflows/promote-from-quarantine-override-approval.md.
+name: _reusable / promote-override
+
+on:
+  workflow_call:
+    inputs:
+      issue_number:
+        description: "Tracking-issue number carrying the promotion metadata."
+        required: true
+        type: string
+      decision:
+        description: "approve | deny."
+        required: true
+        type: string
+      approver:
+        description: "Login that issued the decision."
+        required: true
+        type: string
+      min_permission:
+        description: "Minimum repo permission required to approve: admin | maintain | write."
+        required: false
+        default: maintain
+        type: string
+      delete_source:
+        description: "Delete the tag from quarantine after a successful override promotion."
+        required: false
+        default: true
+        type: boolean
+      trivy_version:
+        description: "Trivy version to install; also recorded in the referrer when missing from metadata."
+        required: false
+        default: v0.71.0
+        type: string
+    secrets:
+      ghcr_delete_token:
+        description: "PAT with delete:packages used to remove the quarantine tag. Optional."
+        required: false
+      slack_webhook:
+        description: "Slack incoming webhook URL for the decision notification. Optional."
+        required: false
+
+jobs:
+  override:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      issues: write
+    env:
+      DECISION: "${{ inputs.decision }}"
+      APPROVER: "${{ inputs.approver }}"
+      ISSUE_NUMBER: "${{ inputs.issue_number }}"
+    steps:
+      - name: Validate decision
+        run: |
+          set -euo pipefail
+          case "${DECISION}" in
+            approve|deny) : ;;
+            *) echo "::error::Invalid decision '${DECISION}' (expected approve|deny)"; exit 1 ;;
+          esac
+
+      - name: Check out actions
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      # An approval bypasses the security gate, so the approver must hold a
+      # sufficient repository role. A denial is harmless and does not require it.
+      - name: Verify approver
+        if: inputs.decision == 'approve'
+        uses: ./.github/actions/verify-approver
+        with:
+          actor: ${{ inputs.approver }}
+          min-permission: ${{ inputs.min_permission }}
+          token: ${{ github.token }}
+
+      - name: Read promotion metadata
+        id: issue
+        uses: ./.github/actions/manage-issue
+        with:
+          operation: get
+          image: "unused"
+          tag: "unused"
+          issue-number: ${{ inputs.issue_number }}
+          token: ${{ github.token }}
+
+      # Unpack the recovered JSON metadata into step outputs the later steps use.
+      - name: Parse metadata
+        id: meta
+        env:
+          METADATA_JSON: "${{ steps.issue.outputs.metadata-json }}"
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+          if [ -z "${METADATA_JSON}" ] || ! printf '%s' "${METADATA_JSON}" | jq -e . >/dev/null 2>&1; then
+            echo "::error::No valid promotion metadata found on issue #${ISSUE_NUMBER}."
+            exit 1
+          fi
+
+          get () { printf '%s' "${METADATA_JSON}" | jq -r "$1 // empty"; }
+
+          {
+            echo "source-repo=$(get '.source_repo')"
+            echo "dest-repo=$(get '.dest_repo')"
+            echo "tag=$(get '.tag')"
+            echo "threshold=$(get '.threshold')"
+            echo "method=$(get '.method')"
+            echo "scanner-version=$(get '.scanner_version')"
+            # Pipe-join the blocking CVE array for the referrer annotation.
+            echo "cves=$(printf '%s' "${METADATA_JSON}" | jq -r '(.blocking_cves // []) | join("|")')"
+            # SBOM promotions must carry referrers along.
+            if [ "$(get '.method')" = "sbom" ]; then
+              echo "copy-referrers=true"
+            else
+              echo "copy-referrers=false"
+            fi
+          }  >> "${GITHUB_OUTPUT}"
+
+      - name: Set up crane
+        if: inputs.decision == 'approve'
+        uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
+
+      - name: Set up oras
+        if: inputs.decision == 'approve'
+        uses: oras-project/setup-oras@38de303aac69abb66f3e6255b7198bff35f323e3 # v2.0.0
+        with:
+          version: 1.3.1
+
+      - name: Log in to GHCR
+        if: inputs.decision == 'approve'
+        uses: ./.github/actions/registry-login
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+          with-oras: "true"
+
+      # --- Approve path: promote despite the gate, record the override. --------
+      - name: Promote overridden image
+        if: inputs.decision == 'approve'
+        uses: ./.github/actions/mirror-image
+        with:
+          source-image: ${{ steps.meta.outputs.source-repo }}
+          source-tag: ${{ steps.meta.outputs.tag }}
+          dest-image: ${{ steps.meta.outputs.dest-repo }}
+          dest-tag: ${{ steps.meta.outputs.tag }}
+          force: "true"
+          copy-referrers: ${{ steps.meta.outputs.copy-referrers }}
+
+      - name: Attach scan-report attestation
+        if: inputs.decision == 'approve'
+        uses: ./.github/actions/attach-scan-report
+        with:
+          image-ref: ${{ steps.meta.outputs.dest-repo }}:${{ steps.meta.outputs.tag }}
+          source-repo: ${{ steps.meta.outputs.source-repo }}
+          tag: ${{ steps.meta.outputs.tag }}
+          threshold: ${{ steps.meta.outputs.threshold }}
+          scanner-version: ${{ steps.meta.outputs.scanner-version }}
+          method: ${{ steps.meta.outputs.method }}
+          override: "true"
+          override-approver: ${{ inputs.approver }}
+          override-issue: ${{ steps.issue.outputs.issue-url }}
+          override-cves: ${{ steps.meta.outputs.cves }}
+
+      - name: Delete overridden tag from quarantine
+        if: inputs.decision == 'approve' && inputs.delete_source
+        uses: ./.github/actions/delete-image
+        with:
+          repository: ${{ steps.meta.outputs.source-repo }}
+          tag: ${{ steps.meta.outputs.tag }}
+          token: ${{ secrets.ghcr_delete_token }}
+
+      - name: Close issue as approved
+        if: inputs.decision == 'approve'
+        uses: ./.github/actions/manage-issue
+        with:
+          operation: close
+          image: ${{ steps.meta.outputs.source-repo }}
+          tag: ${{ steps.meta.outputs.tag }}
+          issue-number: ${{ inputs.issue_number }}
+          outcome: promotion-approved
+          body: "Override **approved** by @${{ inputs.approver }}. Image promoted to `${{ steps.meta.outputs.dest-repo }}:${{ steps.meta.outputs.tag }}` despite the failing gate. ([run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}))"
+          token: ${{ github.token }}
+
+      - name: Notify Slack of approval
+        if: inputs.decision == 'approve'
+        uses: ./.github/actions/notify-slack
+        with:
+          webhook-url: ${{ secrets.slack_webhook }}
+          status: approved
+          image: ${{ steps.meta.outputs.source-repo }}
+          tag: ${{ steps.meta.outputs.tag }}
+          threshold: ${{ steps.meta.outputs.threshold }}
+          blocking-cves: ${{ steps.meta.outputs.cves }}
+          issue-url: ${{ steps.issue.outputs.issue-url }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          approver: ${{ inputs.approver }}
+
+      # --- Deny path: no promotion; close and notify. --------------------------
+      - name: Close issue as denied
+        if: inputs.decision == 'deny'
+        uses: ./.github/actions/manage-issue
+        with:
+          operation: close
+          image: ${{ steps.meta.outputs.source-repo }}
+          tag: ${{ steps.meta.outputs.tag }}
+          issue-number: ${{ inputs.issue_number }}
+          outcome: promotion-denied
+          body: "Override **denied** by @${{ inputs.approver }}. `${{ steps.meta.outputs.source-repo }}:${{ steps.meta.outputs.tag }}` stays in quarantine."
+          token: ${{ github.token }}
+
+      - name: Notify Slack of denial
+        if: inputs.decision == 'deny'
+        uses: ./.github/actions/notify-slack
+        with:
+          webhook-url: ${{ secrets.slack_webhook }}
+          status: denied
+          image: ${{ steps.meta.outputs.source-repo }}
+          tag: ${{ steps.meta.outputs.tag }}
+          threshold: ${{ steps.meta.outputs.threshold }}
+          blocking-cves: ${{ steps.meta.outputs.cves }}
+          issue-url: ${{ steps.issue.outputs.issue-url }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          approver: ${{ inputs.approver }}

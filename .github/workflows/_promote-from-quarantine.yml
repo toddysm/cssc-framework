@@ -58,9 +58,17 @@ on:
         required: false
         default: false
         type: boolean
+      enable_approval:
+        description: "On a blocked image, post a Slack notification and open a promotion tracking issue for a manual approve/deny override."
+        required: false
+        default: false
+        type: boolean
     secrets:
       ghcr_delete_token:
         description: "PAT with delete:packages used to remove quarantine tags. Optional; deletion is skipped when absent."
+        required: false
+      slack_webhook:
+        description: "Slack incoming webhook URL for blocked-image notifications. Optional; notification is skipped when absent."
         required: false
 
 jobs:
@@ -132,6 +140,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      issues: write
     strategy:
       fail-fast: false
       matrix:
@@ -248,6 +257,67 @@ jobs:
           repository: ${{ inputs.source_repo }}
           tag: ${{ matrix.tag }}
           token: ${{ secrets.ghcr_delete_token }}
+
+      # When approval is enabled and the image is blocked, build a machine-
+      # readable metadata block (so a later override run can recover the
+      # promotion parameters), open/refresh the tracking issue, and notify Slack.
+      - name: Build override metadata
+        id: meta
+        if: steps.evaluate.outputs.decision == 'blocked' && inputs.enable_approval
+        env:
+          DEST_REPO: "${{ inputs.dest_repo }}"
+          REMAINING_MD: "${{ steps.evaluate.outputs.remaining-md }}"
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+          digest="$(crane digest "${SOURCE_REPO}:${TAG}" 2>/dev/null || true)"
+
+          cves_json="$(printf '%s' "${REMAINING_MD}" | tr ',' '\n' \
+            | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
+            | jq -R . | jq -sc 'map(select(length > 0))')"
+
+          meta="$(jq -nc \
+            --arg sr "${SOURCE_REPO}" \
+            --arg dr "${DEST_REPO}" \
+            --arg tag "${TAG}" \
+            --arg digest "${digest}" \
+            --arg th "${THRESHOLD}" \
+            --arg sv "${TRIVY_RESOLVED:-}" \
+            --argjson cves "${cves_json}" \
+            '{source_repo:$sr, dest_repo:$dr, tag:$tag, digest:$digest,
+              threshold:$th, scanner:"trivy", scanner_version:$sv,
+              method:"image", blocking_cves:$cves}')"
+
+          {
+            echo "metadata-json<<CSSC_META_EOF"
+            printf '%s\n' "${meta}"
+            echo "CSSC_META_EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Open promotion tracking issue
+        id: issue
+        if: steps.evaluate.outputs.decision == 'blocked' && inputs.enable_approval
+        uses: ./.github/actions/manage-issue
+        with:
+          operation: open-or-update
+          image: ${{ inputs.source_repo }}
+          tag: ${{ matrix.tag }}
+          metadata-json: ${{ steps.meta.outputs.metadata-json }}
+          token: ${{ github.token }}
+
+      - name: Notify Slack of blocked image
+        if: steps.evaluate.outputs.decision == 'blocked' && inputs.enable_approval
+        uses: ./.github/actions/notify-slack
+        with:
+          webhook-url: ${{ secrets.slack_webhook }}
+          status: blocked-pending
+          image: ${{ inputs.source_repo }}
+          tag: ${{ matrix.tag }}
+          threshold: ${{ inputs.severity_threshold }}
+          blocking-cves: ${{ steps.evaluate.outputs.remaining-md }}
+          issue-url: ${{ steps.issue.outputs.issue-url }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
       # Render this tag's run log + result fragment and upload it for the summary
       # job to aggregate. Runs even if an earlier step failed so partial results

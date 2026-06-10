@@ -37,6 +37,22 @@ inputs:
     description: "in-toto predicate type scanned; recorded only when method is 'sbom'."
     required: false
     default: ""
+  override:
+    description: "Set to 'true' when the image was promoted via a manual override despite failing the gate."
+    required: false
+    default: "false"
+  override-approver:
+    description: "Login that approved the override (recorded only when override is true)."
+    required: false
+    default: ""
+  override-issue:
+    description: "Tracking issue URL for the override (recorded only when override is true)."
+    required: false
+    default: ""
+  override-cves:
+    description: "Pipe-separated CVEs that were overridden (recorded only when override is true)."
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -52,6 +68,10 @@ runs:
         SCANNER_VERSION: "${{ inputs.scanner-version }}"
         METHOD: "${{ inputs.method }}"
         SBOM_PREDICATE_TYPE: "${{ inputs.sbom-predicate-type }}"
+        OVERRIDE: "${{ inputs.override }}"
+        OVERRIDE_APPROVER: "${{ inputs.override-approver }}"
+        OVERRIDE_ISSUE: "${{ inputs.override-issue }}"
+        OVERRIDE_CVES: "${{ inputs.override-cves }}"
       run: |
         set -euo pipefail
         export LC_ALL=C
@@ -73,6 +93,14 @@ runs:
         if [ "${METHOD}" = "sbom" ]; then
           args+=(
             --annotation "com.cssc.scan.sbom-predicate-type=${SBOM_PREDICATE_TYPE}"
+          )
+        fi
+        if [ "${OVERRIDE}" = "true" ]; then
+          args+=(
+            --annotation "com.cssc.scan.override=true"
+            --annotation "com.cssc.scan.override-approver=${OVERRIDE_APPROVER}"
+            --annotation "com.cssc.scan.override-issue=${OVERRIDE_ISSUE}"
+            --annotation "com.cssc.scan.override-cves=${OVERRIDE_CVES}"
           )
         fi
 

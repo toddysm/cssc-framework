@@ -1,7 +1,7 @@
 # Workflow actions and terminology
 
 This repository's GitHub Actions are built from small, single-purpose
-**composite actions** under [`.github/actions/`](../../.github/actions/). The
+__composite actions__ under [`.github/actions/`](../../.github/actions/). The
 reusable workflows (`_*.yml`) orchestrate these actions; the per-image callers
 (`mirror-*.yml`, `scan-*.yml`) only supply configuration.
 
@@ -22,16 +22,16 @@ phrasings it replaces.
 
 | Canonical term | Meaning | Replaces |
 | -------------- | ------- | -------- |
-| **registry-login** | Authenticate the local clients to a registry. | "Log in to GHCR", "Log in to source registry" |
-| **enumerate-tags** | List the tags in a repository. | "Enumerate quarantine tags", "list tags" |
-| **mirror-image** | Idempotently copy one image between registries (digest-compare + copy). | "compare digests and copy", "crane copy" |
-| **promote-image** | Copy a passing image from quarantine into golden/base. Implemented as **mirror-image** with `force: true`. | "promote", "promote passing images" |
-| **copy-referrers** | Copy an image together with its OCI referrers (`oras cp -r` + per-platform children). Folded into **mirror-image** via `copy-referrers: true`. | "copy_referrers", "copy with referrers" |
-| **scan-image** | Scan one image filesystem with `trivy image`. | "scan images with Trivy" |
-| **scan-sbom** | Scan one image's per-platform SBOM attestations with `trivy sbom`. | "scan platform SBOMs" |
-| **evaluate-findings** | Apply the severity threshold + CVE exceptions to produce a gate decision. | "gate on scan findings" |
-| **attach-scan-report** | Attach the OCI scan-report referrer to a promoted image. | "attach scan-report attestation" |
-| **delete-image** | Delete one tag from a GHCR repository via the Packages API. | "delete promoted tags from quarantine" |
+| __registry-login__ | Authenticate the local clients to a registry. | "Log in to GHCR", "Log in to source registry" |
+| __enumerate-tags__ | List the tags in a repository. | "Enumerate quarantine tags", "list tags" |
+| __mirror-image__ | Idempotently copy one image between registries (digest-compare + copy). | "compare digests and copy", "crane copy" |
+| __promote-image__ | Copy a passing image from quarantine into golden/base. Implemented as __mirror-image__ with `force: true`. | "promote", "promote passing images" |
+| __copy-referrers__ | Copy an image together with its OCI referrers (`oras cp -r` + per-platform children). Folded into __mirror-image__ via `copy-referrers: true`. | "copy_referrers", "copy with referrers" |
+| __scan-image__ | Scan one image filesystem with `trivy image`. | "scan images with Trivy" |
+| __scan-sbom__ | Scan one image's per-platform SBOM attestations with `trivy sbom`. | "scan platform SBOMs" |
+| __evaluate-findings__ | Apply the severity threshold + CVE exceptions to produce a gate decision. | "gate on scan findings" |
+| __attach-scan-report__ | Attach the OCI scan-report referrer to a promoted image. | "attach scan-report attestation" |
+| __delete-image__ | Delete one tag from a GHCR repository via the Packages API. | "delete promoted tags from quarantine" |
 
 Standard nouns:
 
@@ -40,9 +40,9 @@ Standard nouns:
 - **tag**, **digest**, **referrers** — as in the OCI spec.
 - **quarantine** — the untrusted landing repository (`quarantine/<image>`).
 - **golden** / **base** — promotion targets for clean images (`golden/<image>`,
-  `base/hardened/<image>`).
+   `base/hardened/<image>`).
 - **decision** — the gate outcome: `promote`, `dryrun`, `blocked`, or
-  `blocked-missing-sbom`.
+   `blocked-missing-sbom`.
 
 ## Action catalogue
 
@@ -147,6 +147,14 @@ Attach an empty OCI scan-report referrer to a promoted image.
 | `scanner-version` | yes | — | Resolved Trivy version. |
 | `method` | no | `image` | Scan method recorded: `image` or `sbom`. |
 | `sbom-predicate-type` | no | `""` | Recorded only when `method` is `sbom`. |
+| `override` | no | `false` | Records a manual override (promoted despite a failing gate). |
+| `override-approver` | no | `""` | Login that approved the override (when `override` is true). |
+| `override-issue` | no | `""` | Tracking-issue URL for the override (when `override` is true). |
+| `override-cves` | no | `""` | Pipe-separated CVEs that were overridden (when `override` is true). |
+| `override` | no | `false` | Records a manual override (promoted despite a failing gate). |
+| `override-approver` | no | `""` | Login that approved the override (when `override` is true). |
+| `override-issue` | no | `""` | Tracking-issue URL for the override (when `override` is true). |
+| `override-cves` | no | `""` | Pipe-separated CVEs that were overridden (when `override` is true). |
 
 The referrer artifact type is `application/vnd.cssc.scan-report.v1+json`; see the
 [promote-from-quarantine architecture](../architecture/workflows/promote-from-quarantine-workflows.md#scan-report-referrer-artifact)
@@ -163,6 +171,57 @@ Delete one tag from a GHCR repository via the Packages REST API.
 | `token` | no | `""` | PAT with `delete:packages`; deletion is skipped when empty. |
 
 Outputs: `status` (`deleted` / `skipped` / `failed`).
+
+### notify-slack
+
+Post an override-event message to a Slack incoming webhook. A no-op (with a
+warning) when `webhook-url` is empty.
+
+| Input | Required | Default | Description |
+| ----- | -------- | ------- | ----------- |
+| `webhook-url` | no | `""` | Slack incoming webhook URL; empty disables the action. |
+| `status` | yes | — | Message template: `blocked-pending`, `approved`, or `denied`. |
+| `image` | yes | — | Source repository. |
+| `tag` | yes | — | Image tag. |
+| `threshold` | no | `""` | Severity threshold the image failed. |
+| `blocking-cves` | no | `""` | Human-readable blocking-CVE summary. |
+| `issue-url` | no | `""` | Link to the tracking issue. |
+| `run-url` | no | `""` | Link to the workflow run. |
+| `approver` | no | `""` | Login recorded for approved/denied messages. |
+
+### manage-issue
+
+Create, update, comment on, close, or read a promotion tracking issue via `gh`
+(needs `issues: write`).
+
+| Input | Required | Default | Description |
+| ----- | -------- | ------- | ----------- |
+| `operation` | yes | — | `open-or-update`, `comment`, `close`, or `get`. |
+| `image` | yes | — | Source repository (dedupe + metadata). |
+| `tag` | yes | — | Image tag (dedupe + metadata). |
+| `metadata-json` | no | `""` | Machine-readable JSON embedded in the body (`open-or-update`). |
+| `body` | no | `""` | Human-readable body / comment text. |
+| `outcome` | no | `""` | `close` only: `promotion-approved` or `promotion-denied`. |
+| `issue-number` | no | `""` | Target issue; resolved by title when empty. |
+| `token` | yes | — | `GITHUB_TOKEN` with `issues: write`. |
+
+Dedupes by the `promotion-pending` label plus a deterministic title
+(`Promotion blocked: <image>:<tag>`). Outputs: `issue-number`, `issue-url`,
+`metadata-json` (parsed back out of an existing issue).
+
+### verify-approver
+
+Verify an actor meets a minimum repository permission before an override is
+honored.
+
+| Input | Required | Default | Description |
+| ----- | -------- | ------- | ----------- |
+| `actor` | yes | — | The login that issued the command. |
+| `min-permission` | no | `maintain` | Minimum permission: `admin`, `maintain`, or `write`. |
+| `fail-on-unauthorized` | no | `true` | Fail the step when the actor is below the threshold. |
+| `token` | yes | — | Token able to read collaborator permissions. |
+
+Outputs: `authorized` (`true` / `false`).
 
 ## How the actions compose
 
@@ -189,9 +248,9 @@ enumerate ──► scan (matrix: one job per tag) ──► summary
 ```
 
 - **enumerate** lists the tags (`enumerate-tags`) and resolves the severity set,
-  emitting a JSON tag array consumed by `strategy.matrix`.
+   emitting a JSON tag array consumed by `strategy.matrix`.
 - **scan** runs once per tag, in parallel (`fail-fast: false`), chaining the
-  single-image actions and uploading a small result artifact.
+   single-image actions and uploading a small result artifact.
 - **summary** downloads every result artifact and renders one aggregated job
-  summary (overview table + per-image detail), so the output matches the old
-  monolithic workflow despite the parallel topology.
+   summary (overview table + per-image detail), so the output matches the old
+   monolithic workflow despite the parallel topology.
