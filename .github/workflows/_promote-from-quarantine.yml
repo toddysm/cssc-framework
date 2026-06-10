@@ -58,9 +58,17 @@ on:
         required: false
         default: false
         type: boolean
+      enable_approval:
+        description: "On a blocked image, post a Slack notification and open a promotion tracking issue for a manual approve/deny override."
+        required: false
+        default: false
+        type: boolean
     secrets:
       ghcr_delete_token:
         description: "PAT with delete:packages used to remove quarantine tags. Optional; deletion is skipped when absent."
+        required: false
+      slack_webhook:
+        description: "Slack incoming webhook URL for blocked-image notifications. Optional; notification is skipped when absent."
         required: false
 
 jobs:
@@ -249,6 +257,42 @@ jobs:
           tag: ${{ matrix.tag }}
           token: ${{ secrets.ghcr_delete_token }}
 
+      # When approval is enabled and the image is blocked, persist a machine-
+      # readable metadata block alongside the per-tag result. The downstream
+      # `notify` job (which alone holds `issues: write`) reads it back to open
+      # the tracking issue and send the Slack alert, so this scan matrix never
+      # needs issue-write permission.
+      - name: Persist override metadata
+        if: steps.evaluate.outputs.decision == 'blocked' && inputs.enable_approval
+        env:
+          DEST_REPO: "${{ inputs.dest_repo }}"
+          REMAINING_MD: "${{ steps.evaluate.outputs.remaining-md }}"
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+          safe="${TAG//[^A-Za-z0-9_.-]/_}"
+          out="${RUNNER_TEMP}/result/${safe}"
+          mkdir -p "${out}"
+
+          digest="$(crane digest "${SOURCE_REPO}:${TAG}" 2>/dev/null || true)"
+
+          cves_json="$(printf '%s' "${REMAINING_MD}" | tr ',' '\n' \
+            | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
+            | jq -R . | jq -sc 'map(select(length > 0))')"
+
+          jq -nc \
+            --arg sr "${SOURCE_REPO}" \
+            --arg dr "${DEST_REPO}" \
+            --arg tag "${TAG}" \
+            --arg digest "${digest}" \
+            --arg th "${THRESHOLD}" \
+            --arg sv "${TRIVY_RESOLVED:-}" \
+            --argjson cves "${cves_json}" \
+            '{source_repo:$sr, dest_repo:$dr, tag:$tag, digest:$digest,
+              threshold:$th, scanner:"trivy", scanner_version:$sv,
+              method:"image", blocking_cves:$cves}' > "${out}/override-metadata.json"
+
       # Render this tag's run log + result fragment and upload it for the summary
       # job to aggregate. Runs even if an earlier step failed so partial results
       # are still reported.
@@ -386,6 +430,83 @@ jobs:
           name: scan-result-${{ strategy.job-index }}
           path: ${{ runner.temp }}/result
           retention-days: 1
+
+  # --- Phase 2b: open tracking issues + notify Slack for blocked images. ------
+  # Split out from `scan` so that matrix never needs `issues: write`. Runs only
+  # when approval is enabled; matrixes over every tag and no-ops for any tag
+  # that the scan job did not flag as blocked (no override-metadata artifact).
+  notify:
+    needs: [enumerate, scan]
+    if: always() && inputs.enable_approval && needs.enumerate.outputs.has-tags == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    strategy:
+      fail-fast: false
+      matrix:
+        tag: ${{ fromJSON(needs.enumerate.outputs.tags-json) }}
+    env:
+      SOURCE_REPO: "${{ inputs.source_repo }}"
+      TAG: "${{ matrix.tag }}"
+    steps:
+      - name: Check out actions
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Download results
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: scan-result-*
+          path: ${{ runner.temp }}/results
+
+      - name: Locate override metadata for this tag
+        id: find
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+          safe="${TAG//[^A-Za-z0-9_.-]/_}"
+          meta_file="$(find "${RUNNER_TEMP}/results" -type f \
+            -path "*/${safe}/override-metadata.json" 2>/dev/null | head -n1 || true)"
+
+          if [ -z "${meta_file}" ] || [ ! -s "${meta_file}" ]; then
+            echo "blocked=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          meta="$(jq -c . "${meta_file}")"
+          cves="$(printf '%s' "${meta}" | jq -r '(.blocking_cves // []) | join(", ")')"
+          echo "blocked=true" >> "${GITHUB_OUTPUT}"
+          echo "blocking-cves=${cves}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "metadata-json<<CSSC_META_EOF"
+            printf '%s\n' "${meta}"
+            echo "CSSC_META_EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Open promotion tracking issue
+        id: issue
+        if: steps.find.outputs.blocked == 'true'
+        uses: ./.github/actions/manage-issue
+        with:
+          operation: open-or-update
+          image: ${{ inputs.source_repo }}
+          tag: ${{ matrix.tag }}
+          metadata-json: ${{ steps.find.outputs.metadata-json }}
+          token: ${{ github.token }}
+
+      - name: Notify Slack of blocked image
+        if: steps.find.outputs.blocked == 'true'
+        uses: ./.github/actions/notify-slack
+        with:
+          webhook-url: ${{ secrets.slack_webhook }}
+          status: blocked-pending
+          image: ${{ inputs.source_repo }}
+          tag: ${{ matrix.tag }}
+          threshold: ${{ inputs.severity_threshold }}
+          blocking-cves: ${{ steps.find.outputs.blocking-cves }}
+          issue-url: ${{ steps.issue.outputs.issue-url }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
   # --- Phase 3: aggregate the per-tag results into one job summary. -----------
   summary:

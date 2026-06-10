@@ -1,0 +1,93 @@
+# Caller workflow: promote-override
+#
+# Wires triggers to the reusable `_promote-override.yml` workflow. A maintainer
+# approves or denies the promotion of a quarantined image that failed the
+# vulnerability gate, either by commenting `/approve` or `/deny` on the tracking
+# issue (which the GitHub Slack app also surfaces), or via a manual dispatch.
+#
+# The issue_comment trigger always runs the workflow definition from the default
+# branch, so the parsing/promotion logic cannot be tampered with from elsewhere;
+# the override itself is still gated by `verify-approver` inside the reusable
+# workflow.
+#
+# See docs/architecture/workflows/promote-from-quarantine-override-approval.md.
+name: promote override
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Tracking-issue number to act on."
+        required: true
+        type: string
+      decision:
+        description: "approve | deny."
+        required: true
+        type: choice
+        options: [approve, deny]
+
+permissions:
+  contents: read
+  packages: write
+  issues: write
+
+concurrency:
+  group: promote-override-${{ github.event.issue.number || github.event.inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  # Parse an issue comment into an override decision. Only runs for comments on
+  # open issues carrying the promotion-pending label.
+  parse:
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.event.issue.state == 'open' &&
+      contains(github.event.issue.labels.*.name, 'promotion-pending')
+    runs-on: ubuntu-latest
+    outputs:
+      decision: ${{ steps.parse.outputs.decision }}
+    steps:
+      - name: Parse command
+        id: parse
+        env:
+          COMMENT_BODY: "${{ github.event.comment.body }}"
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+          # Accept a leading /approve or /deny as the command (first token).
+          first="$(printf '%s' "${COMMENT_BODY}" | tr -d '\r' | awk 'NR==1{print $1}')"
+          case "${first}" in
+            /approve) decision="approve" ;;
+            /deny)    decision="deny" ;;
+            *)        decision="" ;;
+          esac
+          if [ -z "${decision}" ]; then
+            echo "No /approve or /deny command found; nothing to do."
+          fi
+          echo "decision=${decision}" >> "${GITHUB_OUTPUT}"
+
+  from-comment:
+    needs: parse
+    if: needs.parse.outputs.decision != ''
+    uses: ./.github/workflows/_promote-override.yml
+    with:
+      issue_number: ${{ github.event.issue.number }}
+      decision: ${{ needs.parse.outputs.decision }}
+      approver: ${{ github.event.comment.user.login }}
+    secrets:
+      slack_webhook: ${{ secrets.SLACK_WEBHOOK }}
+      ghcr_delete_token: ${{ secrets.GHCR_DELETE_TOKEN }}
+
+  from-dispatch:
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/_promote-override.yml
+    with:
+      issue_number: ${{ github.event.inputs.issue_number }}
+      decision: ${{ github.event.inputs.decision }}
+      approver: ${{ github.actor }}
+    secrets:
+      slack_webhook: ${{ secrets.SLACK_WEBHOOK }}
+      ghcr_delete_token: ${{ secrets.GHCR_DELETE_TOKEN }}

@@ -1,0 +1,212 @@
+# Composite action: manage-issue
+#
+# Manage the lifecycle of a per-image+tag promotion tracking issue using the
+# GitHub REST API via `gh` (authenticated with GITHUB_TOKEN; needs
+# `issues: write`). Three operations:
+#
+#   open-or-update - idempotently create the tracking issue, or update an
+#                    existing one. Dedupes by the `promotion-pending` label plus
+#                    a deterministic title ("Promotion blocked: <image>:<tag>").
+#                    Embeds a machine-readable metadata block in the body so a
+#                    later override run can recover the promotion parameters.
+#   comment        - append a comment to the issue.
+#   close          - apply the outcome label (promotion-approved|promotion-denied),
+#                    remove promotion-pending, post a closing comment, and close.
+#
+# The metadata block is delimited by HTML comment markers and contains the JSON
+# passed in `metadata-json`; `open-or-update` and the `metadata-json` output use
+# these markers to round-trip the data.
+#
+# Terminology: see docs/reference/workflow-actions.md.
+name: manage-issue
+description: Create, update, comment on, or close a promotion tracking issue.
+
+inputs:
+  operation:
+    description: "open-or-update | comment | close | get."
+    required: true
+  image:
+    description: "Source repository (used for dedupe + metadata)."
+    required: true
+  tag:
+    description: "Image tag (used for dedupe + metadata)."
+    required: true
+  metadata-json:
+    description: "Machine-readable JSON embedded in the body (open-or-update)."
+    required: false
+    default: ""
+  body:
+    description: "Human-readable issue body (open-or-update) or comment text (comment)."
+    required: false
+    default: ""
+  outcome:
+    description: "close only: promotion-approved | promotion-denied."
+    required: false
+    default: ""
+  issue-number:
+    description: "Target issue number for comment/close. When empty it is resolved by title."
+    required: false
+    default: ""
+  token:
+    description: "GITHUB_TOKEN with issues: write."
+    required: true
+
+outputs:
+  issue-number:
+    description: "The resolved/created issue number (empty if none)."
+    value: ${{ steps.manage.outputs.issue-number }}
+  issue-url:
+    description: "The resolved/created issue URL (empty if none)."
+    value: ${{ steps.manage.outputs.issue-url }}
+  metadata-json:
+    description: "Metadata JSON parsed out of an existing issue (empty if none)."
+    value: ${{ steps.manage.outputs.metadata-json }}
+
+runs:
+  using: composite
+  steps:
+    - name: Manage tracking issue
+      id: manage
+      shell: bash
+      env:
+        GH_TOKEN: "${{ inputs.token }}"
+        GH_REPO: "${{ github.repository }}"
+        OPERATION: "${{ inputs.operation }}"
+        IMAGE: "${{ inputs.image }}"
+        TAG: "${{ inputs.tag }}"
+        METADATA_JSON: "${{ inputs.metadata-json }}"
+        BODY_IN: "${{ inputs.body }}"
+        OUTCOME: "${{ inputs.outcome }}"
+        ISSUE_NUMBER_IN: "${{ inputs.issue-number }}"
+      run: |
+        set -euo pipefail
+        export LC_ALL=C
+
+        title="Promotion blocked: ${IMAGE}:${TAG}"
+        pending_label="promotion-pending"
+        meta_start="<!-- cssc-metadata:start -->"
+        meta_end="<!-- cssc-metadata:end -->"
+
+        # Ensure the labels we rely on exist (idempotent; ignore "already exists").
+        ensure_label () {
+          gh label create "$1" --color "$2" --description "$3" >/dev/null 2>&1 || true
+        }
+        ensure_label "${pending_label}" "d93f0b" "Image awaiting promotion override decision"
+        ensure_label "promotion-approved" "0e8a16" "Promotion override approved"
+        ensure_label "promotion-denied" "b60205" "Promotion override denied"
+
+        # Resolve an existing open tracking issue number by exact title (scoped to
+        # the pending label) unless one was passed explicitly.
+        resolve_number () {
+          if [ -n "${ISSUE_NUMBER_IN}" ]; then
+            printf '%s' "${ISSUE_NUMBER_IN}"
+            return
+          fi
+          gh issue list --state open --label "${pending_label}" \
+            --search "in:title ${title}" --json number,title \
+            --jq ".[] | select(.title == \"${title}\") | .number" 2>/dev/null \
+            | head -n1 || true
+        }
+
+        out_number=""
+        out_url=""
+        out_meta=""
+
+        case "${OPERATION}" in
+          open-or-update)
+            # The embedded metadata block is the source of truth a later
+            # override run reads back, so refuse to open/update with missing or
+            # malformed JSON rather than writing a garbled block.
+            if [ -z "${METADATA_JSON}" ]; then
+              echo "::error::operation=open-or-update requires a non-empty metadata-json" >&2
+              exit 1
+            fi
+            if ! printf '%s' "${METADATA_JSON}" | jq -e . >/dev/null 2>&1; then
+              echo "::error::operation=open-or-update requires metadata-json to be valid JSON" >&2
+              exit 1
+            fi
+
+            # Compose the body: human text + a delimited metadata block.
+            body_file="$(mktemp)"
+            {
+              if [ -n "${BODY_IN}" ]; then
+                printf '%s\n\n' "${BODY_IN}"
+              else
+                printf '%s\n\n' "Image \`${IMAGE}:${TAG}\` failed the vulnerability gate and is awaiting an approve/deny decision. Comment \`/approve\` or \`/deny\` on this issue."
+              fi
+              printf '%s\n' "${meta_start}"
+              printf '```json\n%s\n```\n' "${METADATA_JSON}"
+              printf '%s\n' "${meta_end}"
+            } > "${body_file}"
+
+            existing="$(resolve_number)"
+            if [ -n "${existing}" ]; then
+              gh issue edit "${existing}" --body-file "${body_file}" >/dev/null
+              gh issue comment "${existing}" \
+                --body "Re-scanned on $(date -u +%Y-%m-%dT%H:%M:%SZ); image still blocked." >/dev/null
+              out_number="${existing}"
+            else
+              url="$(gh issue create --title "${title}" --label "${pending_label}" \
+                     --body-file "${body_file}")"
+              out_url="${url}"
+              out_number="$(printf '%s' "${url}" | sed 's:.*/::')"
+            fi
+            ;;
+
+          comment)
+            existing="$(resolve_number)"
+            if [ -z "${existing}" ]; then
+              echo "::warning::No tracking issue found for ${IMAGE}:${TAG}; nothing to comment."
+            else
+              gh issue comment "${existing}" --body "${BODY_IN}" >/dev/null
+              out_number="${existing}"
+            fi
+            ;;
+
+          close)
+            existing="$(resolve_number)"
+            if [ -z "${existing}" ]; then
+              echo "::warning::No tracking issue found for ${IMAGE}:${TAG}; nothing to close."
+            else
+              case "${OUTCOME}" in
+                promotion-approved|promotion-denied) : ;;
+                *) echo "::error::close requires outcome=promotion-approved|promotion-denied"; exit 1 ;;
+              esac
+              gh issue edit "${existing}" \
+                --add-label "${OUTCOME}" --remove-label "${pending_label}" >/dev/null
+              [ -n "${BODY_IN}" ] && gh issue comment "${existing}" --body "${BODY_IN}" >/dev/null
+              gh issue close "${existing}" >/dev/null
+              out_number="${existing}"
+            fi
+            ;;
+
+          get)
+            out_number="$(resolve_number)"
+            if [ -z "${out_number}" ]; then
+              echo "::warning::No tracking issue found for ${IMAGE}:${TAG}."
+            fi
+            ;;
+
+          *)
+            echo "::error::Invalid operation '${OPERATION}' (expected open-or-update|comment|close|get)"
+            exit 1 ;;
+        esac
+
+        # Backfill url + metadata for whichever issue we ended up with.
+        if [ -n "${out_number}" ]; then
+          [ -z "${out_url}" ] && out_url="$(gh issue view "${out_number}" --json url --jq '.url' 2>/dev/null || true)"
+          body="$(gh issue view "${out_number}" --json body --jq '.body' 2>/dev/null || true)"
+          out_meta="$(printf '%s' "${body}" \
+            | tr -d '\r' \
+            | sed -n "/${meta_start}/,/${meta_end}/p" \
+            | sed -n 's/^```json$//; /^```$/d; /cssc-metadata/d; p' \
+            | jq -c '.' 2>/dev/null || true)"
+        fi
+
+        echo "issue-number=${out_number}" >> "${GITHUB_OUTPUT}"
+        echo "issue-url=${out_url}" >> "${GITHUB_OUTPUT}"
+        {
+          echo "metadata-json<<CSSC_META_EOF"
+          printf '%s\n' "${out_meta}"
+          echo "CSSC_META_EOF"
+        } >> "${GITHUB_OUTPUT}"

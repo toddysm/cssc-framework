@@ -315,8 +315,12 @@ The workflow therefore treats deletion as configurable:
 - **No cross-scanner support.** Trivy is the only scanner; the referrer schema
   records the scanner name/version to allow future additions.
 - **No retention policy for `golden/`.** Superseded golden tags are not pruned.
-- **No notification/alerting.** Failures and blocked images surface only through
-  the normal GitHub Actions run status and the job summary.
+- **No notification/alerting by default.** Failures and blocked images surface
+  through the normal GitHub Actions run status and the job summary. An *optional*
+  approval path (`enable_approval`) adds Slack notifications and a GitHub
+  tracking issue for blocked images, with a maintainer-driven `/approve` `/deny`
+  override; see
+  [override-approval design](promote-from-quarantine-override-approval.md).
 
 ## Adding a new promote-from-quarantine workflow
 
