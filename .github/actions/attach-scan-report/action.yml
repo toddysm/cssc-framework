@@ -96,6 +96,13 @@ runs:
           )
         fi
         if [ "${OVERRIDE}" = "true" ]; then
+          # An override claim is only trustworthy if it names who approved it
+          # and links the tracking issue; refuse to write a half-populated
+          # provenance record that would weaken the audit trail.
+          if [ -z "${OVERRIDE_APPROVER}" ] || [ -z "${OVERRIDE_ISSUE}" ]; then
+            echo "::error::override=true requires both override-approver and override-issue to be set" >&2
+            exit 1
+          fi
           args+=(
             --annotation "com.cssc.scan.override=true"
             --annotation "com.cssc.scan.override-approver=${OVERRIDE_APPROVER}"

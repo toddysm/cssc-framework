@@ -188,10 +188,13 @@ Backward-compatible additions:
 - New inputs: `enable_approval` (bool, default `false`),
   and the existing severity/exception inputs unchanged.
 - New optional secret: `slack_webhook`.
-- In the `scan` job, when `enable_approval == true` and a tag's
-  `decision == blocked`, run `notify-slack` (status `blocked-pending`) and
-  `manage-issue` (`open-or-update`) with the metadata block. No behavior change
-  when `enable_approval` is `false` — existing callers are unaffected.
+- When `enable_approval == true` and a tag's `decision == blocked`, the
+  `scan` job persists the override metadata block as a per-tag artifact (it
+  does **not** itself open issues). A dedicated `notify` job — the only job
+  granted `issues: write` — then reads that artifact and runs `manage-issue`
+  (`open-or-update`) and `notify-slack` (status `blocked-pending`). Keeping
+  `issues: write` off the `scan` matrix preserves least privilege. No behavior
+  change when `enable_approval` is `false` — existing callers are unaffected.
 
 ### 5.2 New reusable — `_promote-override.yml`
 Performs the override promotion for a single image+tag.

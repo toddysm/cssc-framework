@@ -151,10 +151,6 @@ Attach an empty OCI scan-report referrer to a promoted image.
 | `override-approver` | no | `""` | Login that approved the override (when `override` is true). |
 | `override-issue` | no | `""` | Tracking-issue URL for the override (when `override` is true). |
 | `override-cves` | no | `""` | Pipe-separated CVEs that were overridden (when `override` is true). |
-| `override` | no | `false` | Records a manual override (promoted despite a failing gate). |
-| `override-approver` | no | `""` | Login that approved the override (when `override` is true). |
-| `override-issue` | no | `""` | Tracking-issue URL for the override (when `override` is true). |
-| `override-cves` | no | `""` | Pipe-separated CVEs that were overridden (when `override` is true). |
 
 The referrer artifact type is `application/vnd.cssc.scan-report.v1+json`; see the
 [promote-from-quarantine architecture](../architecture/workflows/promote-from-quarantine-workflows.md#scan-report-referrer-artifact)

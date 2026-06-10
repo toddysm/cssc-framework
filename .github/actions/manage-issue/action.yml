@@ -114,6 +114,18 @@ runs:
 
         case "${OPERATION}" in
           open-or-update)
+            # The embedded metadata block is the source of truth a later
+            # override run reads back, so refuse to open/update with missing or
+            # malformed JSON rather than writing a garbled block.
+            if [ -z "${METADATA_JSON}" ]; then
+              echo "::error::operation=open-or-update requires a non-empty metadata-json" >&2
+              exit 1
+            fi
+            if ! printf '%s' "${METADATA_JSON}" | jq -e . >/dev/null 2>&1; then
+              echo "::error::operation=open-or-update requires metadata-json to be valid JSON" >&2
+              exit 1
+            fi
+
             # Compose the body: human text + a delimited metadata block.
             body_file="$(mktemp)"
             {
