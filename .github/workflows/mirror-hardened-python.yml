@@ -12,9 +12,9 @@
 name: mirror / quarantine/hardened/python
 
 on:
-  # Daily upstream check at 06:00 UTC.
-  schedule:
-    - cron: "0 6 * * *"
+  # Automatic daily schedule disabled; this workflow runs on manual dispatch only.
+  # schedule:
+  #   - cron: "0 6 * * *"  # Daily upstream check at 06:00 UTC.
   # Manual run, with an optional force copy.
   workflow_dispatch:
     inputs:

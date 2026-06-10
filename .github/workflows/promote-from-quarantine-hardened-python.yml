@@ -21,9 +21,9 @@
 name: promote from quarantine / quarantine/hardened/python
 
 on:
-  # Daily scan at 07:00 UTC, after the 06:00 mirror has refreshed quarantine.
-  schedule:
-    - cron: "0 7 * * *"
+  # Automatic daily schedule disabled; this workflow runs on manual dispatch only.
+  # schedule:
+  #   - cron: "0 7 * * *"  # Daily scan at 07:00 UTC, after the 06:00 mirror has refreshed quarantine.
   # Manual run with policy overrides.
   workflow_dispatch:
     inputs:
