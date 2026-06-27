@@ -46,6 +46,7 @@ concurrency:
 permissions:
   contents: read
   packages: write
+  issues: write
 
 jobs:
   promote-from-quarantine-node:
@@ -56,5 +57,7 @@ jobs:
       severity_threshold: ${{ github.event_name == 'workflow_dispatch' && inputs.severity_threshold || 'HIGH' }}
       cve_exceptions: ${{ github.event_name == 'workflow_dispatch' && inputs.cve_exceptions || '' }}
       dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+      enable_approval: true
     secrets:
       ghcr_delete_token: ${{ secrets.GHCR_DELETE_TOKEN }}
+      slack_webhook: ${{ secrets.SLACK_WEBHOOK }}
