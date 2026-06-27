@@ -64,6 +64,7 @@ concurrency:
 permissions:
   contents: read
   packages: write
+  issues: write
 
 jobs:
   promote-from-quarantine-hardened-python:
