@@ -23,8 +23,9 @@ It covers:
 ## Motivation
 
 Today the only automated issue this repository files is a **promotion tracking
-issue** — opened by the `notify` job of
-[`_promote-from-quarantine.yml`](../../../.github/workflows/_promote-from-quarantine.yml)
+issue** — opened by the `notify` job of the promote-from-quarantine reusable
+workflows ([`_promote-from-quarantine.yml`](../../../.github/workflows/_promote-from-quarantine.yml)
+and [`_promote-from-quarantine-sbom.yml`](../../../.github/workflows/_promote-from-quarantine-sbom.yml))
 when an image is *policy-blocked* (and only with `enable_approval`). See the
 [override-approval design](promote-from-quarantine-override-approval.md).
 
@@ -163,7 +164,7 @@ more common case of a run that starts and then fails.
    avoid a second action but risks regressing the security-sensitive override
    flow that depends on its exact titles, labels, and metadata contract. A small,
    single-responsibility `manage-failure-issue` action is lower-risk and matches
-   the repo's "one verb-noun action per operation" rule. Accepted.
+   the repo's "One verb-noun per action" rule. Accepted.
 
 3. **Issue per workflow vs. issue per run.** Per-workflow de-duplication avoids
    issue spam during a sustained outage. Accepted.
@@ -195,3 +196,10 @@ more common case of a run that starts and then fails.
 - Issue bodies/comments contain only the workflow name, run metadata, and a link
   to the run — no secrets — and all interpolation goes through `gh` arguments or
   `--body-file`, never an `eval`-style shell expansion.
+
+## Tracking
+
+- **Tracking issue:** [#80](https://github.com/toddysm/cssc-framework/issues/80)
+- **Phase 1:** [#81](https://github.com/toddysm/cssc-framework/issues/81) `manage-failure-issue` action · [#82](https://github.com/toddysm/cssc-framework/issues/82) `report-ci-failure.yml` monitor
+- **Phase 2:** [#83](https://github.com/toddysm/cssc-framework/issues/83) auto-close on recovery · [#84](https://github.com/toddysm/cssc-framework/issues/84) Slack `ci-failure` notification
+- **Docs:** [#85](https://github.com/toddysm/cssc-framework/issues/85) naming, actions reference, and index wiring
