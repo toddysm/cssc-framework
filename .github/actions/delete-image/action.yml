@@ -72,6 +72,14 @@ runs:
           exit 0
         fi
 
-        GH_TOKEN="${DELETE_TOKEN}" gh api -X DELETE "${base}/versions/${vid}" >/dev/null
-        echo "Deleted ${REPOSITORY}:${TAG} (version ${vid})."
-        echo "status=deleted" >> "${GITHUB_OUTPUT}"
+        # Deletion is best-effort cleanup: a failure here (e.g. GHCR refusing to
+        # delete the last tagged version of a package, HTTP 400) must not fail
+        # the promotion that already succeeded. Capture the error, warn, and
+        # report status=failed instead of aborting the job.
+        if err="$(GH_TOKEN="${DELETE_TOKEN}" gh api -X DELETE "${base}/versions/${vid}" 2>&1 >/dev/null)"; then
+          echo "Deleted ${REPOSITORY}:${TAG} (version ${vid})."
+          echo "status=deleted" >> "${GITHUB_OUTPUT}"
+        else
+          echo "::warning::Failed to delete ${REPOSITORY}:${TAG} (version ${vid}); leaving it in place. ${err}"
+          echo "status=failed" >> "${GITHUB_OUTPUT}"
+        fi
