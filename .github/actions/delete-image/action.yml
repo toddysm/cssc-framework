@@ -6,7 +6,9 @@
 # quarantine after it has been promoted.
 #
 # Resolves the owner type (user vs organization) and the package-version id for
-# the tag, then issues the delete. Emits a status the caller can surface:
+# the tag, then issues the delete. When the tag is the package's last tagged
+# version (which GHCR refuses to delete via the versions API), it falls back to
+# deleting the whole package. Emits a status the caller can surface:
 # deleted | skipped | failed.
 #
 # Terminology: see docs/reference/workflow-actions.md.
@@ -72,6 +74,26 @@ runs:
           exit 0
         fi
 
-        GH_TOKEN="${DELETE_TOKEN}" gh api -X DELETE "${base}/versions/${vid}" >/dev/null
-        echo "Deleted ${REPOSITORY}:${TAG} (version ${vid})."
-        echo "status=deleted" >> "${GITHUB_OUTPUT}"
+        # Deletion is best-effort cleanup: a failure here must not fail the
+        # promotion that already succeeded. Capture the error, and:
+        #   - if GHCR refuses because this is the last tagged version of the
+        #     package (HTTP 400), delete the whole package instead — emptying the
+        #     quarantine package is the intended cleanup once its only image was
+        #     promoted;
+        #   - otherwise warn and report status=failed instead of aborting.
+        if err="$(GH_TOKEN="${DELETE_TOKEN}" gh api -X DELETE "${base}/versions/${vid}" 2>&1 >/dev/null)"; then
+          echo "Deleted ${REPOSITORY}:${TAG} (version ${vid})."
+          echo "status=deleted" >> "${GITHUB_OUTPUT}"
+        elif printf '%s' "${err}" | grep -qiF "last tagged version"; then
+          echo "::notice::'${TAG}' is the last tagged version of ${REPOSITORY}; deleting the whole package instead."
+          if perr="$(GH_TOKEN="${DELETE_TOKEN}" gh api -X DELETE "${base}" 2>&1 >/dev/null)"; then
+            echo "Deleted package ${REPOSITORY} (removed last tag '${TAG}')."
+            echo "status=deleted" >> "${GITHUB_OUTPUT}"
+          else
+            echo "::warning::Failed to delete package ${REPOSITORY}; leaving it in place. ${perr}"
+            echo "status=failed" >> "${GITHUB_OUTPUT}"
+          fi
+        else
+          echo "::warning::Failed to delete ${REPOSITORY}:${TAG} (version ${vid}); leaving it in place. ${err}"
+          echo "status=failed" >> "${GITHUB_OUTPUT}"
+        fi
