@@ -1,0 +1,150 @@
+# Composite action: manage-failure-issue
+#
+# Manage the lifecycle of a per-workflow CI-failure tracking issue using the
+# GitHub REST API via `gh` (authenticated with GITHUB_TOKEN; needs
+# `issues: write`). Two operations:
+#
+#   open-or-update - idempotently create the CI-failure issue, or update an
+#                    existing one. Dedupes by the `ci-failure` label plus a
+#                    deterministic title ("CI failure: <workflow>"). On an
+#                    existing issue it appends a comment recording the new failed
+#                    run; otherwise it creates the issue.
+#   close          - resolve the open CI-failure issue for the workflow (by
+#                    title + label) and close it with a recovery comment. A no-op
+#                    when no such issue exists.
+#
+# This is intentionally separate from `manage-issue` (which is specific to the
+# promotion override flow: a different title, label set, and a required embedded
+# metadata block). See
+# docs/architecture/workflows/ci-failure-notifications.md.
+#
+# Terminology: see docs/reference/workflow-actions.md.
+name: manage-failure-issue
+description: Open/update or close a per-workflow CI-failure tracking issue.
+
+inputs:
+  operation:
+    description: "open-or-update | close."
+    required: true
+  workflow:
+    description: "Display name of the workflow whose run failed/recovered (dedupe key)."
+    required: true
+  run-url:
+    description: "Link to the workflow run."
+    required: false
+    default: ""
+  run-number:
+    description: "Run number of the failed/recovered run."
+    required: false
+    default: ""
+  branch:
+    description: "Branch the run executed on."
+    required: false
+    default: ""
+  event:
+    description: "Event that triggered the run (schedule, workflow_dispatch, ...)."
+    required: false
+    default: ""
+  token:
+    description: "GITHUB_TOKEN with issues: write."
+    required: true
+
+outputs:
+  issue-number:
+    description: "The resolved/created issue number (empty if none)."
+    value: ${{ steps.manage.outputs.issue-number }}
+  issue-url:
+    description: "The resolved/created issue URL (empty if none)."
+    value: ${{ steps.manage.outputs.issue-url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Manage CI-failure issue
+      id: manage
+      shell: bash
+      env:
+        GH_TOKEN: "${{ inputs.token }}"
+        GH_REPO: "${{ github.repository }}"
+        OPERATION: "${{ inputs.operation }}"
+        WORKFLOW: "${{ inputs.workflow }}"
+        RUN_URL: "${{ inputs.run-url }}"
+        RUN_NUMBER: "${{ inputs.run-number }}"
+        BRANCH: "${{ inputs.branch }}"
+        EVENT: "${{ inputs.event }}"
+      run: |
+        set -euo pipefail
+        export LC_ALL=C
+
+        label="ci-failure"
+        title="CI failure: ${WORKFLOW}"
+
+        # Ensure the label exists (idempotent; ignore "already exists").
+        gh label create "${label}" --color "b60205" \
+          --description "A monitored workflow run failed" >/dev/null 2>&1 || true
+
+        # Resolve an existing open CI-failure issue by exact title.
+        resolve_number () {
+          gh issue list --state open --label "${label}" \
+            --search "in:title ${title}" --json number,title \
+            --jq ".[] | select(.title == \"${title}\") | .number" 2>/dev/null \
+            | head -n1 || true
+        }
+
+        # One human-readable line describing the run in question.
+        run_line () {
+          local line="Run"
+          [ -n "${RUN_NUMBER}" ] && line="${line} #${RUN_NUMBER}"
+          [ -n "${BRANCH}" ]     && line="${line} on \`${BRANCH}\`"
+          [ -n "${EVENT}" ]      && line="${line} (${EVENT})"
+          [ -n "${RUN_URL}" ]    && line="${line}: ${RUN_URL}"
+          printf '%s' "${line}"
+        }
+
+        out_number=""
+        out_url=""
+
+        case "${OPERATION}" in
+          open-or-update)
+            existing="$(resolve_number)"
+            if [ -n "${existing}" ]; then
+              gh issue comment "${existing}" \
+                --body "Still failing — $(run_line)" >/dev/null
+              out_number="${existing}"
+            else
+              body_file="$(mktemp)"
+              {
+                printf '%s\n\n' "The workflow **${WORKFLOW}** failed."
+                printf '%s\n\n' "$(run_line)"
+                printf '%s\n' "This issue is opened automatically by \`report-ci-failure.yml\` and is updated on each subsequent failure. It will be closed automatically when the workflow next succeeds."
+              } > "${body_file}"
+              url="$(gh issue create --title "${title}" --label "${label}" \
+                     --body-file "${body_file}")"
+              out_url="${url}"
+              out_number="$(printf '%s' "${url}" | sed 's:.*/::')"
+            fi
+            ;;
+
+          close)
+            existing="$(resolve_number)"
+            if [ -z "${existing}" ]; then
+              echo "No open CI-failure issue for '${WORKFLOW}'; nothing to close."
+            else
+              gh issue comment "${existing}" \
+                --body "Recovered — $(run_line). Closing." >/dev/null
+              gh issue close "${existing}" >/dev/null
+              out_number="${existing}"
+            fi
+            ;;
+
+          *)
+            echo "::error::Invalid operation '${OPERATION}' (expected open-or-update|close)"
+            exit 1 ;;
+        esac
+
+        if [ -n "${out_number}" ] && [ -z "${out_url}" ]; then
+          out_url="$(gh issue view "${out_number}" --json url --jq '.url' 2>/dev/null || true)"
+        fi
+
+        echo "issue-number=${out_number}" >> "${GITHUB_OUTPUT}"
+        echo "issue-url=${out_url}" >> "${GITHUB_OUTPUT}"

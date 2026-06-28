@@ -14,13 +14,15 @@ both in the file system and in the Actions UI.
 | **Promote from quarantine** | Scan a quarantined image and promote it into its golden/base repository (`golden/<image>`, or `base/...` for base/hardened images) when it passes the vulnerability policy | `promote-from-quarantine-<image>.yml` | `promote from quarantine / quarantine/<image>` | `promote-from-quarantine-<image>` |
 | **Build** | Build an application image on top of a mirrored base | `build-<app>.yml` | `build / <app>` | `build-<app>` |
 | **Promote override** | Act on a maintainer's approve/deny of a blocked image (issue-comment or dispatch) | `promote-override.yml` | `promote override` | `promote-override-<issue>` |
+| **Report** | Watch other workflows and report CI failures as tracking issues | `report-<purpose>.yml` | `report / <subject>` | `report-<purpose>-<subject>` |
 | **Reusable** | Shared logic invoked by other workflows; never triggered directly | `_<purpose>.yml` (leading underscore) | `_reusable / <purpose>` | n/a |
 | **Composite action** | A single reusable step shared across workflows | `.github/actions/<verb-noun>/action.yml` | `name: <verb-noun>` | n/a |
 
 ### Rules
 
 1. **Verb prefix.** Every workflow filename starts with a category verb:
-   `mirror-`, `promote-from-quarantine-`, `promote-override`, `build-`, or a leading underscore
+   `mirror-`, `promote-from-quarantine-`, `promote-override`, `build-`,
+   `report-`, or a leading underscore
    (`_`) for reusable
    workflows. This groups related workflows together alphabetically and makes
    intent obvious at a glance.
@@ -108,6 +110,17 @@ Build workflows (added later) build the demo applications under `apps/` on top
 of the mirrored base images. They use the `build-<app>.yml` filename and the
 `build / <app>` display name so they remain clearly separate from mirror
 workflows.
+
+## Report workflows
+
+Report workflows watch *other* workflows and turn CI failures into visible,
+de-duplicated tracking issues. There is one repository-wide monitor,
+[`report-ci-failure.yml`](../../.github/workflows/report-ci-failure.yml), that
+subscribes to the mirror, promote-from-quarantine, and promote-override workflows
+via the `workflow_run` event and opens (or, on recovery, closes) a
+`CI failure: <workflow>` issue. It uses the `report-<purpose>.yml` filename and
+the `report / <subject>` display name. See the
+[CI failure notifications design](../architecture/workflows/ci-failure-notifications.md).
 
 ## Composite actions
 

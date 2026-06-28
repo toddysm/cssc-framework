@@ -1,18 +1,18 @@
 # Composite action: notify-slack
 #
-# Post a formatted message to a Slack incoming webhook describing a
-# promote-from-quarantine override event. Three message templates are selected
-# by `status`:
+# Post a formatted message to a Slack incoming webhook. Four message templates
+# are selected by `status`:
 #   blocked-pending - an image failed the gate and awaits an approve/deny.
 #   approved        - an override was approved and the image was promoted.
 #   denied          - an override was denied; the image stays in quarantine.
+#   ci-failure      - a monitored workflow run failed (uses `workflow`).
 #
 # When `webhook-url` is empty the action is a no-op (with a warning) so callers
 # can leave Slack unconfigured without failing.
 #
 # Terminology: see docs/reference/workflow-actions.md.
 name: notify-slack
-description: Post an override-event message to a Slack incoming webhook.
+description: Post a promotion-event or CI-failure message to a Slack incoming webhook.
 
 inputs:
   webhook-url:
@@ -20,14 +20,20 @@ inputs:
     required: false
     default: ""
   status:
-    description: "Message template: blocked-pending | approved | denied."
+    description: "Message template: blocked-pending | approved | denied | ci-failure."
     required: true
   image:
-    description: "Source repository (e.g. ghcr.io/owner/quarantine/python)."
-    required: true
+    description: "Source repository (e.g. ghcr.io/owner/quarantine/python). Unused for ci-failure."
+    required: false
+    default: ""
   tag:
-    description: "Image tag."
-    required: true
+    description: "Image tag. Unused for ci-failure."
+    required: false
+    default: ""
+  workflow:
+    description: "Workflow display name (used by the ci-failure template)."
+    required: false
+    default: ""
   threshold:
     description: "Severity threshold the image failed (optional)."
     required: false
@@ -59,6 +65,7 @@ runs:
         STATUS: "${{ inputs.status }}"
         IMAGE: "${{ inputs.image }}"
         TAG: "${{ inputs.tag }}"
+        WORKFLOW: "${{ inputs.workflow }}"
         THRESHOLD: "${{ inputs.threshold }}"
         BLOCKING_CVES: "${{ inputs.blocking-cves }}"
         ISSUE_URL: "${{ inputs.issue-url }}"
@@ -69,7 +76,7 @@ runs:
         export LC_ALL=C
 
         if [ -z "${WEBHOOK_URL}" ]; then
-          echo "::warning::No Slack webhook configured; skipping ${STATUS} notification for ${IMAGE}:${TAG}."
+          echo "::warning::No Slack webhook configured; skipping ${STATUS} notification."
           exit 0
         fi
 
@@ -83,8 +90,11 @@ runs:
           denied)
             header=":x: Promotion override denied"
             summary="*${IMAGE}:${TAG}* stays in quarantine${APPROVER:+ (denied by ${APPROVER})}." ;;
+          ci-failure)
+            header=":rotating_light: CI failure"
+            summary="*${WORKFLOW}* failed." ;;
           *)
-            echo "::error::Invalid status '${STATUS}' (expected blocked-pending|approved|denied)"; exit 1 ;;
+            echo "::error::Invalid status '${STATUS}' (expected blocked-pending|approved|denied|ci-failure)"; exit 1 ;;
         esac
 
         # Assemble the context line (CVEs / links) from whichever fields are set.

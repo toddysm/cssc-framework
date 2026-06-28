@@ -1,0 +1,90 @@
+# Workflow: report-ci-failure
+#
+# Repository-wide CI-failure monitor. It subscribes to the completion of the
+# mirror, promote-from-quarantine, and promote-override workflows via the
+# `workflow_run` event and, when an observed run concludes in `failure`, opens
+# (or updates) a de-duplicated "CI failure: <workflow>" tracking issue and — when
+# a Slack webhook is configured — posts an alert. When a previously failing
+# workflow next concludes in `success`, the corresponding issue is closed.
+#
+# `workflow_run` always runs this file from the default branch, so the
+# issue-filing logic cannot be modified from a feature branch or fork. It needs
+# only `issues: write`; no registry access or PAT.
+#
+# Note: runs that fail at startup (startup_failure) may not emit `workflow_run`
+# and can therefore be missed; see
+# docs/architecture/workflows/ci-failure-notifications.md.
+name: report / ci-failure
+
+on:
+  workflow_run:
+    workflows:
+      - "mirror / quarantine/python"
+      - "mirror / quarantine/node"
+      - "mirror / quarantine/openjdk"
+      - "mirror / quarantine/hardened/python"
+      - "promote from quarantine / quarantine/python"
+      - "promote from quarantine / quarantine/node"
+      - "promote from quarantine / quarantine/openjdk"
+      - "promote from quarantine / quarantine/hardened/python"
+      - "promote override"
+    types: [completed]
+
+# Serialise events for the same monitored workflow so concurrent completions
+# cannot open duplicate issues; let different workflows proceed independently.
+concurrency:
+  group: report-ci-failure-${{ github.event.workflow_run.name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  # A monitored run failed: open or refresh its tracking issue and alert Slack.
+  on-failure:
+    if: github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out actions
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Open or update CI-failure issue
+        id: issue
+        uses: ./.github/actions/manage-failure-issue
+        with:
+          operation: open-or-update
+          workflow: ${{ github.event.workflow_run.name }}
+          run-url: ${{ github.event.workflow_run.html_url }}
+          run-number: ${{ github.event.workflow_run.run_number }}
+          branch: ${{ github.event.workflow_run.head_branch }}
+          event: ${{ github.event.workflow_run.event }}
+          token: ${{ github.token }}
+
+      - name: Notify Slack of CI failure
+        uses: ./.github/actions/notify-slack
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK }}
+          status: ci-failure
+          workflow: ${{ github.event.workflow_run.name }}
+          issue-url: ${{ steps.issue.outputs.issue-url }}
+          run-url: ${{ github.event.workflow_run.html_url }}
+
+  # A monitored workflow recovered: close any open CI-failure issue for it.
+  on-recovery:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out actions
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Close CI-failure issue on recovery
+        uses: ./.github/actions/manage-failure-issue
+        with:
+          operation: close
+          workflow: ${{ github.event.workflow_run.name }}
+          run-url: ${{ github.event.workflow_run.html_url }}
+          run-number: ${{ github.event.workflow_run.run_number }}
+          branch: ${{ github.event.workflow_run.head_branch }}
+          event: ${{ github.event.workflow_run.event }}
+          token: ${{ github.token }}
