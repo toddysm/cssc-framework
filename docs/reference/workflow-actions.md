@@ -170,15 +170,16 @@ Outputs: `status` (`deleted` / `skipped` / `failed`).
 
 ### notify-slack
 
-Post an override-event message to a Slack incoming webhook. A no-op (with a
+Post a promotion-event or CI-failure message to a Slack incoming webhook. A no-op (with a
 warning) when `webhook-url` is empty.
 
 | Input | Required | Default | Description |
 | ----- | -------- | ------- | ----------- |
 | `webhook-url` | no | `""` | Slack incoming webhook URL; empty disables the action. |
-| `status` | yes | — | Message template: `blocked-pending`, `approved`, or `denied`. |
-| `image` | yes | — | Source repository. |
-| `tag` | yes | — | Image tag. |
+| `status` | yes | — | Message template: `blocked-pending`, `approved`, `denied`, or `ci-failure`. |
+| `image` | no* | `""` | Source repository. *Required for `blocked-pending`/`approved`/`denied`; unused for `ci-failure`. |
+| `tag` | no* | `""` | Image tag. *Required for the promotion templates; unused for `ci-failure`. |
+| `workflow` | no* | `""` | Workflow display name. *Required for `ci-failure`. |
 | `threshold` | no | `""` | Severity threshold the image failed. |
 | `blocking-cves` | no | `""` | Human-readable blocking-CVE summary. |
 | `issue-url` | no | `""` | Link to the tracking issue. |
@@ -218,6 +219,25 @@ honored.
 | `token` | yes | — | Token able to read collaborator permissions. |
 
 Outputs: `authorized` (`true` / `false`).
+
+### manage-failure-issue
+
+Open/update or close a per-workflow **CI-failure** tracking issue via `gh` (needs
+`issues: write`). Deduped by the `ci-failure` label plus the title
+`CI failure: <workflow>`. Separate from `manage-issue`, which is specific to the
+promotion override flow.
+
+| Input | Required | Default | Description |
+| ----- | -------- | ------- | ----------- |
+| `operation` | yes | — | `open-or-update` or `close`. |
+| `workflow` | yes | — | Workflow display name (dedupe key). |
+| `run-url` | no | `""` | Link to the workflow run. |
+| `run-number` | no | `""` | Run number of the failed/recovered run. |
+| `branch` | no | `""` | Branch the run executed on. |
+| `event` | no | `""` | Event that triggered the run. |
+| `token` | yes | — | `GITHUB_TOKEN` with `issues: write`. |
+
+Outputs: `issue-number`, `issue-url`.
 
 ## How the actions compose
 

@@ -2,7 +2,7 @@
 
 Architecture documentation for the GitHub Actions workflows in this repository.
 
-Workflows fall into three categories (see
+Workflows fall into the following categories (see
 [workflow naming conventions](../../contributing/workflow-naming.md)):
 
 | Category | Purpose | Status |
@@ -10,6 +10,7 @@ Workflows fall into three categories (see
 | **Mirror** | Copy / refresh upstream base images from Docker Hub into GHCR | Implemented |
 | **Promote from quarantine** | Scan quarantined images and promote the ones that pass a vulnerability policy into `golden/<image>` (or `base/...` for base/hardened images) | Implemented |
 | **Build** | Build the demo applications under `apps/` on top of mirrored bases | Planned |
+| **Report** | Watch other workflows and file/close CI-failure tracking issues | Implemented |
 
 ## Documents
 
@@ -21,3 +22,7 @@ Workflows fall into three categories (see
   exceptions, promoted into `golden/<image>` (or `base/...` for base/hardened
   images) with a scan-report referrer, and
   removed from quarantine.
+- [CI failure notifications](ci-failure-notifications.md) — how a
+  `workflow_run` monitor opens and closes per-workflow CI-failure tracking
+  issues (and optional Slack alerts) when a monitored workflow run fails or
+  recovers.
