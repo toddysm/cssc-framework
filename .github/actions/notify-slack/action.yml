@@ -82,15 +82,19 @@ runs:
 
         case "${STATUS}" in
           blocked-pending)
+            [ -n "${IMAGE}" ] && [ -n "${TAG}" ] || { echo "::error::status '${STATUS}' requires 'image' and 'tag'."; exit 1; }
             header=":no_entry: Promotion blocked — approval needed"
             summary="*${IMAGE}:${TAG}* failed the \`${THRESHOLD:-?}\` vulnerability gate." ;;
           approved)
+            [ -n "${IMAGE}" ] && [ -n "${TAG}" ] || { echo "::error::status '${STATUS}' requires 'image' and 'tag'."; exit 1; }
             header=":white_check_mark: Promotion override approved"
             summary="*${IMAGE}:${TAG}* was promoted despite the gate${APPROVER:+ by ${APPROVER}}." ;;
           denied)
+            [ -n "${IMAGE}" ] && [ -n "${TAG}" ] || { echo "::error::status '${STATUS}' requires 'image' and 'tag'."; exit 1; }
             header=":x: Promotion override denied"
             summary="*${IMAGE}:${TAG}* stays in quarantine${APPROVER:+ (denied by ${APPROVER})}." ;;
           ci-failure)
+            [ -n "${WORKFLOW}" ] || { echo "::error::status 'ci-failure' requires 'workflow'."; exit 1; }
             header=":rotating_light: CI failure"
             summary="*${WORKFLOW}* failed." ;;
           *)

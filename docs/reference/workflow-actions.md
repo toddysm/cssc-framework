@@ -177,9 +177,9 @@ warning) when `webhook-url` is empty.
 | ----- | -------- | ------- | ----------- |
 | `webhook-url` | no | `""` | Slack incoming webhook URL; empty disables the action. |
 | `status` | yes | — | Message template: `blocked-pending`, `approved`, `denied`, or `ci-failure`. |
-| `image` | no | `""` | Source repository (unused for `ci-failure`). |
-| `tag` | no | `""` | Image tag (unused for `ci-failure`). |
-| `workflow` | no | `""` | Workflow display name (used by the `ci-failure` template). |
+| `image` | no* | `""` | Source repository. *Required for `blocked-pending`/`approved`/`denied`; unused for `ci-failure`. |
+| `tag` | no* | `""` | Image tag. *Required for the promotion templates; unused for `ci-failure`. |
+| `workflow` | no* | `""` | Workflow display name. *Required for `ci-failure`. |
 | `threshold` | no | `""` | Severity threshold the image failed. |
 | `blocking-cves` | no | `""` | Human-readable blocking-CVE summary. |
 | `issue-url` | no | `""` | Link to the tracking issue. |

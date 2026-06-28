@@ -120,6 +120,7 @@ runs:
               } > "${body_file}"
               url="$(gh issue create --title "${title}" --label "${label}" \
                      --body-file "${body_file}")"
+              rm -f "${body_file}"
               out_url="${url}"
               out_number="$(printf '%s' "${url}" | sed 's:.*/::')"
             fi

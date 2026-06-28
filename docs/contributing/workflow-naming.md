@@ -14,7 +14,7 @@ both in the file system and in the Actions UI.
 | **Promote from quarantine** | Scan a quarantined image and promote it into its golden/base repository (`golden/<image>`, or `base/...` for base/hardened images) when it passes the vulnerability policy | `promote-from-quarantine-<image>.yml` | `promote from quarantine / quarantine/<image>` | `promote-from-quarantine-<image>` |
 | **Build** | Build an application image on top of a mirrored base | `build-<app>.yml` | `build / <app>` | `build-<app>` |
 | **Promote override** | Act on a maintainer's approve/deny of a blocked image (issue-comment or dispatch) | `promote-override.yml` | `promote override` | `promote-override-<issue>` |
-| **Report** | Watch other workflows and report CI failures as tracking issues | `report-<purpose>.yml` | `report / <subject>` | `report-<purpose>-<subject>` |
+| **Report** | Watch other workflows and report CI failures as tracking issues | `report-<purpose>.yml` | `report / <purpose>` | `report-<purpose>` |
 | **Reusable** | Shared logic invoked by other workflows; never triggered directly | `_<purpose>.yml` (leading underscore) | `_reusable / <purpose>` | n/a |
 | **Composite action** | A single reusable step shared across workflows | `.github/actions/<verb-noun>/action.yml` | `name: <verb-noun>` | n/a |
 
