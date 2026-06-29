@@ -52,6 +52,34 @@ Local development uses a [kind](https://kind.sigs.k8s.io/) cluster and the **sam
 Helm charts** as any other environment — there is no separate `docker-compose`
 path. Requires `docker`, `kind`, `kubectl`, and `helm`.
 
+### Obtaining a GitHub token
+
+The two capability services call the GitHub API and need a token in
+`GITHUB_TOKEN` with:
+
+- **`read:packages`** — to list GHCR container packages and their tags, and
+- **issues read** — to read the promotion tracking issues.
+
+Create a **classic** personal access token (most reliable for GHCR):
+
+1. Go to **GitHub → Settings → Developer settings → Personal access tokens →
+   Tokens (classic)** ([github.com/settings/tokens](https://github.com/settings/tokens)).
+2. Click **Generate new token (classic)**, give it a name and an expiry.
+3. Select these scopes:
+   - `read:packages`
+   - `repo` (or `public_repo` for a public repository) — grants issues read.
+4. Click **Generate token** and copy it (it is shown only once).
+5. Export it before running `make`:
+
+   ```bash
+   export GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
+   ```
+
+> A fine-grained PAT also works for issues (Repository permissions →
+> **Issues: Read-only**), but GHCR package listing is most reliably granted by
+> the classic `read:packages` scope. Treat the token as a secret — never commit
+> it.
+
 ```bash
 # one-shot: create cluster, build images, load them, create the token secret,
 # and install the umbrella chart
