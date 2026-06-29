@@ -290,4 +290,4 @@ focused pull request:
 6. **Local development orchestration** — `docker-compose` and `Makefile`.
 7. **Documentation** — application READMEs and links from the docs index.
 
-See the CSSC Dashboard tracking issue for live status and links to each task.
+See the CSSC Dashboard tracking issue (#98) for live status and links to each task.
