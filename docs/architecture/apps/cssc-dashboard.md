@@ -229,6 +229,12 @@ All configuration is environment-driven (Kubernetes `ConfigMap` + `Secret`).
 - CVE links are **plain anchor tags**; the server never fetches CVE pages, and
   links use `rel="noopener"`.
 - Tokens are injected via `Secret`; non-secret config via `ConfigMap`.
+- **Access model.** The dashboard UI and the in-cluster service-to-service calls
+  are **anonymous** in this demo iteration (no end-user auth, no inter-pod
+  auth). The only authenticated calls are the capability services' **outbound
+  requests to the GitHub API**, which use the `GITHUB_TOKEN` (`read:packages` is
+  required to list GHCR package versions, and `quarantine/*` packages may be
+  private).
 
 ## Deployment
 
@@ -240,9 +246,14 @@ each subchart remains independently installable.
 
 ## Local development
 
-A `docker-compose` file plus a `Makefile` run the three services together for
-local development, wiring `dashboard-web` to the two capability services and
-reading the GitHub token from the local environment.
+Local development uses a **[kind](https://kind.sigs.k8s.io/) cluster** and the
+**same Helm charts** as any other environment — there is no separate
+`docker-compose` path, so local and deployed topologies stay identical. The
+services are built into images, loaded into the kind cluster (`kind load
+docker-image`), and installed via the umbrella chart. A `Makefile` wraps the
+workflow (create cluster, build, load, `helm install`/`upgrade`, teardown). The
+GitHub token is supplied to the capability services as a Kubernetes `Secret`
+sourced from the local environment.
 
 ## Repository layout
 
@@ -287,7 +298,7 @@ focused pull request:
    capability-service clients, Jinja2/htmx UI, config, tests, Dockerfile,
    requirements.
 5. **Helm charts** — umbrella chart plus per-service subcharts.
-6. **Local development orchestration** — `docker-compose` and `Makefile`.
+6. **Local development orchestration** — kind cluster + Helm (same charts) and a `Makefile`.
 7. **Documentation** — application READMEs and links from the docs index.
 
 See the CSSC Dashboard tracking issue (#98) for live status and links to each task.
