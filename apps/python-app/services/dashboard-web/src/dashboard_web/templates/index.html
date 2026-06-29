@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+{% for stage in stages %}
+<section class="stage" id="stage-{{ stage.id }}">
+  <h2><span class="stage-order">{{ stage.order }}</span> {{ stage.title }}</h2>
+  <p class="stage-desc">{{ stage.description }}</p>
+  <div
+    class="stage-body"
+    hx-get="/stages/{{ stage.id }}/fragment"
+    hx-trigger="load"
+    hx-swap="innerHTML"
+  >
+    <p class="loading">Loading…</p>
+  </div>
+</section>
+{% endfor %}
+{% endblock %}

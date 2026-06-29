@@ -1,0 +1,55 @@
+# Umbrella values for the CSSC Dashboard.
+#
+# Each block configures one subchart. `fullnameOverride` pins the in-cluster
+# Service name so dashboard-web can reach the capability services at their
+# default DNS names (http://packages-service, http://issues-service).
+#
+# The capability services read a GitHub token from the `cssc-dashboard-github`
+# Secret, which you must create in the target namespace, for example:
+#
+#   kubectl create secret generic cssc-dashboard-github \
+#     --from-literal=GITHUB_TOKEN=ghp_xxx
+
+packages-service:
+  fullnameOverride: packages-service
+  image:
+    repository: cssc-dashboard/packages-service
+    tag: dev
+  config:
+    GITHUB_OWNER: toddysm
+    GITHUB_REPO: cssc-framework
+    GITHUB_API_URL: https://api.github.com
+    CACHE_TTL_SECONDS: "60"
+  secret:
+    enabled: true
+    name: cssc-dashboard-github
+
+issues-service:
+  fullnameOverride: issues-service
+  image:
+    repository: cssc-dashboard/issues-service
+    tag: dev
+  config:
+    GITHUB_OWNER: toddysm
+    GITHUB_REPO: cssc-framework
+    GITHUB_API_URL: https://api.github.com
+    CACHE_TTL_SECONDS: "60"
+  secret:
+    enabled: true
+    name: cssc-dashboard-github
+
+dashboard-web:
+  fullnameOverride: dashboard-web
+  image:
+    repository: cssc-dashboard/dashboard-web
+    tag: dev
+  service:
+    type: ClusterIP
+    port: 80
+  config:
+    PACKAGES_SERVICE_URL: http://packages-service
+    ISSUES_SERVICE_URL: http://issues-service
+    CVE_BASE_URL: https://nvd.nist.gov/vuln/detail/
+    QUARANTINE_NAMESPACE: quarantine
+  ingress:
+    enabled: false

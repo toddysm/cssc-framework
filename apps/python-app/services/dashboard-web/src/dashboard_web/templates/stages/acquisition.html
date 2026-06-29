@@ -1,0 +1,54 @@
+{% if not data.images %}
+<p class="empty">
+  No mirrored images found in the <code>{{ data.namespace }}</code> namespace.
+</p>
+{% else %}
+{% for image in data.images %}
+<article class="image-card">
+  <h3>
+    <code>{{ image.name }}</code>
+    {% if image.visibility %}<span class="badge">{{ image.visibility }}</span>{% endif %}
+    {% if image.tag_count is not none %}<span class="badge">{{ image.tag_count }} tag(s)</span>{% endif %}
+  </h3>
+  {% if not image.issues %}
+  <p class="empty">No promotion issues.</p>
+  {% else %}
+  <table class="issues">
+    <thead>
+      <tr>
+        <th>Issue</th>
+        <th>Tag</th>
+        <th>State</th>
+        <th>Blocking CVEs</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for issue in image.issues %}
+      <tr>
+        <td>
+          <a href="{{ issue.url }}" target="_blank" rel="noopener">#{{ issue.number }}</a>
+        </td>
+        <td>{% if issue.tag %}<code>{{ issue.tag }}</code>{% else %}—{% endif %}</td>
+        <td>
+          {% if issue.state == "open" %}
+          <span class="state state-open">Open</span>
+          {% else %}
+          <span class="state state-closed">Closed</span>
+          {% if issue.outcome and issue.outcome != "pending" %}
+          <span class="outcome">· {{ issue.outcome }}</span>
+          {% endif %}
+          {% endif %}
+        </td>
+        <td>
+          {% if issue.cves %}
+          {% for cve in issue.cves %}<a class="cve" href="{{ cve.url }}" target="_blank" rel="noopener">{{ cve.id }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</article>
+{% endfor %}
+{% endif %}

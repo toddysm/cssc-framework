@@ -6,7 +6,7 @@ cluster via Helm.
 
 | App | Language | Build tool | Folder |
 | --- | -------- | ---------- | ------ |
-| Python web app | Python | pip | [`python-app/`](python-app/) |
+| CSSC Dashboard (microservices) | Python | pip | [`python-app/`](python-app/) |
 | Node.js web app | Node.js | npm | [`nodejs-app/`](nodejs-app/) |
 | Java web app | Java | Gradle | [`java-app/`](java-app/) |
 

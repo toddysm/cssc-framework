@@ -1,0 +1,4 @@
+# Patterns to ignore when packaging the umbrella chart.
+# NOTE: do NOT ignore *.tgz here — charts/ holds the vendored subchart archives.
+.git
+.DS_Store
