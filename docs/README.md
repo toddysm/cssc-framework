@@ -23,6 +23,8 @@ topic so each area can grow independently.
 - [Image mirror workflows](architecture/workflows/image-mirror-workflows.md) —
   how the Docker Hub → GHCR mirroring GitHub Actions are structured, the tooling
   they use, and what they do and do not do.
+- [CSSC Dashboard application](architecture/apps/cssc-dashboard.md) — a
+  microservices web app that visualizes the CSSC framework stage by stage.
 
 ## Contributing docs
 
