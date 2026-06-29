@@ -85,3 +85,17 @@ def test_healthz_and_readyz():
     client = TestClient(_app())
     assert client.get("/healthz").json() == {"status": "ok"}
     assert client.get("/readyz").json() == {"status": "ready"}
+
+
+def test_uses_org_root_for_org_owner():
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        return httpx.Response(200, json=PACKAGES)
+
+    transport = httpx.MockTransport(handler)
+    http = httpx.Client(base_url="https://api.github.com", transport=transport)
+    github = GitHubClient(client=http, owner="acme", owner_type="org", cache_ttl=0)
+    PackagesClient(github).list_packages("quarantine")
+    assert seen["path"] == "/orgs/acme/packages"

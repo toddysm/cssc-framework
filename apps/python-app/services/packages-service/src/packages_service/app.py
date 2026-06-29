@@ -14,6 +14,7 @@ def build_client() -> PackagesClient:
     github = GitHubClient(
         token=settings.token,
         owner=settings.owner,
+        owner_type=settings.owner_type,
         repo=settings.repo,
         api_url=settings.api_url,
         cache_ttl=settings.cache_ttl,

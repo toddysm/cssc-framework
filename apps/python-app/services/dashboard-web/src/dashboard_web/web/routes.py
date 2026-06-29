@@ -8,12 +8,16 @@ fallback renders the raw data.
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from jinja2 import TemplateNotFound
 
 from ..stages.base import StageRegistry
+
+logger = logging.getLogger(__name__)
 
 
 def _template_exists(templates: Jinja2Templates, name: str) -> bool:
@@ -51,11 +55,15 @@ def add_routes(
 
         try:
             data = provider.get_data()
-        except Exception as exc:  # surface upstream failures in the fragment
+        except Exception:  # log details server-side, return a generic message
+            logger.exception("Failed to load stage %s", stage_id)
             return templates.TemplateResponse(
                 request=request,
                 name="stages/_error.html",
-                context={"stage": provider.stage, "error": str(exc)},
+                context={
+                    "stage": provider.stage,
+                    "error": "upstream data could not be loaded",
+                },
                 status_code=502,
             )
 

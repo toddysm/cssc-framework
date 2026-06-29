@@ -13,6 +13,16 @@ class PackagesClient:
     def __init__(self, github: GitHubClient) -> None:
         self._gh = github
 
+    def _owner_root(self) -> str:
+        """Return the Packages API root for the owner (user vs org).
+
+        The GitHub Packages API uses ``/users/{owner}`` for user accounts and
+        ``/orgs/{owner}`` for organizations; the owner type comes from config.
+        """
+
+        prefix = "orgs" if self._gh.owner_type == "org" else "users"
+        return f"/{prefix}/{self._gh.owner}"
+
     def list_packages(self, namespace: str = "quarantine") -> list[MirroredImage]:
         """List container packages whose name starts with ``<namespace>/``.
 
@@ -21,7 +31,7 @@ class PackagesClient:
         """
 
         raw = self._gh.get_all(
-            f"/users/{self._gh.owner}/packages",
+            f"{self._owner_root()}/packages",
             params={"package_type": "container", "per_page": 100},
         )
         prefix = f"{namespace}/" if namespace else ""
@@ -50,7 +60,7 @@ class PackagesClient:
 
         encoded = quote(name, safe="")
         versions = self._gh.get_all(
-            f"/users/{self._gh.owner}/packages/container/{encoded}/versions",
+            f"{self._owner_root()}/packages/container/{encoded}/versions",
             params={"per_page": 100},
         )
         tags: list[Tag] = []

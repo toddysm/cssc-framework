@@ -105,6 +105,7 @@ def test_filter_by_state():
     assert [i["number"] for i in body] == [70]
 
 
-def test_healthz():
+def test_healthz_and_readyz():
     client = TestClient(_app())
     assert client.get("/healthz").json() == {"status": "ok"}
+    assert client.get("/readyz").json() == {"status": "ready"}

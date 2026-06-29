@@ -23,6 +23,7 @@ class GitHubClient:
         token: str | None = None,
         owner: str = "",
         repo: str = "",
+        owner_type: str = "user",
         api_url: str = "https://api.github.com",
         cache_ttl: int = 60,
         client: httpx.Client | None = None,
@@ -31,6 +32,7 @@ class GitHubClient:
     ) -> None:
         self._owner = owner
         self._repo = repo
+        self._owner_type = owner_type
         self._api_url = api_url.rstrip("/")
         self._cache = TTLCache(cache_ttl)
 
@@ -55,6 +57,10 @@ class GitHubClient:
     @property
     def owner(self) -> str:
         return self._owner
+
+    @property
+    def owner_type(self) -> str:
+        return self._owner_type
 
     @property
     def repo(self) -> str:

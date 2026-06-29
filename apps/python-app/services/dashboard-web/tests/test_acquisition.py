@@ -84,3 +84,16 @@ def test_get_data_handles_image_without_issues():
     provider = AcquisitionProvider(FakePackages(PACKAGES), FakeIssues([]))
     image = provider.get_data()["images"][0]
     assert image["issues"] == []
+
+
+def test_cve_url_normalizes_missing_trailing_slash():
+    provider = AcquisitionProvider(
+        FakePackages(PACKAGES),
+        FakeIssues(ISSUES),
+        cve_base_url="https://nvd.nist.gov/vuln/detail",
+    )
+    image = provider.get_data()["images"][0]
+    assert (
+        image["issues"][0]["cves"][0]["url"]
+        == "https://nvd.nist.gov/vuln/detail/CVE-2024-1234"
+    )

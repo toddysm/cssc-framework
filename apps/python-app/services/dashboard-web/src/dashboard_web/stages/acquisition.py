@@ -33,7 +33,11 @@ class AcquisitionProvider:
         self._packages = packages
         self._issues = issues
         self._namespace = namespace
-        self._cve_base_url = cve_base_url
+        # Normalise once so a CVE_BASE_URL configured without a trailing slash
+        # still produces well-formed links.
+        self._cve_base_url = (
+            cve_base_url if cve_base_url.endswith("/") else f"{cve_base_url}/"
+        )
 
     def _cve_url(self, cve_id: str) -> str:
         return f"{self._cve_base_url}{cve_id}"
