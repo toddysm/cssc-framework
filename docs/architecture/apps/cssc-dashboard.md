@@ -6,6 +6,13 @@ demonstration web application that visualizes the
 stage by stage, sourcing its data from this repository's GitHub Container
 Registry (GHCR) packages and promotion tracking issues.
 
+> **Status: proposed design.** This document describes a *planned*
+> architecture. None of the services, libraries, Helm charts, or paths
+> below exist in the repository yet — `apps/python-app/` is currently a
+> placeholder demo app. Implementation is tracked in
+> [#98](https://github.com/toddysm/cssc-framework/issues/98); the paths and
+> layouts described here are the target structure.
+
 It covers:
 
 1. [Purpose](#purpose)
@@ -140,8 +147,9 @@ blocking it from being promoted?*
   **State** (Open / Closed, with the approved/denied outcome), and **Blocking
   CVEs**.
 - Each **CVE** is rendered as a hyperlink to a CVE database that opens in a new
-  tab (`target="_blank" rel="noopener"`). The CVE base URL is configurable and
-  defaults to `https://nvd.nist.gov/vuln/detail/<id>`.
+  tab (`target="_blank" rel="noopener"`). Each CVE link is
+  `CVE_BASE_URL` with the CVE id appended; `CVE_BASE_URL` is configurable and
+  defaults to `https://nvd.nist.gov/vuln/detail/`.
 
 ### Acquisition data flow
 
@@ -238,27 +246,28 @@ All configuration is environment-driven (Kubernetes `ConfigMap` + `Secret`).
 
 ## Deployment
 
-An **umbrella Helm chart** under `apps/python-app/deploy/helm/` composes three
-**subcharts** (one per service), each following the existing chart template
-pattern in this repository (`deployment`, `service`, `hpa`, `ingress`, `pdb`,
-`configmap`). The umbrella chart can deploy all three services together, while
-each subchart remains independently installable.
+A planned **umbrella Helm chart** under `apps/python-app/deploy/helm/` will
+compose three **subcharts** (one per service), each following the existing
+chart template pattern in this repository (`deployment`, `service`, `hpa`,
+`ingress`, `pdb`, `configmap`). The umbrella chart will be able to deploy all
+three services together, while each subchart will remain independently
+installable.
 
 ## Local development
 
-Local development uses a **[kind](https://kind.sigs.k8s.io/) cluster** and the
-**same Helm charts** as any other environment — there is no separate
+Local development will use a **[kind](https://kind.sigs.k8s.io/) cluster** and
+the **same Helm charts** as any other environment — there will be no separate
 `docker-compose` path, so local and deployed topologies stay identical. The
-services are built into images, loaded into the kind cluster (`kind load
-docker-image`), and installed via the umbrella chart. A `Makefile` wraps the
-workflow (create cluster, build, load, `helm install`/`upgrade`, teardown). The
-GitHub token is supplied to the capability services as a Kubernetes `Secret`
-sourced from the local environment.
+services will be built into images, loaded into the kind cluster (`kind load
+docker-image`), and installed via the umbrella chart. A `Makefile` will wrap
+the workflow (create cluster, build, load, `helm install`/`upgrade`,
+teardown). The GitHub token will be supplied to the capability services as a
+Kubernetes `Secret` sourced from the local environment.
 
 ## Repository layout
 
-The application lives under `apps/python-app/` (replacing the previous
-placeholder skeleton):
+The application will live under `apps/python-app/`, replacing the current
+placeholder skeleton. The target layout is:
 
 ```text
 apps/python-app/
