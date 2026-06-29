@@ -9,3 +9,7 @@ __pycache__/
 # Helm: vendored subchart archives + lockfile (rebuilt via `helm dependency build`)
 deploy/helm/*/charts/
 deploy/helm/*/Chart.lock
+
+# Local secrets/config (never commit the token); copy .env.example -> .env
+.env
+.env.local

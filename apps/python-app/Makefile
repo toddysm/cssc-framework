@@ -2,6 +2,13 @@
 #
 .DEFAULT_GOAL := help
 
+# Load project-local secrets/config from .env if present (e.g. GITHUB_TOKEN).
+# Lines are KEY=value; the file is gitignored. See .env.example.
+ifneq (,$(wildcard .env))
+include .env
+export
+endif
+
 CLUSTER   ?= cssc-dashboard
 NAMESPACE ?= cssc-dashboard
 TAG       ?= dev

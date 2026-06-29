@@ -69,7 +69,15 @@ Create a **classic** personal access token (most reliable for GHCR):
    - `read:packages`
    - `repo` (or `public_repo` for a public repository) — grants issues read.
 4. Click **Generate token** and copy it (it is shown only once).
-5. Export it before running `make`:
+5. Provide it to the project. The recommended way is a project-local `.env`
+   file, which is gitignored and read automatically by the `Makefile`:
+
+   ```bash
+   cp .env.example .env
+   # then edit .env and set GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
+   ```
+
+   Alternatively, export it in your shell:
 
    ```bash
    export GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
@@ -83,7 +91,7 @@ Create a **classic** personal access token (most reliable for GHCR):
 ```bash
 # one-shot: create cluster, build images, load them, create the token secret,
 # and install the umbrella chart
-export GITHUB_TOKEN=ghp_xxx          # needs read:packages + issues read
+export GITHUB_TOKEN=ghp_xxx          # or put it in .env (see above)
 make up
 
 # browse the dashboard
