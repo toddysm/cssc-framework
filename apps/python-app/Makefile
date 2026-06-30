@@ -85,7 +85,8 @@ load:
 secret:
 	@test -n "$(GITHUB_TOKEN)" || { echo "GITHUB_TOKEN is not set"; exit 1; }
 	kubectl create namespace $(NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
-	kubectl -n $(NAMESPACE) create secret generic cssc-dashboard-github \
+	@# Prefixed with @ so make does not echo the expanded token to the terminal.
+	@kubectl -n $(NAMESPACE) create secret generic cssc-dashboard-github \
 	  --from-literal=GITHUB_TOKEN=$(GITHUB_TOKEN) \
 	  --dry-run=client -o yaml | kubectl apply -f -
 
