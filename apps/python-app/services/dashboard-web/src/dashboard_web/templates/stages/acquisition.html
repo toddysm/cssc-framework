@@ -9,6 +9,7 @@
     <code>{{ image.name }}</code>
     {% if image.visibility %}<span class="badge">{{ image.visibility }}</span>{% endif %}
     {% if image.tag_count is not none %}<span class="badge">{{ image.tag_count }} tag(s)</span>{% endif %}
+    {% if not image.in_quarantine %}<span class="badge badge-warn">not in quarantine</span>{% endif %}
   </h3>
   {% if not image.issues %}
   <p class="empty">No promotion issues.</p>

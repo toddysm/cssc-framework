@@ -103,6 +103,11 @@ main {
   padding: 0.1rem 0.5rem;
 }
 
+.badge-warn {
+  color: var(--open);
+  border-color: var(--open);
+}
+
 table.issues {
   width: 100%;
   border-collapse: collapse;

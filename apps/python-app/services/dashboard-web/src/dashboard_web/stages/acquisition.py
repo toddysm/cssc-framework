@@ -42,34 +42,72 @@ class AcquisitionProvider:
     def _cve_url(self, cve_id: str) -> str:
         return f"{self._cve_base_url}{cve_id}"
 
-    def _issues_for(
-        self, image_name: str, all_issues: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
-        matched: list[dict[str, Any]] = []
-        for issue in all_issues:
-            image = issue.get("image") or ""
-            if image == image_name or image.endswith(f"/{image_name}"):
-                enriched = dict(issue)
-                enriched["cves"] = [
-                    {"id": cve, "url": self._cve_url(cve)}
-                    for cve in issue.get("blocking_cves", [])
-                ]
-                matched.append(enriched)
+    def _enrich(self, issue: dict[str, Any]) -> dict[str, Any]:
+        enriched = dict(issue)
+        enriched["cves"] = [
+            {"id": cve, "url": self._cve_url(cve)}
+            for cve in issue.get("blocking_cves", [])
+        ]
+        return enriched
+
+    @staticmethod
+    def _matches(image: str, image_name: str) -> bool:
+        return image == image_name or image.endswith(f"/{image_name}")
+
+    @staticmethod
+    def _sort_issues(issues: list[dict[str, Any]]) -> None:
         # Open issues first, then by issue number.
-        matched.sort(key=lambda i: (i.get("state") != "open", i.get("number", 0)))
-        return matched
+        issues.sort(key=lambda i: (i.get("state") != "open", i.get("number", 0)))
 
     def get_data(self) -> dict[str, Any]:
         packages = self._packages.get_packages(self._namespace)
         all_issues = self._issues.get_issues(state="all")
-        images = [
-            {
-                "name": pkg.get("name", ""),
-                "visibility": pkg.get("visibility"),
-                "updated_at": pkg.get("updated_at"),
-                "tag_count": pkg.get("tag_count"),
-                "issues": self._issues_for(pkg.get("name", ""), all_issues),
-            }
-            for pkg in packages
-        ]
+
+        images: list[dict[str, Any]] = []
+        matched_numbers: set[Any] = set()
+
+        for pkg in packages:
+            name = pkg.get("name", "")
+            issues: list[dict[str, Any]] = []
+            for issue in all_issues:
+                if self._matches(issue.get("image") or "", name):
+                    issues.append(self._enrich(issue))
+                    matched_numbers.add(issue.get("number"))
+            self._sort_issues(issues)
+            images.append(
+                {
+                    "name": name,
+                    "visibility": pkg.get("visibility"),
+                    "updated_at": pkg.get("updated_at"),
+                    "tag_count": pkg.get("tag_count"),
+                    "in_quarantine": True,
+                    "issues": issues,
+                }
+            )
+
+        # Guarantee every promotion-pending issue is listed, even when its image
+        # is no longer a current quarantine package — group these as orphan
+        # cards so a blocked image is never silently hidden.
+        orphans: dict[str, list[dict[str, Any]]] = {}
+        for issue in all_issues:
+            if (
+                issue.get("outcome") == "pending"
+                and issue.get("number") not in matched_numbers
+            ):
+                key = issue.get("image") or "(unknown image)"
+                orphans.setdefault(key, []).append(self._enrich(issue))
+
+        for image_name, issues in sorted(orphans.items()):
+            self._sort_issues(issues)
+            images.append(
+                {
+                    "name": image_name,
+                    "visibility": None,
+                    "updated_at": None,
+                    "tag_count": None,
+                    "in_quarantine": False,
+                    "issues": issues,
+                }
+            )
+
         return {"namespace": self._namespace, "images": images}

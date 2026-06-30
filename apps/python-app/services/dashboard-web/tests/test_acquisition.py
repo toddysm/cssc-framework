@@ -86,6 +86,60 @@ def test_get_data_handles_image_without_issues():
     assert image["issues"] == []
 
 
+def test_orphan_promotion_pending_issue_is_listed():
+    # No quarantine packages, but a pending issue exists -> orphan card.
+    issues = [
+        {
+            "number": 90,
+            "image": "ghcr.io/toddysm/quarantine/openjdk",
+            "tag": "27-ea-slim",
+            "state": "open",
+            "outcome": "pending",
+            "url": "https://github.com/toddysm/cssc-framework/issues/90",
+            "blocking_cves": ["CVE-2024-1111"],
+        },
+        {
+            "number": 70,
+            "image": "ghcr.io/toddysm/quarantine/node",
+            "tag": "20",
+            "state": "closed",
+            "outcome": "approved",
+            "url": "https://github.com/toddysm/cssc-framework/issues/70",
+            "blocking_cves": [],
+        },
+    ]
+    data = AcquisitionProvider(FakePackages([]), FakeIssues(issues)).get_data()
+    # Only the pending issue is surfaced (closed/approved orphans are not).
+    assert len(data["images"]) == 1
+    card = data["images"][0]
+    assert card["in_quarantine"] is False
+    assert card["name"] == "ghcr.io/toddysm/quarantine/openjdk"
+    assert [i["number"] for i in card["issues"]] == [90]
+    assert card["issues"][0]["cves"][0]["id"] == "CVE-2024-1111"
+
+
+def test_pending_issue_with_package_is_not_duplicated():
+    packages = [
+        {"name": "quarantine/node", "visibility": "private", "updated_at": "x", "tag_count": 1}
+    ]
+    issues = [
+        {
+            "number": 88,
+            "image": "ghcr.io/toddysm/quarantine/node",
+            "tag": "26-alpine",
+            "state": "open",
+            "outcome": "pending",
+            "url": "https://github.com/toddysm/cssc-framework/issues/88",
+            "blocking_cves": [],
+        }
+    ]
+    data = AcquisitionProvider(FakePackages(packages), FakeIssues(issues)).get_data()
+    # Shown under its package card only — no duplicate orphan card.
+    assert len(data["images"]) == 1
+    assert data["images"][0]["in_quarantine"] is True
+    assert [i["number"] for i in data["images"][0]["issues"]] == [88]
+
+
 def test_cve_url_normalizes_missing_trailing_slash():
     provider = AcquisitionProvider(
         FakePackages(PACKAGES),
