@@ -21,7 +21,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY services/dashboard-web/src ./src
 
 RUN useradd --create-home --uid 10001 appuser
-USER appuser
+USER 10001
 
 EXPOSE 8080
 CMD ["uvicorn", "dashboard_web.app:app", "--host", "0.0.0.0", "--port", "8080"]

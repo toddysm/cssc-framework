@@ -11,6 +11,9 @@ image:
 
 containerPort: 8080
 
+# Numeric UID the container runs as (must match the image USER).
+runAsUser: 10001
+
 service:
   type: ClusterIP
   port: 80

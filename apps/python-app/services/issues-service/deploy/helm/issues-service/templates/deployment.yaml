@@ -18,6 +18,9 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+        runAsUser: {{ .Values.runAsUser }}
+        runAsGroup: {{ .Values.runAsUser }}
+        fsGroup: {{ .Values.runAsUser }}
         seccompProfile:
           type: RuntimeDefault
       containers:

@@ -23,7 +23,7 @@ COPY services/packages-service/src ./src
 
 # Run as an unprivileged user.
 RUN useradd --create-home --uid 10001 appuser
-USER appuser
+USER 10001
 
 EXPOSE 8080
 CMD ["uvicorn", "packages_service.app:app", "--host", "0.0.0.0", "--port", "8080"]
