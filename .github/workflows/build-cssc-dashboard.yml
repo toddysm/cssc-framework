@@ -9,8 +9,10 @@
 # annotations (standard org.opencontainers.image.* + custom com.toddysm.*) at
 # both the index and per-platform manifest scope. `created` is derived from the
 # commit time via SOURCE_DATE_EPOCH so builds are reproducible. An SPDX SBOM and
-# a SLSA build-provenance attestation are generated per platform and attached to
-# the image as OCI referrers.
+# a SLSA build-provenance attestation are generated per platform by BuildKit
+# (embedded in the index as attestation-manifests) and then re-published per
+# platform as OCI 1.1 Referrers-API artifacts with `oras attach`, so they are
+# discoverable via `oras discover` / the /v2/.../referrers endpoint.
 #
 # Naming convention: "build-<app>.yml" for build workflows, kept separate from
 # "mirror-<image>.yml" and "promote-from-quarantine-<image>.yml". See
