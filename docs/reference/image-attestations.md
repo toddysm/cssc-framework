@@ -16,8 +16,7 @@ without pulling the image.
 An **SPDX** Software Bill of Materials is generated **per platform**
 (`linux/amd64`, `linux/arm64`) by BuildKit (`docker buildx build --sbom=true`)
 and published on the platform manifest as an OCI 1.1 referrer (artifact type
-`application/vnd.in-toto+json`, `in-toto.io/predicate-type:
-https://spdx.dev/Document`).
+`application/vnd.in-toto+json`, predicate type `https://spdx.dev/Document`).
 
 ### Retrieve
 
@@ -51,8 +50,8 @@ describes the final application image contents.
 A **SLSA build-provenance** attestation (`mode=max`) is generated **per
 platform** by BuildKit (`docker buildx build --provenance=mode=max`) and
 published on the platform manifest as an OCI 1.1 referrer (artifact type
-`application/vnd.in-toto+json`, `in-toto.io/predicate-type:
-https://slsa.dev/provenance/v0.2`). It records the builder, the source
+`application/vnd.in-toto+json`, predicate type
+`https://slsa.dev/provenance/v0.2`). It records the builder, the source
 repository and revision, the materials (including the base image digest), and
 the build parameters.
 
