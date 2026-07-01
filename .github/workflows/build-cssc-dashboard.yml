@@ -85,6 +85,9 @@ jobs:
           base_tag="${BASE_IMAGE##*:}"
           base_digest="$(docker buildx imagetools inspect "${BASE_IMAGE}" \
             --format '{{.Manifest.Digest}}')"
+          # Pin the actual build to the base digest, not just annotate it, so
+          # FROM resolves to the exact base image recorded in base.digest.
+          base_ref="${base_name}@${base_digest}"
 
           case "${SERVICE}" in
             packages-service) desc="Lists GHCR container packages and their tags" ;;
@@ -120,7 +123,7 @@ jobs:
           cd apps/python-app
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
-            --build-arg BASE_IMAGE="${BASE_IMAGE}" \
+            --build-arg BASE_IMAGE="${base_ref}" \
             --file "services/${SERVICE}/Dockerfile" \
             "${ann_args[@]}" \
             --tag "${IMAGE}:${short}" \

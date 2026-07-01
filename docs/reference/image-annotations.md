@@ -48,4 +48,8 @@ crane manifest ghcr.io/toddysm/apps/cssc-dashboard/packages-service:latest | jq 
 ## Reproducibility
 
 `created` and layer timestamps are derived from the commit time via
-`SOURCE_DATE_EPOCH`, so rebuilding the same commit yields the same content.
+`SOURCE_DATE_EPOCH`, which makes those timestamps deterministic, and the build
+pins the base image by digest (`base.digest`). Full bit-for-bit digest
+reproducibility additionally depends on stable dependency resolution (for
+example `pip`), so `SOURCE_DATE_EPOCH` removes timestamp nondeterminism but is
+not a guarantee on its own.
