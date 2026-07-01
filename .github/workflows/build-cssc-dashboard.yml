@@ -57,6 +57,9 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@38de303aac69abb66f3e6255b7198bff35f323e3 # v2.0.0
+
       - name: Log in to GHCR
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -139,6 +142,73 @@ jobs:
             echo "### ${SERVICE}"
             echo "- \`${IMAGE}:${short}\` (linux/amd64, linux/arm64)"
             echo "- base: \`${base_name}:${base_tag}@${base_digest}\`"
-            echo "- SBOM: SPDX attestation attached as an OCI referrer"
-            echo "- Provenance: SLSA build provenance (mode=max) attached as an OCI referrer"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Publish attestations as OCI 1.1 referrers for ${{ matrix.service }}
+        env:
+          SERVICE: ${{ matrix.service }}
+          IMAGE: ghcr.io/toddysm/apps/cssc-dashboard/${{ matrix.service }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+          short="${SHA:0:7}"
+          ref="${IMAGE}:${short}"
+          work="$(mktemp -d)"
+          trap 'rm -rf "${work}"' EXIT
+
+          # BuildKit embeds SBOM/provenance as attestation-manifests inside the
+          # index (platform unknown/unknown, linked by vnd.docker.reference.*),
+          # which the OCI Referrers API does not surface. Extract each
+          # per-platform in-toto statement and re-attach it to the platform
+          # manifest with `oras attach` so it becomes a true OCI 1.1 referrer,
+          # discoverable via `oras discover` / the /v2/.../referrers endpoint.
+          index="$(oras manifest fetch "${ref}")"
+
+          # Attach the in-toto statement of one predicate type for one platform
+          # as an OCI 1.1 referrer. No-op (with a warning) if it is not present.
+          attach_referrer() {
+            local pd="$1" pt="$2" title="$3" att_digest att layer_digest
+            att_digest="$(printf '%s' "${index}" | jq -r --arg PD "${pd}" '
+              .manifests[]
+              | select(.annotations["vnd.docker.reference.type"] == "attestation-manifest"
+                       and .annotations["vnd.docker.reference.digest"] == $PD)
+              | .digest // empty' | head -n1)"
+            if [ -z "${att_digest}" ]; then
+              echo "::warning::no attestation-manifest for ${pd}"
+              return 0
+            fi
+            att="$(oras manifest fetch "${IMAGE}@${att_digest}")"
+            layer_digest="$(printf '%s' "${att}" | jq -r --arg PT "${pt}" '
+              .layers[]
+              | select(.annotations["in-toto.io/predicate-type"] == $PT)
+              | .digest // empty' | head -n1)"
+            if [ -z "${layer_digest}" ]; then
+              echo "::warning::no ${pt} attestation for ${pd}"
+              return 0
+            fi
+            oras blob fetch --output "${work}/${title}" "${IMAGE}@${layer_digest}"
+            oras attach \
+              --artifact-type application/vnd.in-toto+json \
+              --annotation "in-toto.io/predicate-type=${pt}" \
+              --annotation "org.opencontainers.image.title=${title}" \
+              "${IMAGE}@${pd}" \
+              "${work}/${title}:application/vnd.in-toto+json"
+            echo "attached ${pt} referrer to ${IMAGE}@${pd}"
+          }
+
+          # Real platform manifests only (skip the unknown/unknown attestations).
+          platforms="$(printf '%s' "${index}" | jq -r '
+            .manifests[]
+            | select((.platform.os // "") != "" and (.platform.os // "") != "unknown")
+            | .digest')"
+
+          while IFS= read -r pd; do
+            [ -n "${pd}" ] || continue
+            attach_referrer "${pd}" "https://spdx.dev/Document" "sbom.spdx.json"
+          done <<< "${platforms}"
+
+          {
+            echo "- SBOM: SPDX in-toto statement attached per platform as an OCI 1.1 referrer (\`application/vnd.in-toto+json\`)"
           } >> "${GITHUB_STEP_SUMMARY}"
