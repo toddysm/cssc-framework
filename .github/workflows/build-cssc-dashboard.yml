@@ -5,12 +5,14 @@
 # ghcr.io/toddysm/apps/cssc-dashboard/<service>, tagged with the short commit SHA
 # and a moving `latest` tag.
 #
+# Images are OCI, multi-arch (linux/amd64 + linux/arm64), and carry OCI manifest
+# annotations (standard org.opencontainers.image.* + custom com.toddysm.*) at
+# both the index and per-platform manifest scope. `created` is derived from the
+# commit time via SOURCE_DATE_EPOCH so builds are reproducible.
+#
 # Naming convention: "build-<app>.yml" for build workflows, kept separate from
 # "mirror-<image>.yml" and "promote-from-quarantine-<image>.yml". See
 # docs/contributing/workflow-naming.md.
-#
-# NOTE: images are built for the runner's native platform (linux/amd64).
-# Multi-arch (arm64) publishing can be added later with buildx + QEMU.
 name: build / cssc-dashboard
 
 on:
@@ -30,6 +32,9 @@ permissions:
   contents: read
   packages: write
 
+env:
+  BASE_IMAGE: ghcr.io/toddysm/golden/python:3.14-slim
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -44,6 +49,12 @@ jobs:
       - name: Check out
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
       - name: Log in to GHCR
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -55,19 +66,72 @@ jobs:
           SERVICE: ${{ matrix.service }}
           IMAGE: ghcr.io/toddysm/apps/cssc-dashboard/${{ matrix.service }}
           SHA: ${{ github.sha }}
+          SERVER_URL: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          WORKFLOW: ${{ github.workflow }}
         run: |
           set -euo pipefail
+
           short="${SHA:0:7}"
+
+          # Reproducible timestamps: derive created from the commit time.
+          SOURCE_DATE_EPOCH="$(git log -1 --pretty=%ct)"
+          export SOURCE_DATE_EPOCH
+          created="$(date -u -d "@${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ)"
+
+          # Pin the base image by digest for provenance.
+          base_name="${BASE_IMAGE%:*}"
+          base_tag="${BASE_IMAGE##*:}"
+          base_digest="$(docker buildx imagetools inspect "${BASE_IMAGE}" \
+            --format '{{.Manifest.Digest}}')"
+
+          case "${SERVICE}" in
+            packages-service) desc="Lists GHCR container packages and their tags" ;;
+            issues-service)   desc="Reads promotion tracking issues and blocking CVEs" ;;
+            dashboard-web)    desc="CSSC Dashboard web UI and stage registry (BFF)" ;;
+            *)                desc="CSSC Dashboard service" ;;
+          esac
+
+          # The annotation set (applied at both index and manifest scope below).
+          anns=(
+            "org.opencontainers.image.created=${created}"
+            "org.opencontainers.image.source=${SERVER_URL}/${REPO}"
+            "org.opencontainers.image.revision=${SHA}"
+            "org.opencontainers.image.version=${short}"
+            "org.opencontainers.image.title=CSSC Dashboard ${SERVICE}"
+            "org.opencontainers.image.description=${desc}"
+            "org.opencontainers.image.url=${SERVER_URL}/${REPO}"
+            "org.opencontainers.image.documentation=${SERVER_URL}/${REPO}/blob/main/docs/architecture/apps/cssc-dashboard.md"
+            "org.opencontainers.image.vendor=toddysm.com"
+            "org.opencontainers.image.licenses=Apache-2.0"
+            "org.opencontainers.image.base.name=${base_name}"
+            "org.opencontainers.image.base.digest=${base_digest}"
+            "com.toddysm.image.base.tag=${base_tag}"
+            "com.toddysm.build.workflow=${WORKFLOW}"
+            "com.toddysm.build.run-url=${SERVER_URL}/${REPO}/actions/runs/${RUN_ID}"
+          )
+
+          ann_args=()
+          for a in "${anns[@]}"; do
+            ann_args+=(--annotation "index:${a}" --annotation "manifest:${a}")
+          done
+
           cd apps/python-app
-          docker build \
-            -f "services/${SERVICE}/Dockerfile" \
-            -t "${IMAGE}:${short}" \
-            -t "${IMAGE}:latest" \
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --build-arg BASE_IMAGE="${BASE_IMAGE}" \
+            --file "services/${SERVICE}/Dockerfile" \
+            "${ann_args[@]}" \
+            --tag "${IMAGE}:${short}" \
+            --tag "${IMAGE}:latest" \
+            --provenance=false \
+            --sbom=false \
+            --output type=image,oci-mediatypes=true,push=true \
             .
-          docker push "${IMAGE}:${short}"
-          docker push "${IMAGE}:latest"
+
           {
             echo "### ${SERVICE}"
-            echo "- \`${IMAGE}:${short}\`"
-            echo "- \`${IMAGE}:latest\`"
+            echo "- \`${IMAGE}:${short}\` (linux/amd64, linux/arm64)"
+            echo "- base: \`${base_name}:${base_tag}@${base_digest}\`"
           } >> "${GITHUB_STEP_SUMMARY}"
