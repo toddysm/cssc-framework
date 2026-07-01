@@ -8,7 +8,8 @@
 # Images are OCI, multi-arch (linux/amd64 + linux/arm64), and carry OCI manifest
 # annotations (standard org.opencontainers.image.* + custom com.toddysm.*) at
 # both the index and per-platform manifest scope. `created` is derived from the
-# commit time via SOURCE_DATE_EPOCH so builds are reproducible.
+# commit time via SOURCE_DATE_EPOCH so builds are reproducible. An SPDX SBOM is
+# generated per platform and attached to the image as an OCI referrer.
 #
 # Naming convention: "build-<app>.yml" for build workflows, kept separate from
 # "mirror-<image>.yml" and "promote-from-quarantine-<image>.yml". See
@@ -129,7 +130,7 @@ jobs:
             --tag "${IMAGE}:${short}" \
             --tag "${IMAGE}:latest" \
             --provenance=false \
-            --sbom=false \
+            --sbom=true \
             --output type=image,oci-mediatypes=true,push=true \
             .
 
@@ -137,4 +138,5 @@ jobs:
             echo "### ${SERVICE}"
             echo "- \`${IMAGE}:${short}\` (linux/amd64, linux/arm64)"
             echo "- base: \`${base_name}:${base_tag}@${base_digest}\`"
+            echo "- SBOM: SPDX attestation attached as an OCI referrer"
           } >> "${GITHUB_STEP_SUMMARY}"
