@@ -174,7 +174,7 @@ jobs:
               .manifests[]
               | select(.annotations["vnd.docker.reference.type"] == "attestation-manifest"
                        and .annotations["vnd.docker.reference.digest"] == $PD)
-              | .digest' | head -n1)"
+              | .digest // empty' | head -n1)"
             if [ -z "${att_digest}" ]; then
               echo "::warning::no attestation-manifest for ${pd}"
               return 0
@@ -183,7 +183,7 @@ jobs:
             layer_digest="$(printf '%s' "${att}" | jq -r --arg PT "${pt}" '
               .layers[]
               | select(.annotations["in-toto.io/predicate-type"] == $PT)
-              | .digest' | head -n1)"
+              | .digest // empty' | head -n1)"
             if [ -z "${layer_digest}" ]; then
               echo "::warning::no ${pt} attestation for ${pd}"
               return 0
@@ -201,7 +201,7 @@ jobs:
           # Real platform manifests only (skip the unknown/unknown attestations).
           platforms="$(printf '%s' "${index}" | jq -r '
             .manifests[]
-            | select((.platform.os // "unknown") != "unknown")
+            | select((.platform.os // "") != "" and (.platform.os // "") != "unknown")
             | .digest')"
 
           while IFS= read -r pd; do
