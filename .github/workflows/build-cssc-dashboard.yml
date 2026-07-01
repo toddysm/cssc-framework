@@ -207,8 +207,10 @@ jobs:
           while IFS= read -r pd; do
             [ -n "${pd}" ] || continue
             attach_referrer "${pd}" "https://spdx.dev/Document" "sbom.spdx.json"
+            attach_referrer "${pd}" "https://slsa.dev/provenance/v0.2" "provenance.slsa.json"
           done <<< "${platforms}"
 
           {
             echo "- SBOM: SPDX in-toto statement attached per platform as an OCI 1.1 referrer (\`application/vnd.in-toto+json\`)"
+            echo "- Provenance: SLSA in-toto statement attached per platform as an OCI 1.1 referrer (\`application/vnd.in-toto+json\`)"
           } >> "${GITHUB_STEP_SUMMARY}"
