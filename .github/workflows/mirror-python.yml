@@ -1,4 +1,8 @@
-# Mirror python:3.14-slim from Docker Hub into GHCR as quarantine/python.
+# Mirror python base image tags from Docker Hub into GHCR as quarantine/python.
+#
+# Tags:
+#   - 3.14-slim  (demo base)
+#   - 3.12-slim  (base image the CSSC Dashboard service images build FROM)
 #
 # This caller only defines triggers and the image-specific inputs; the actual
 # digest-check-and-copy logic lives in the reusable _mirror-image.yml workflow.
@@ -32,10 +36,16 @@ permissions:
 
 jobs:
   mirror-python:
+    strategy:
+      fail-fast: false
+      matrix:
+        tag:
+          - "3.14-slim"
+          - "3.12-slim"
     uses: ./.github/workflows/_mirror-image.yml
     with:
       source_image: docker.io/library/python
-      source_tag: 3.14-slim
+      source_tag: ${{ matrix.tag }}
       dest_image: ghcr.io/toddysm/quarantine/python
-      dest_tag: 3.14-slim
+      dest_tag: ${{ matrix.tag }}
       force: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
