@@ -26,3 +26,22 @@ oras discover ghcr.io/toddysm/apps/cssc-dashboard/packages-service:latest
 The SBOM complements the vulnerability scanning already performed in the
 promote-from-quarantine flow; here it is produced at application build time and
 describes the final application image contents.
+
+## Provenance
+
+A **SLSA build-provenance** attestation (`mode=max`) is generated **per
+platform** by BuildKit (`docker buildx build --provenance=mode=max`) and
+attached to the image as an in-toto attestation referrer. It records the
+builder, the source repository and revision, the materials (including the base
+image digest), and the build parameters.
+
+### Retrieve
+
+```bash
+docker buildx imagetools inspect \
+  ghcr.io/toddysm/apps/cssc-dashboard/packages-service:latest \
+  --format '{{ json .Provenance }}'
+```
+
+Together with the manifest annotations (`source`, `revision`, `base.digest`) and
+the SBOM, this gives end-to-end build traceability for each image.
