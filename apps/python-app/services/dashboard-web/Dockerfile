@@ -4,7 +4,10 @@
 # available):
 #
 #   docker build -f services/dashboard-web/Dockerfile -t dashboard-web .
-FROM python:3.12-slim
+# Base image is sourced from the package repo (golden). Overridable for local
+# dev before golden/python:3.12-slim has been promoted.
+ARG BASE_IMAGE=ghcr.io/toddysm/golden/python:3.12-slim
+FROM ${BASE_IMAGE}
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

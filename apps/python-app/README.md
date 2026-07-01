@@ -119,3 +119,21 @@ The capability services authenticate to GitHub with `GITHUB_TOKEN`
 (`read:packages` + issues read), supplied via a Kubernetes `Secret`. The
 dashboard tier needs no token — only the capability-service URLs and
 `CVE_BASE_URL`. See each service's README for the full variable list.
+
+## Supply chain
+
+All deployment artifacts are sourced from this repository's GHCR package repo:
+
+- **Base image** — the service images build `FROM ghcr.io/toddysm/golden/python:3.12-slim`
+  (mirrored from Docker Hub into `quarantine/` and promoted through the
+  vulnerability gate into `golden/`). Override `BASE_IMAGE` for local dev before
+  it has been promoted, e.g. `make build BASE_IMAGE=python:3.12-slim`.
+- **App images** — built and published to
+  `ghcr.io/toddysm/apps/cssc-dashboard/<service>` by the `build / cssc-dashboard`
+  workflow. Locally, `make build` tags images under the same names and `kind
+  load`s them.
+- **Helm charts** — published to `oci://ghcr.io/toddysm/charts` by the
+  `build / cssc-dashboard-charts` workflow. Deploy from the package repo with
+  `make deploy CHART=oci://ghcr.io/toddysm/charts/cssc-dashboard` (after
+  `helm registry login ghcr.io`); the default `CHART` is the in-repo path for
+  local development.

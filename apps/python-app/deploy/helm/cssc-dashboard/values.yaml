@@ -13,7 +13,7 @@
 packages-service:
   fullnameOverride: packages-service
   image:
-    repository: cssc-dashboard/packages-service
+    repository: ghcr.io/toddysm/apps/cssc-dashboard/packages-service
     tag: dev
   config:
     GITHUB_OWNER: toddysm
@@ -27,7 +27,7 @@ packages-service:
 issues-service:
   fullnameOverride: issues-service
   image:
-    repository: cssc-dashboard/issues-service
+    repository: ghcr.io/toddysm/apps/cssc-dashboard/issues-service
     tag: dev
   config:
     GITHUB_OWNER: toddysm
@@ -41,7 +41,7 @@ issues-service:
 dashboard-web:
   fullnameOverride: dashboard-web
   image:
-    repository: cssc-dashboard/dashboard-web
+    repository: ghcr.io/toddysm/apps/cssc-dashboard/dashboard-web
     tag: dev
   service:
     type: ClusterIP

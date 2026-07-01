@@ -5,7 +5,7 @@ fullnameOverride: ""
 replicaCount: 2
 
 image:
-  repository: cssc-dashboard/dashboard-web
+  repository: ghcr.io/toddysm/apps/cssc-dashboard/dashboard-web
   tag: dev
   pullPolicy: IfNotPresent
 

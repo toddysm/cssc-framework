@@ -9,13 +9,20 @@ include .env
 export
 endif
 
-CLUSTER   ?= cssc-dashboard
-NAMESPACE ?= cssc-dashboard
-TAG       ?= dev
-RELEASE   ?= cssc
-PORT      ?= 8000
-CHART     := deploy/helm/cssc-dashboard
-SERVICES  := packages-service issues-service dashboard-web
+CLUSTER      ?= cssc-dashboard
+NAMESPACE    ?= cssc-dashboard
+TAG          ?= dev
+RELEASE      ?= cssc
+PORT         ?= 8000
+# Chart source: local path by default; override with the package-repo OCI ref,
+# e.g. CHART=oci://ghcr.io/toddysm/charts/cssc-dashboard (run `helm registry
+# login ghcr.io` first).
+CHART        ?= deploy/helm/cssc-dashboard
+SERVICES     := packages-service issues-service dashboard-web
+# App images + base image are sourced from the package repo (GHCR). Override
+# BASE_IMAGE (e.g. python:3.12-slim) for local dev before golden is promoted.
+IMAGE_PREFIX ?= ghcr.io/toddysm/apps/cssc-dashboard
+BASE_IMAGE   ?= ghcr.io/toddysm/golden/python:3.12-slim
 
 VENV   := .venv
 PIP    := $(VENV)/bin/pip
@@ -62,7 +69,8 @@ lint:
 .PHONY: build
 build:
 	for s in $(SERVICES); do \
-	  docker build -f "services/$$s/Dockerfile" -t "cssc-dashboard/$$s:$(TAG)" . ; \
+	  docker build --build-arg BASE_IMAGE="$(BASE_IMAGE)" \
+	    -f "services/$$s/Dockerfile" -t "$(IMAGE_PREFIX)/$$s:$(TAG)" . ; \
 	done
 
 # ------------------------------------------------------------------------ kind
@@ -77,7 +85,7 @@ kind-down:
 .PHONY: load
 load:
 	for s in $(SERVICES); do \
-	  kind load docker-image "cssc-dashboard/$$s:$(TAG)" --name $(CLUSTER); \
+	  kind load docker-image "$(IMAGE_PREFIX)/$$s:$(TAG)" --name $(CLUSTER); \
 	done
 
 # ---------------------------------------------------------------------- deploy
@@ -92,7 +100,7 @@ secret:
 
 .PHONY: deploy
 deploy:
-	helm dependency build $(CHART)
+	@case "$(CHART)" in oci://*) : ;; *) helm dependency build "$(CHART)" ;; esac
 	helm upgrade --install $(RELEASE) $(CHART) --namespace $(NAMESPACE) --create-namespace
 
 .PHONY: undeploy

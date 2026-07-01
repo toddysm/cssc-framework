@@ -5,7 +5,7 @@ fullnameOverride: ""
 replicaCount: 2
 
 image:
-  repository: cssc-dashboard/packages-service
+  repository: ghcr.io/toddysm/apps/cssc-dashboard/packages-service
   tag: dev
   pullPolicy: IfNotPresent
 
