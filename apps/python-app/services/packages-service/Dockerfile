@@ -5,8 +5,8 @@
 #
 #   docker build -f services/packages-service/Dockerfile -t packages-service .
 # Base image is sourced from the package repo (golden). Overridable for local
-# dev before golden/python:3.12-slim has been promoted.
-ARG BASE_IMAGE=ghcr.io/toddysm/golden/python:3.12-slim
+# dev if the golden tag is not yet available.
+ARG BASE_IMAGE=ghcr.io/toddysm/golden/python:3.14-slim
 FROM ${BASE_IMAGE}
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

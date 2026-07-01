@@ -124,10 +124,10 @@ dashboard tier needs no token — only the capability-service URLs and
 
 All deployment artifacts are sourced from this repository's GHCR package repo:
 
-- **Base image** — the service images build `FROM ghcr.io/toddysm/golden/python:3.12-slim`
+- **Base image** — the service images build `FROM ghcr.io/toddysm/golden/python:3.14-slim`
   (mirrored from Docker Hub into `quarantine/` and promoted through the
-  vulnerability gate into `golden/`). Override `BASE_IMAGE` for local dev before
-  it has been promoted, e.g. `make build BASE_IMAGE=python:3.12-slim`.
+  vulnerability gate into `golden/`). Override `BASE_IMAGE` for local dev if the
+  golden tag is unavailable, e.g. `make build BASE_IMAGE=python:3.14-slim`.
 - **App images** — built and published to
   `ghcr.io/toddysm/apps/cssc-dashboard/<service>` by the `build / cssc-dashboard`
   workflow. Locally, `make build` tags images under the same names and `kind

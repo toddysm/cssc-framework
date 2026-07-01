@@ -20,9 +20,9 @@ PORT         ?= 8000
 CHART        ?= deploy/helm/cssc-dashboard
 SERVICES     := packages-service issues-service dashboard-web
 # App images + base image are sourced from the package repo (GHCR). Override
-# BASE_IMAGE (e.g. python:3.12-slim) for local dev before golden is promoted.
+# BASE_IMAGE (e.g. python:3.14-slim) for local dev if golden is unavailable.
 IMAGE_PREFIX ?= ghcr.io/toddysm/apps/cssc-dashboard
-BASE_IMAGE   ?= ghcr.io/toddysm/golden/python:3.12-slim
+BASE_IMAGE   ?= ghcr.io/toddysm/golden/python:3.14-slim
 
 VENV   := .venv
 PIP    := $(VENV)/bin/pip
