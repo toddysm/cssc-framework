@@ -1,1 +1,0 @@
-# TODO: HorizontalPodAutoscaler manifest (gated by .Values.autoscaling.enabled).

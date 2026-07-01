@@ -1,0 +1,73 @@
+# Build the CSSC Dashboard service images and publish them to GHCR.
+#
+# Each service image is built from apps/python-app (the build context that holds
+# the shared libs/cssc_common library) and pushed to
+# ghcr.io/toddysm/apps/cssc-dashboard/<service>, tagged with the short commit SHA
+# and a moving `latest` tag.
+#
+# Naming convention: "build-<app>.yml" for build workflows, kept separate from
+# "mirror-<image>.yml" and "promote-from-quarantine-<image>.yml". See
+# docs/contributing/workflow-naming.md.
+#
+# NOTE: images are built for the runner's native platform (linux/amd64).
+# Multi-arch (arm64) publishing can be added later with buildx + QEMU.
+name: build / cssc-dashboard
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/python-app/services/**"
+      - "apps/python-app/libs/**"
+      - ".github/workflows/build-cssc-dashboard.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: build-cssc-dashboard
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - packages-service
+          - issues-service
+          - dashboard-web
+    steps:
+      - name: Check out
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${ACTOR}" --password-stdin
+
+      - name: Build and push ${{ matrix.service }}
+        env:
+          SERVICE: ${{ matrix.service }}
+          IMAGE: ghcr.io/toddysm/apps/cssc-dashboard/${{ matrix.service }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          short="${SHA:0:7}"
+          cd apps/python-app
+          docker build \
+            -f "services/${SERVICE}/Dockerfile" \
+            -t "${IMAGE}:${short}" \
+            -t "${IMAGE}:latest" \
+            .
+          docker push "${IMAGE}:${short}"
+          docker push "${IMAGE}:latest"
+          {
+            echo "### ${SERVICE}"
+            echo "- \`${IMAGE}:${short}\`"
+            echo "- \`${IMAGE}:latest\`"
+          } >> "${GITHUB_STEP_SUMMARY}"

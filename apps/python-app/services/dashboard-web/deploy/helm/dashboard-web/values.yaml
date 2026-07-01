@@ -1,0 +1,59 @@
+# Default values for the dashboard-web chart.
+nameOverride: ""
+fullnameOverride: ""
+
+replicaCount: 2
+
+image:
+  repository: ghcr.io/toddysm/apps/cssc-dashboard/dashboard-web
+  tag: dev
+  pullPolicy: IfNotPresent
+
+containerPort: 8080
+
+# Numeric UID the container runs as (must match the image USER).
+runAsUser: 10001
+
+service:
+  type: ClusterIP
+  port: 80
+
+env: []
+
+# dashboard-web needs no GitHub token — only the capability service URLs.
+config:
+  PACKAGES_SERVICE_URL: http://packages-service
+  ISSUES_SERVICE_URL: http://issues-service
+  CVE_BASE_URL: https://nvd.nist.gov/vuln/detail/
+  QUARANTINE_NAMESPACE: quarantine
+
+secret:
+  enabled: false
+  name: ""
+
+probes:
+  path: /healthz
+  readinessPath: /readyz
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+ingress:
+  enabled: false
+  className: ""
+  hosts: []

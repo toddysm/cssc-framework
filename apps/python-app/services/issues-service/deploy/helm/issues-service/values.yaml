@@ -1,0 +1,58 @@
+# Default values for the issues-service chart.
+nameOverride: ""
+fullnameOverride: ""
+
+replicaCount: 2
+
+image:
+  repository: ghcr.io/toddysm/apps/cssc-dashboard/issues-service
+  tag: dev
+  pullPolicy: IfNotPresent
+
+containerPort: 8080
+
+# Numeric UID the container runs as (must match the image USER).
+runAsUser: 10001
+
+service:
+  type: ClusterIP
+  port: 80
+
+env: []
+
+config:
+  GITHUB_OWNER: toddysm
+  GITHUB_REPO: cssc-framework
+  GITHUB_API_URL: https://api.github.com
+  CACHE_TTL_SECONDS: "60"
+
+secret:
+  enabled: true
+  name: cssc-dashboard-github
+
+probes:
+  path: /healthz
+  readinessPath: /readyz
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+ingress:
+  enabled: false
+  className: ""
+  hosts: []

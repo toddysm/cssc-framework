@@ -1,0 +1,68 @@
+# Package the CSSC Dashboard Helm charts and publish them to GHCR as OCI
+# artifacts.
+#
+# The umbrella chart (with its subcharts vendored in via `helm dependency
+# build`) plus each subchart are pushed to oci://ghcr.io/toddysm/charts, so the
+# deployment can install them straight from the package repo:
+#
+#   helm upgrade --install cssc oci://ghcr.io/toddysm/charts/cssc-dashboard
+#
+# The charts are first-party (authored in this repo), so there is no upstream to
+# mirror — they are published directly to the golden charts location.
+#
+# Naming convention: "build-<app>.yml" for build/publish workflows. See
+# docs/contributing/workflow-naming.md.
+name: build / cssc-dashboard-charts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/python-app/deploy/helm/**"
+      - "apps/python-app/services/*/deploy/helm/**"
+      - ".github/workflows/build-cssc-dashboard-charts.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: build-cssc-dashboard-charts
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Log in to GHCR (helm)
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: echo "${GHCR_TOKEN}" | helm registry login ghcr.io -u "${ACTOR}" --password-stdin
+
+      - name: Package and push charts
+        env:
+          OCI_REPO: oci://ghcr.io/toddysm/charts
+        run: |
+          set -euo pipefail
+          cd apps/python-app
+          out="${RUNNER_TEMP}/charts"
+          mkdir -p "${out}"
+
+          # Package each subchart.
+          for svc in packages-service issues-service dashboard-web; do
+            helm package "services/${svc}/deploy/helm/${svc}" --destination "${out}"
+          done
+
+          # Vendor the subcharts into the umbrella, then package it (self-contained).
+          helm dependency build deploy/helm/cssc-dashboard
+          helm package deploy/helm/cssc-dashboard --destination "${out}"
+
+          for chart in "${out}"/*.tgz; do
+            helm push "${chart}" "${OCI_REPO}"
+            echo "- \`${chart##*/}\` → ${OCI_REPO}" >> "${GITHUB_STEP_SUMMARY}"
+          done
