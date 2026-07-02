@@ -86,19 +86,35 @@ jobs:
           short="${SHA:0:7}"
 
           # Resolve the release version from the latest published GitHub
-          # Release and strip any leading `v`. The tags are derived from this
-          # version, so a build with no published release cannot be tagged.
-          release="$(gh release view --repo "${REPO}" \
-            --json tagName --jq '.tagName' 2>/dev/null || true)"
-          release="${release#v}"
-          if [ -z "${release}" ]; then
+          # Release. A missing release stops the build with a clear message,
+          # but any other `gh` failure (auth, network, API) must also fail
+          # loudly instead of being misreported as "no release".
+          errlog="$(mktemp)"
+          if release="$(gh release view --repo "${REPO}" \
+            --json tagName --jq '.tagName' 2>"${errlog}")"; then
+            :
+          elif grep -qiE 'release not found|no releases|HTTP 404' "${errlog}"; then
             echo "::error::no published GitHub Release found; cannot compute semver tags"
+            exit 1
+          else
+            echo "::error::failed to query the latest GitHub Release:"
+            cat "${errlog}"
+            exit 1
+          fi
+          rm -f "${errlog}"
+
+          # The tags are derived from the release, so it must be a plain
+          # x.y.z semantic version (leading `v` stripped, no pre-release or
+          # build metadata) before it is split into the tag set.
+          release="${release#v}"
+          if ! [[ "${release}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::release tag '${release}' is not a plain x.y.z semantic version"
             exit 1
           fi
 
           # Split the release into the moving major/minor tags, the immutable
           # patch tag, and the immutable build tag (`<patch>-<short-sha>`).
-          IFS='.' read -r v_major v_minor v_patch _ <<< "${release}"
+          IFS='.' read -r v_major v_minor v_patch <<< "${release}"
           major="${v_major}"
           minor="${v_major}.${v_minor}"
           patch="${v_major}.${v_minor}.${v_patch}"
