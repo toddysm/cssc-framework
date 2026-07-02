@@ -2,15 +2,15 @@ apiVersion: v2
 name: cssc-dashboard
 description: Umbrella chart for the CSSC Dashboard microservices (packages-service, issues-service, dashboard-web).
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.1.1
+appVersion: "0.1.1"
 dependencies:
   - name: packages-service
-    version: "0.1.0"
+    version: "0.1.1"
     repository: "file://../../../services/packages-service/deploy/helm/packages-service"
   - name: issues-service
-    version: "0.1.0"
+    version: "0.1.1"
     repository: "file://../../../services/issues-service/deploy/helm/issues-service"
   - name: dashboard-web
-    version: "0.1.0"
+    version: "0.1.1"
     repository: "file://../../../services/dashboard-web/deploy/helm/dashboard-web"
