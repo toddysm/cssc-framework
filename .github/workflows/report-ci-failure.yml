@@ -13,7 +13,7 @@
 #
 # Note: runs that fail at startup (startup_failure) may not emit `workflow_run`
 # and can therefore be missed; see
-# docs/architecture/workflows/ci-failure-notifications.md.
+# docs/architecture/cross-cutting/ci-failure-notifications.md.
 name: report / ci-failure
 
 on:

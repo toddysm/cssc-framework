@@ -14,7 +14,7 @@
 #   4. deny: manage-issue close (promotion-denied) -> notify-slack (denied).
 #
 # Terminology and the action catalogue: see docs/reference/workflow-actions.md.
-# See also docs/architecture/workflows/promote-from-quarantine-override-approval.md.
+# See also docs/architecture/catalog/promote-from-quarantine-override-approval.md.
 name: _reusable / promote-override
 
 on:

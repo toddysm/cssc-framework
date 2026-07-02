@@ -27,7 +27,7 @@ issue** — opened by the `notify` job of the promote-from-quarantine reusable
 workflows ([`_promote-from-quarantine.yml`](../../../.github/workflows/_promote-from-quarantine.yml)
 and [`_promote-from-quarantine-sbom.yml`](../../../.github/workflows/_promote-from-quarantine-sbom.yml))
 when an image is *policy-blocked* (and only with `enable_approval`). See the
-[override-approval design](promote-from-quarantine-override-approval.md).
+[override-approval design](../catalog/promote-from-quarantine-override-approval.md).
 
 A *policy-blocked image* is not a CI failure — it is an expected outcome of a
 **successful** run. A genuine CI failure (a crashed step, an authentication
@@ -184,7 +184,7 @@ more common case of a run that starts and then fails.
   [workflow naming conventions](../../contributing/workflow-naming.md), document
   `manage-failure-issue` in the
   [workflow actions reference](../../reference/workflow-actions.md), and link this
-  document from the [workflow architecture index](README.md).
+  document from the [architecture index](../README.md).
 
 ## Security considerations
 

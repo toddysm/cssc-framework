@@ -6,8 +6,8 @@ workflows, and how to configure **Slack** so the team is notified when an image
 is blocked, approved, or denied.
 
 It is a practical, task-oriented companion to the
-[promote-from-quarantine override-approval architecture](../architecture/workflows/promote-from-quarantine-override-approval.md)
-document and the [workflow actions reference](../reference/workflow-actions.md).
+[promote-from-quarantine override-approval architecture](../../architecture/catalog/promote-from-quarantine-override-approval.md)
+document and the [workflow actions reference](../../reference/workflow-actions.md).
 If you only want to understand the design, read the architecture document; if
 you want to *enable* or *operate* the override path, read this one.
 
@@ -103,7 +103,7 @@ workflows already use; you only need to add `SLACK_WEBHOOK`.
 ## Step 3 — Enable approval on a workflow
 
 Approval is **opt-in per image**. Edit the per-image caller (for example
-[`promote-from-quarantine-python.yml`](../../.github/workflows/promote-from-quarantine-python.yml))
+[`promote-from-quarantine-python.yml`](../../../.github/workflows/promote-from-quarantine-python.yml))
 and add `enable_approval: true` to its `with:` block plus the `slack_webhook`
 secret:
 
@@ -132,7 +132,7 @@ behavior — blocked images are left in quarantine with no issue or Slack messag
 ## Step 4 — Make sure the override caller is present
 
 The approve/deny decision is handled by the
-[`promote-override.yml`](../../.github/workflows/promote-override.yml) caller,
+[`promote-override.yml`](../../../.github/workflows/promote-override.yml) caller,
 which is repository-wide (not per image). It triggers on:
 
 - **`issue_comment`** — a `/approve` or `/deny` comment on an open issue carrying

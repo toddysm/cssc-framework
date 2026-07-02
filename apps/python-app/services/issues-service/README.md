@@ -2,7 +2,7 @@
 
 CSSC Dashboard capability service that reads promotion tracking issues and
 parses the `blocking_cves` recorded in their `cssc-metadata` block. See the
-[CSSC Dashboard design](../../../../docs/architecture/apps/cssc-dashboard.md).
+[CSSC Dashboard design](../../../../docs/architecture/run/cssc-dashboard.md).
 
 ## API
 

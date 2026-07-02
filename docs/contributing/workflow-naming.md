@@ -95,7 +95,7 @@ images).
 - **Auth.** GHCR scan/copy/attach use the built-in `GITHUB_TOKEN`
   (`packages: write`). Deleting quarantine tags needs a separate
   `delete:packages` PAT (see the
-  [promote-from-quarantine architecture](../architecture/workflows/promote-from-quarantine-workflows.md)).
+  [promote-from-quarantine architecture](../architecture/catalog/promote-from-quarantine-workflows.md)).
 
 ### Adding a new promote-from-quarantine workflow
 
@@ -120,7 +120,7 @@ subscribes to the mirror, promote-from-quarantine, and promote-override workflow
 via the `workflow_run` event and opens (or, on recovery, closes) a
 `CI failure: <workflow>` issue. It uses the `report-<purpose>.yml` filename and
 the `report / <subject>` display name. See the
-[CI failure notifications design](../architecture/workflows/ci-failure-notifications.md).
+[CI failure notifications design](../architecture/cross-cutting/ci-failure-notifications.md).
 
 ## Composite actions
 

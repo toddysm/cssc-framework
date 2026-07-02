@@ -2,7 +2,7 @@
 
 CSSC Dashboard capability service that lists GHCR container packages and their
 tags via the GitHub Packages API. See the
-[CSSC Dashboard design](../../../../docs/architecture/apps/cssc-dashboard.md).
+[CSSC Dashboard design](../../../../docs/architecture/run/cssc-dashboard.md).
 
 ## API
 

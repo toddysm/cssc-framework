@@ -19,7 +19,7 @@
 #   5. deletes the promoted tag from quarantine (delete-image).
 #
 # Terminology and the action catalogue: see docs/reference/workflow-actions.md.
-# See also docs/architecture/workflows/promote-from-quarantine-workflows.md.
+# See also docs/architecture/catalog/promote-from-quarantine-workflows.md.
 name: _reusable / promote-from-quarantine
 
 on:

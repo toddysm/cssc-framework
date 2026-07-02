@@ -6,7 +6,7 @@ workflow) are **OCI**, **multi-arch** (`linux/amd64`, `linux/arm64`), and carry
 OCI **manifest annotations** so supply-chain metadata travels with the image.
 
 For how those images are **tagged** (the semantic-version tag set and which
-tag to pin), see the [image tagging guide](../guides/image-tagging.md).
+tag to pin), see the [image tagging guide](../guides/build/image-tagging.md).
 
 Annotations are set at **both** the multi-arch **index** and each **per-platform
 manifest**, so they are visible regardless of which descriptor a tool inspects:
