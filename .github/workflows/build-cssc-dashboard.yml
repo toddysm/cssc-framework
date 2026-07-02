@@ -2,8 +2,10 @@
 #
 # Each service image is built from apps/python-app (the build context that holds
 # the shared libs/cssc_common library) and pushed to
-# ghcr.io/toddysm/apps/cssc-dashboard/<service>, tagged with the short commit SHA
-# and a moving `latest` tag.
+# ghcr.io/toddysm/apps/cssc-dashboard/<service>, tagged with the full semantic
+# version set (major `0`, minor `0.1`, patch `0.1.0`, and an immutable build tag
+# `0.1.0-<short-sha>`) derived from the latest published GitHub Release. No
+# `latest` tag is published.
 #
 # Images are OCI, multi-arch (linux/amd64 + linux/arm64), and carry OCI manifest
 # annotations (standard org.opencontainers.image.* + custom com.toddysm.*) at
@@ -77,10 +79,49 @@ jobs:
           REPO: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
           WORKFLOW: ${{ github.workflow }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
           short="${SHA:0:7}"
+
+          # Resolve the release version from the latest published GitHub
+          # Release. A missing release stops the build with a clear message,
+          # but any other `gh` failure (auth, network, API) must also fail
+          # loudly instead of being misreported as "no release".
+          errlog="$(mktemp)"
+          if release="$(gh release view --repo "${REPO}" \
+            --json tagName --jq '.tagName' 2>"${errlog}")"; then
+            :
+          elif grep -qiE 'release not found|no releases|HTTP 404' "${errlog}"; then
+            echo "::error::no published GitHub Release found; cannot compute semver tags"
+            exit 1
+          else
+            echo "::error::failed to query the latest GitHub Release:"
+            cat "${errlog}"
+            exit 1
+          fi
+          rm -f "${errlog}"
+
+          # The tags are derived from the release, so it must be a plain
+          # x.y.z semantic version (leading `v` stripped, no pre-release or
+          # build metadata) before it is split into the tag set.
+          release="${release#v}"
+          if ! [[ "${release}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::release tag '${release}' is not a plain x.y.z semantic version"
+            exit 1
+          fi
+
+          # Split the release into the moving major/minor tags, the immutable
+          # patch tag, and the immutable build tag (`<patch>-<short-sha>`).
+          IFS='.' read -r v_major v_minor v_patch <<< "${release}"
+          major="${v_major}"
+          minor="${v_major}.${v_minor}"
+          patch="${v_major}.${v_minor}.${v_patch}"
+          build="${patch}-${short}"
+
+          # The referrer step keys off the immutable build tag.
+          echo "BUILD_TAG=${build}" >> "${GITHUB_ENV}"
 
           # Reproducible timestamps: derive created from the commit time.
           SOURCE_DATE_EPOCH="$(git log -1 --pretty=%ct)"
@@ -108,7 +149,7 @@ jobs:
             "org.opencontainers.image.created=${created}"
             "org.opencontainers.image.source=${SERVER_URL}/${REPO}"
             "org.opencontainers.image.revision=${SHA}"
-            "org.opencontainers.image.version=${short}"
+            "org.opencontainers.image.version=${build}"
             "org.opencontainers.image.title=CSSC Dashboard ${SERVICE}"
             "org.opencontainers.image.description=${desc}"
             "org.opencontainers.image.url=${SERVER_URL}/${REPO}"
@@ -118,6 +159,8 @@ jobs:
             "org.opencontainers.image.base.name=${base_name}"
             "org.opencontainers.image.base.digest=${base_digest}"
             "com.toddysm.image.base.tag=${base_tag}"
+            "com.toddysm.image.lineage=${minor}"
+            "com.toddysm.image.tags=${major}|${minor}|${patch}|${build}"
             "com.toddysm.build.workflow=${WORKFLOW}"
             "com.toddysm.build.run-url=${SERVER_URL}/${REPO}/actions/runs/${RUN_ID}"
           )
@@ -133,8 +176,10 @@ jobs:
             --build-arg BASE_IMAGE="${base_ref}" \
             --file "services/${SERVICE}/Dockerfile" \
             "${ann_args[@]}" \
-            --tag "${IMAGE}:${short}" \
-            --tag "${IMAGE}:latest" \
+            --tag "${IMAGE}:${build}" \
+            --tag "${IMAGE}:${patch}" \
+            --tag "${IMAGE}:${minor}" \
+            --tag "${IMAGE}:${major}" \
             --provenance=mode=max \
             --sbom=true \
             --output type=image,oci-mediatypes=true,push=true \
@@ -142,7 +187,8 @@ jobs:
 
           {
             echo "### ${SERVICE}"
-            echo "- \`${IMAGE}:${short}\` (linux/amd64, linux/arm64)"
+            echo "- \`${IMAGE}:${build}\` (linux/amd64, linux/arm64)"
+            echo "- tags: \`${major}\`, \`${minor}\`, \`${patch}\`, \`${build}\`"
             echo "- base: \`${base_name}:${base_tag}@${base_digest}\`"
           } >> "${GITHUB_STEP_SUMMARY}"
 
@@ -150,13 +196,11 @@ jobs:
         env:
           SERVICE: ${{ matrix.service }}
           IMAGE: ghcr.io/toddysm/apps/cssc-dashboard/${{ matrix.service }}
-          SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           export LC_ALL=C
 
-          short="${SHA:0:7}"
-          ref="${IMAGE}:${short}"
+          ref="${IMAGE}:${BUILD_TAG}"
           work="$(mktemp -d)"
           trap 'rm -rf "${work}"' EXIT
 
