@@ -5,8 +5,20 @@
 
 version: 2
 updates:
-  - package-ecosystem: "pip" # See documentation for possible values
-    directory: "/" # Location of package manifests
+  - package-ecosystem: "pip"
+    directory: "/apps/python-app/services/dashboard-web"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "pip"
+    directory: "/apps/python-app/services/issues-service"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "pip"
+    directory: "/apps/python-app/services/packages-service"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "pip"
+    directory: "/apps/python-app/libs/cssc_common"
     schedule:
       interval: "weekly"
   - package-ecosystem: "npm" # See documentation for possible values
