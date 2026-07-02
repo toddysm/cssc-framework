@@ -41,7 +41,7 @@ Send a report if you think you have found a security vulnerability in:
 
 ### What To Include In a Report
 
-The more details are included in the report, the easier it is for the
+The more details you include in the report, the easier it is for the
 maintainers to understand the vulnerability and provide mitigations. Please
 include:
 
