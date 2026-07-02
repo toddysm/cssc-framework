@@ -8,14 +8,14 @@ tag. It is the companion to the
 
 ## The tag set
 
-Every build publishes the same image (a multi-arch OCI index) under **four**
-tags derived from the project's semantic version:
+Every build publishes each service image (a multi-arch OCI index) under the
+same **four** tags derived from the project's semantic version:
 
 | Tag | Example | Mutability | What it points at |
 | --- | --- | --- | --- |
 | `major` | `0` | Moving | The latest build of the current major line. |
 | `minor` | `0.1` | Moving | The latest build of the current minor line. |
-| `patch` | `0.1.0` | Immutable per release | The latest build of that exact release. |
+| `patch` | `0.1.0` | Moving | The latest build of that exact release. |
 | `build` | `0.1.0-69deeec` | Immutable | One specific build (`<release>-<short-sha>`). |
 
 The `build` tag appends the 7-character commit short SHA to the release version,
