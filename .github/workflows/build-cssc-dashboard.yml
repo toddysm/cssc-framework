@@ -164,7 +164,7 @@ jobs:
             "com.toddysm.build.workflow=${WORKFLOW}"
             "com.toddysm.build.run-url=${SERVER_URL}/${REPO}/actions/runs/${RUN_ID}"
             "com.toddysm.security.policy=${SERVER_URL}/${REPO}?tab=security-ov-file"
-            "com.toddysm.security.reporturl=${SERVER_URL}/${REPO}/security/advisories/new"
+            "com.toddysm.security.report-url=${SERVER_URL}/${REPO}/security/advisories/new"
           )
 
           ann_args=()

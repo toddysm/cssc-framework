@@ -140,7 +140,7 @@ architecture.
 | `com.toddysm.build.workflow` | Building workflow display name | Which workflow produced the image; auditing the build path. |
 | `com.toddysm.build.run-url` | Link to the exact GitHub Actions run | Jump straight to the CI run that built the image for logs and provenance. |
 | `com.toddysm.security.policy` | Link to the repository security policy | Find out how vulnerabilities in the image are handled and disclosed. |
-| `com.toddysm.security.reporturl` | URL for reporting a vulnerability | Report a vulnerability programmatically (the GitHub private advisory intake). |
+| `com.toddysm.security.report-url` | URL for reporting a vulnerability | Report a vulnerability programmatically (the GitHub private advisory intake). |
 
 ## Worked examples
 

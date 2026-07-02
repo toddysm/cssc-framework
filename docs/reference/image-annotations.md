@@ -50,7 +50,7 @@ crane manifest ghcr.io/toddysm/apps/cssc-dashboard/packages-service:0.1 | jq .an
 | `com.toddysm.build.workflow` | The building workflow display name. |
 | `com.toddysm.build.run-url` | Link to the exact GitHub Actions run. |
 | `com.toddysm.security.policy` | Link to the repository security policy (how vulnerabilities are handled). |
-| `com.toddysm.security.reporturl` | URL for reporting a vulnerability programmatically (the GitHub private advisory intake). |
+| `com.toddysm.security.report-url` | URL for reporting a vulnerability programmatically (the GitHub private advisory intake). |
 
 ## Reproducibility
 
