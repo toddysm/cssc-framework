@@ -5,11 +5,14 @@ The CSSC Dashboard application images (built by the
 workflow) are **OCI**, **multi-arch** (`linux/amd64`, `linux/arm64`), and carry
 OCI **manifest annotations** so supply-chain metadata travels with the image.
 
+For how those images are **tagged** (the semantic-version tag set and which
+tag to pin), see the [image tagging guide](../guides/image-tagging.md).
+
 Annotations are set at **both** the multi-arch **index** and each **per-platform
 manifest**, so they are visible regardless of which descriptor a tool inspects:
 
 ```bash
-crane manifest ghcr.io/toddysm/apps/cssc-dashboard/packages-service:latest | jq .annotations
+crane manifest ghcr.io/toddysm/apps/cssc-dashboard/packages-service:0.1 | jq .annotations
 ```
 
 ## Standard annotations (`org.opencontainers.image.*`)
@@ -19,7 +22,7 @@ crane manifest ghcr.io/toddysm/apps/cssc-dashboard/packages-service:latest | jq 
 | `created` | Build time derived from the commit time (`SOURCE_DATE_EPOCH`) — reproducible. |
 | `source` | The source repository URL. |
 | `revision` | The full commit SHA the image was built from. |
-| `version` | The image version (short commit SHA). |
+| `version` | The immutable build tag `<release>-<short-sha>` (e.g. `0.1.0-69deeec`) the image is published under. |
 | `title` | `CSSC Dashboard <service>`. |
 | `description` | One-line service description. |
 | `url` | Project URL. |
@@ -42,6 +45,8 @@ crane manifest ghcr.io/toddysm/apps/cssc-dashboard/packages-service:latest | jq 
 | Annotation | Value |
 | ---------- | ----- |
 | `com.toddysm.image.base.tag` | The base image tag (e.g. `3.14-slim`). |
+| `com.toddysm.image.lineage` | The minor-version lineage the image belongs to (e.g. `0.1`). |
+| `com.toddysm.image.tags` | Every tag applied to the image, `\|`-separated, from `major` to `build` (e.g. `0\|0.1\|0.1.0\|0.1.0-69deeec`). |
 | `com.toddysm.build.workflow` | The building workflow display name. |
 | `com.toddysm.build.run-url` | Link to the exact GitHub Actions run. |
 

@@ -9,7 +9,7 @@ Workflows fall into the following categories (see
 | -------- | ------- | ------ |
 | **Mirror** | Copy / refresh upstream base images from Docker Hub into GHCR | Implemented |
 | **Promote from quarantine** | Scan quarantined images and promote the ones that pass a vulnerability policy into `golden/<image>` (or `base/...` for base/hardened images) | Implemented |
-| **Build** | Build the demo applications under `apps/` on top of promoted `golden/*` bases and attach supply-chain metadata (annotations, SBOM, provenance); semantic-version tagging is proposed | Implemented |
+| **Build** | Build the demo applications under `apps/` on top of promoted `golden/*` bases, tag them with the semantic-version set (no `latest`), and attach supply-chain metadata (annotations, SBOM, provenance) | Implemented |
 | **Report** | Watch other workflows and file/close CI-failure tracking issues | Implemented |
 
 ## Documents
@@ -27,5 +27,5 @@ Workflows fall into the following categories (see
   issues (and optional Slack alerts) when a monitored workflow run fails or
   recovers.
 - [Build workflows](build-workflows.md) — how the demo applications are built
-  into multi-arch OCI images stamped with annotations, SBOM, and provenance,
-  plus the proposed semantic-version tagging design.
+  into multi-arch OCI images tagged with the semantic-version set and stamped
+  with annotations, SBOM, and provenance.
