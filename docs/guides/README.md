@@ -14,3 +14,6 @@ How-to and operational guides for the `cssc-framework` repository.
 - [Reading image annotations](reading-image-annotations.md) —
   how to read the OCI manifest annotations stamped onto each build and what each
   one is used for.
+- [Image tagging](image-tagging.md) —
+  the semantic-version tag set the build publishes, which tag to pin vs. track,
+  the no-`latest` policy, and how to pull by each tag.

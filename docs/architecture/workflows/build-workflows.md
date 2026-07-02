@@ -77,10 +77,6 @@ All third-party actions are pinned by full commit SHA.
 
 ## How are images tagged
 
-> **Status:** proposed. This section is the design for the semver tagging work
-> (tracking issue #123); the current workflow tags images with the short commit
-> SHA and `latest`.
-
 Images are tagged using a **semantic-version** scheme. The version is taken from
 the repository's **code release** (the GitHub Releases page; `0.1.0` at the time
 of writing).
@@ -172,14 +168,10 @@ dependency resolution (for example `pip`).
   `com.toddysm.*`).
 - SPDX SBOM and SLSA provenance, both embedded and published as OCI 1.1
   referrers.
-
-**Proposed (tracking #123)**
-
 - Semantic-version tagging (major/minor/patch/build) sourced from the code
-  release.
-- `version` = immutable build tag; new `com.toddysm.image.lineage` and
+  release, with no `latest` tag.
+- `version` = immutable build tag; `com.toddysm.image.lineage` and
   `com.toddysm.image.tags` annotations.
-- Removal of the `latest` tag.
 
 **Deliberately out of scope**
 
