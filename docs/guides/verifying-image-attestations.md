@@ -77,7 +77,8 @@ reading from a private repository, log in first so both `docker` and `oras`
 pick up the credentials:
 
 ```bash
-echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$USER" --password-stdin
+GHCR_USER=<your-github-username>
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 ```
 
 ## Step 1 — Resolve the per-platform digests
@@ -247,15 +248,30 @@ internally consistent:
 ## Copying attestations with the image
 
 The embedded attestation-manifests move automatically when you copy the whole
-index. The **referrers**, however, are separate manifests, so use a
-referrers-aware copy to bring them along:
+index. The **referrers** are separate manifests, so use a referrers-aware copy
+(`oras cp -r`) to bring them along. A single index-level copy pulls the index,
+its child manifests, and any referrers **of the index**, but this repository
+attaches the SBOM and provenance referrers to each **per-platform child**
+manifest, which an index-level copy does not follow. Copy the index and then
+each child explicitly:
 
 ```bash
-oras cp -r "$REPO:0.1" "another-registry.example.com/mirror/packages-service:0.1"
+DEST=another-registry.example.com/mirror/packages-service
+
+# Index, its child manifests, and index-level referrers:
+oras cp -r "$REPO:0.1" "$DEST:0.1"
+
+# Per-platform children and their referrers (SBOM/provenance). Digests are
+# preserved, so every referrer's subject link stays valid on the destination:
+crane manifest "$REPO:0.1" \
+  | jq -r '.manifests[]? | select(.platform.os != "unknown") | .digest' \
+  | while IFS= read -r d; do
+      oras cp -r "$REPO@$d" "$DEST@$d"
+    done
 ```
 
-This is the same mechanism the repository's mirror/promote workflows use to carry
-scan-report referrers between `quarantine/*` and `golden/*`.
+This is the same two-step copy the repository's mirror/promote workflows use to
+carry per-platform referrers between `quarantine/*` and `golden/*`.
 
 ## A note on trust and signatures
 
