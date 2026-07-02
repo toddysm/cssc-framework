@@ -16,7 +16,7 @@
 # This is intentionally separate from `manage-issue` (which is specific to the
 # promotion override flow: a different title, label set, and a required embedded
 # metadata block). See
-# docs/architecture/workflows/ci-failure-notifications.md.
+# docs/architecture/cross-cutting/ci-failure-notifications.md.
 #
 # Terminology: see docs/reference/workflow-actions.md.
 name: manage-failure-issue

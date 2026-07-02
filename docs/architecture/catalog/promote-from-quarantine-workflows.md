@@ -12,7 +12,7 @@ scan the container images sitting in a `quarantine/<image>` repository and
 For naming and file-system conventions, see
 [workflow naming conventions](../../contributing/workflow-naming.md). For the
 mirror workflows that populate quarantine in the first place, see
-[image mirror workflows](image-mirror-workflows.md).
+[image mirror workflows](../acquire/image-mirror-workflows.md).
 
 ## Purpose
 
@@ -182,7 +182,7 @@ Distroless images such as [Docker Hardened Images](https://docs.docker.com/dhi/)
 packages. Those images instead carry their package inventory as an **SBOM
 attestation** — an in-toto statement attached to each platform manifest as an
 OCI referrer. The mirror copies these referrers into quarantine (see
-[`copy_referrers`](image-mirror-workflows.md)), and a dedicated reusable
+[`copy_referrers`](../acquire/image-mirror-workflows.md)), and a dedicated reusable
 workflow, `_promote-from-quarantine-sbom.yml`, gates on the SBOM rather than the image
 filesystem.
 

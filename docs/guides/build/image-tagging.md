@@ -4,7 +4,7 @@ This guide explains how the `build / cssc-dashboard` workflow **tags** the CSSC
 Dashboard images, which tag to use for which purpose, and how to pull by each
 tag. It is the companion to the
 [reading image annotations](reading-image-annotations.md) guide and the
-[image annotations reference](../reference/image-annotations.md).
+[image annotations reference](../../reference/image-annotations.md).
 
 ## The tag set
 
@@ -47,7 +47,7 @@ derived without one.
 The immutable `build` tag is also recorded in the
 `org.opencontainers.image.version` annotation, and the full set is recorded in
 `com.toddysm.image.tags` (see the
-[annotations reference](../reference/image-annotations.md)), so you can recover
+[annotations reference](../../reference/image-annotations.md)), so you can recover
 every tag from the image itself.
 
 ## Pulling by tag
@@ -81,5 +81,5 @@ docker pull "$REPO@$digest"
 
 - [Reading image annotations](reading-image-annotations.md)
 - [Verifying image attestations](verifying-image-attestations.md)
-- [Image annotations reference](../reference/image-annotations.md)
-- [Build workflows architecture](../architecture/workflows/build-workflows.md)
+- [Image annotations reference](../../reference/image-annotations.md)
+- [Build workflows architecture](../../architecture/build/build-workflows.md)

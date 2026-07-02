@@ -10,7 +10,7 @@
 # the override itself is still gated by `verify-approver` inside the reusable
 # workflow.
 #
-# See docs/architecture/workflows/promote-from-quarantine-override-approval.md.
+# See docs/architecture/catalog/promote-from-quarantine-override-approval.md.
 name: promote override
 
 on:

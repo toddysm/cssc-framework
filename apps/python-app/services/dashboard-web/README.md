@@ -4,7 +4,7 @@ CSSC Dashboard web tier: the stage registry, the Acquisition stage provider, and
 the Jinja2/htmx UI. It is a backend-for-frontend that aggregates the
 `packages-service` and `issues-service` capability services — it never calls
 GitHub directly. See the
-[CSSC Dashboard design](../../../../docs/architecture/apps/cssc-dashboard.md).
+[CSSC Dashboard design](../../../../docs/architecture/run/cssc-dashboard.md).
 
 ## Routes
 

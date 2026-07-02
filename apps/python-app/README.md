@@ -6,7 +6,7 @@ A scalable, Kubernetes-native demonstration app that visualizes the
 Container Registry (GHCR) packages and promotion tracking issues.
 
 See the full design in
-[docs/architecture/apps/cssc-dashboard.md](../../docs/architecture/apps/cssc-dashboard.md).
+[docs/architecture/run/cssc-dashboard.md](../../docs/architecture/run/cssc-dashboard.md).
 
 > Read-only demo. The dashboard never mutates packages or issues.
 

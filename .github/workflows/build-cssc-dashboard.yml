@@ -153,7 +153,7 @@ jobs:
             "org.opencontainers.image.title=CSSC Dashboard ${SERVICE}"
             "org.opencontainers.image.description=${desc}"
             "org.opencontainers.image.url=${SERVER_URL}/${REPO}"
-            "org.opencontainers.image.documentation=${SERVER_URL}/${REPO}/blob/main/docs/architecture/apps/cssc-dashboard.md"
+            "org.opencontainers.image.documentation=${SERVER_URL}/${REPO}/blob/main/docs/architecture/run/cssc-dashboard.md"
             "org.opencontainers.image.vendor=toddysm.com"
             "org.opencontainers.image.licenses=Apache-2.0"
             "org.opencontainers.image.base.name=${base_name}"

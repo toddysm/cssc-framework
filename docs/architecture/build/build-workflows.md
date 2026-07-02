@@ -186,5 +186,5 @@ dependency resolution (for example `pip`).
 - [`build / cssc-dashboard` workflow](../../../.github/workflows/build-cssc-dashboard.yml)
 - [Image annotations (reference)](../../reference/image-annotations.md)
 - [Image attestations (reference)](../../reference/image-attestations.md)
-- [CSSC Dashboard application architecture](../apps/cssc-dashboard.md)
+- [CSSC Dashboard application architecture](../run/cssc-dashboard.md)
 - [Workflow naming conventions](../../contributing/workflow-naming.md)

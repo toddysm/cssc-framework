@@ -6,7 +6,7 @@ into the GitHub Container Registry (GHCR), and how to add a new mirror for an
 additional image or tag.
 
 It is a practical, task-oriented companion to the
-[image mirror workflows architecture](../architecture/workflows/image-mirror-workflows.md)
+[image mirror workflows architecture](../../architecture/acquire/image-mirror-workflows.md)
 document. If you only want to understand the design, read that document; if you
 want to *operate* or *extend* the mirrors, read this one.
 
@@ -43,18 +43,18 @@ Mirrors run automatically on a daily schedule and can also be started manually.
 There are currently three mirror actions, one per base image. Each is a thin
 "caller" workflow that supplies image-specific values and delegates all logic to
 the shared reusable workflow
-[`_mirror-image.yml`](../../.github/workflows/_mirror-image.yml).
+[`_mirror-image.yml`](../../../.github/workflows/_mirror-image.yml).
 
 | Workflow file | Display name | Source (Docker Hub) | Destination (GHCR) |
 | ------------- | ------------ | ------------------- | ------------------ |
-| [`mirror-python.yml`](../../.github/workflows/mirror-python.yml) | `mirror / quarantine/python` | `docker.io/library/python:3.14-slim` | `ghcr.io/toddysm/quarantine/python:3.14-slim` |
-| [`mirror-node.yml`](../../.github/workflows/mirror-node.yml) | `mirror / quarantine/node` | `docker.io/library/node:26-alpine` | `ghcr.io/toddysm/quarantine/node:26-alpine` |
-| [`mirror-openjdk.yml`](../../.github/workflows/mirror-openjdk.yml) | `mirror / quarantine/openjdk` | `docker.io/library/openjdk:27-ea-slim` | `ghcr.io/toddysm/quarantine/openjdk:27-ea-slim` |
+| [`mirror-python.yml`](../../../.github/workflows/mirror-python.yml) | `mirror / quarantine/python` | `docker.io/library/python:3.14-slim` | `ghcr.io/toddysm/quarantine/python:3.14-slim` |
+| [`mirror-node.yml`](../../../.github/workflows/mirror-node.yml) | `mirror / quarantine/node` | `docker.io/library/node:26-alpine` | `ghcr.io/toddysm/quarantine/node:26-alpine` |
+| [`mirror-openjdk.yml`](../../../.github/workflows/mirror-openjdk.yml) | `mirror / quarantine/openjdk` | `docker.io/library/openjdk:27-ea-slim` | `ghcr.io/toddysm/quarantine/openjdk:27-ea-slim` |
 
 All three are structurally identical. They differ only in four input values
 (`source_image`, `source_tag`, `dest_image`, `dest_tag`), their display `name:`,
 and their `concurrency.group`. For example,
-[`mirror-python.yml`](../../.github/workflows/mirror-python.yml) calls the
+[`mirror-python.yml`](../../../.github/workflows/mirror-python.yml) calls the
 reusable workflow like this:
 
 ```yaml
@@ -187,9 +187,9 @@ Decide on:
 ### 2. Create the caller workflow
 
 Copy an existing caller, for example
-[`mirror-python.yml`](../../.github/workflows/mirror-python.yml), to a new file
+[`mirror-python.yml`](../../../.github/workflows/mirror-python.yml), to a new file
 named `mirror-<image>.yml`. Following the
-[workflow naming conventions](../contributing/workflow-naming.md), the filename
+[workflow naming conventions](../../contributing/workflow-naming.md), the filename
 must start with the `mirror-` prefix.
 
 Create `.github/workflows/mirror-golang.yml`:

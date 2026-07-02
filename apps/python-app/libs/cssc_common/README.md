@@ -1,7 +1,7 @@
 # cssc_common
 
 Shared building blocks for the CSSC Dashboard microservices. See the
-[CSSC Dashboard design](../../../../docs/architecture/apps/cssc-dashboard.md).
+[CSSC Dashboard design](../../../../docs/architecture/run/cssc-dashboard.md).
 
 ## What's here
 

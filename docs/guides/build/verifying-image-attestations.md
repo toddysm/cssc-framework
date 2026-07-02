@@ -10,7 +10,7 @@ images, using **both** ways those attestations are published:
    with `oras discover` and pull with `oras`.
 
 It is the task-oriented companion to the reference document
-[image attestations](../reference/image-attestations.md), which describes what
+[image attestations](../../reference/image-attestations.md), which describes what
 the `build / cssc-dashboard` workflow produces. If you only want the summary,
 read that document; if you want to *inspect* or *verify* the attestations, read
 this one.
@@ -302,6 +302,6 @@ for the current build.
 
 ## Related
 
-- [Image attestations (reference)](../reference/image-attestations.md)
-- [Image annotations (reference)](../reference/image-annotations.md)
-- [`build / cssc-dashboard` workflow](../../.github/workflows/build-cssc-dashboard.yml)
+- [Image attestations (reference)](../../reference/image-attestations.md)
+- [Image annotations (reference)](../../reference/image-annotations.md)
+- [`build / cssc-dashboard` workflow](../../../.github/workflows/build-cssc-dashboard.yml)

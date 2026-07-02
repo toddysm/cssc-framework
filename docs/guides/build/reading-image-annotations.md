@@ -5,7 +5,7 @@ This guide shows how to read the **OCI manifest annotations** that the
 explains **what each annotation is for**.
 
 It is the task-oriented companion to the reference document
-[image annotations](../reference/image-annotations.md), which lists the
+[image annotations](../../reference/image-annotations.md), which lists the
 annotation set. If you only want the list, read that document; if you want to
 *read* the annotations off a built image and understand how to use them, read
 this one.
@@ -192,6 +192,6 @@ crane manifest "$IMAGE" | jq -r '.annotations | {
 
 ## Related
 
-- [Image annotations (reference)](../reference/image-annotations.md)
+- [Image annotations (reference)](../../reference/image-annotations.md)
 - [Verifying and reading image SBOM and provenance](verifying-image-attestations.md)
-- [`build / cssc-dashboard` workflow](../../.github/workflows/build-cssc-dashboard.yml)
+- [`build / cssc-dashboard` workflow](../../../.github/workflows/build-cssc-dashboard.yml)

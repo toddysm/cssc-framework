@@ -1,19 +1,14 @@
 # Guides
 
-How-to and operational guides for the `cssc-framework` repository.
+How-to and operational guides for the `cssc-framework` repository, organized
+around the **CSSC framework stages**. Within each stage, guides are grouped
+under two cross-cutting themes where they apply: **Authenticity and Integrity**
+and **Supply Chain Observability**.
 
-- [Mirroring base images from Docker Hub to GHCR](mirroring-base-images.md) —
-  how the mirror actions work and how to add a new mirror for another image or
-  tag.
-- [Configuring human-in-the-loop promotion overrides + Slack notifications](configuring-override-approval.md) —
-  how to enable the approve/deny override path for blocked images and wire up
-  Slack notifications.
-- [Verifying and reading image SBOM and provenance](verifying-image-attestations.md) —
-  how to read and cross-check the SBOM and build provenance on the CSSC Dashboard
-  images, from both the embedded attestations and the OCI 1.1 referrers.
-- [Reading image annotations](reading-image-annotations.md) —
-  how to read the OCI manifest annotations stamped onto each build and what each
-  one is used for.
-- [Image tagging](image-tagging.md) —
-  the semantic-version tag set the build publishes, which tag to pin vs. track,
-  the no-`latest` policy, and how to pull by each tag.
+- [Acquire](acquire/) — mirroring base images from Docker Hub into GHCR.
+- [Catalog](catalog/) — promotion overrides and approvals for quarantined
+  images.
+- [Build](build/) — image tagging, annotations, and attestations for the demo
+  app images.
+- [Deploy](deploy/) — deploying the demo apps.
+- [Run](run/) — running the applications.
