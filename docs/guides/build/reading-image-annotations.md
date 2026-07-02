@@ -139,6 +139,8 @@ architecture.
 | `com.toddysm.image.tags` | Every tag applied to the image, `\|`-separated (e.g. `0\|0.1\|0.1.0\|0.1.0-69deeec`) | The full tag set the build published, from most-moving (`major`) to immutable (`build`); recover every tag from the image itself. |
 | `com.toddysm.build.workflow` | Building workflow display name | Which workflow produced the image; auditing the build path. |
 | `com.toddysm.build.run-url` | Link to the exact GitHub Actions run | Jump straight to the CI run that built the image for logs and provenance. |
+| `com.toddysm.security.policy` | Link to the repository security policy | Find out how vulnerabilities in the image are handled and disclosed. |
+| `com.toddysm.security.report-url` | URL for reporting a vulnerability | Report a vulnerability programmatically (the GitHub private advisory intake). |
 
 ## Worked examples
 
