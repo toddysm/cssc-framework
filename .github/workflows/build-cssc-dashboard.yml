@@ -241,6 +241,7 @@ jobs:
               --artifact-type application/vnd.in-toto+json \
               --annotation "in-toto.io/predicate-type=${pt}" \
               --annotation "org.opencontainers.image.title=${title}" \
+              --disable-path-validation \
               "${IMAGE}@${pd}" \
               "${work}/${title}:application/vnd.in-toto+json"
             echo "attached ${pt} referrer to ${IMAGE}@${pd}"
