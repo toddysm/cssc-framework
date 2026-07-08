@@ -13,4 +13,4 @@ controlled namespace before they are used.
 
 - [Acquisition provenance referrer](acquisition-provenance.md) — an OCI 1.1
   referrer attached to each mirrored image recording where it was acquired from
-  and how (source registry, tag, digest, timestamp, workflow run). *Proposed.*
+  and how (source registry, tag, digest, timestamp, workflow run).

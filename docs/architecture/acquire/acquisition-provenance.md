@@ -133,10 +133,14 @@ single index-level record for the whole image.
 
 ## When it runs
 
-The referrer is created **only when a copy actually happened** — i.e. when the
-`mirror-image` action reports `copied == true`. When the destination is already
-up to date, no new referrer is written. This ties each acquisition referrer to a
-distinct acquired digest and avoids churn on unchanged images.
+The referrer is created **only when the acquired digest actually changed** —
+`mirror-image` reports `copied == true` **and** its `digest` output differs from
+`previous-digest`. The digest guard matters because with `copy_referrers` the
+mirror reports `copied == true` even when the image digest is unchanged (it
+re-syncs referrers); without the guard that would attach a duplicate acquisition
+referrer to the same subject digest on every run. When the destination is
+already up to date, no new referrer is written. This ties each acquisition
+referrer to a distinct acquired digest and avoids churn on unchanged images.
 
 ## Where it lives
 
@@ -192,12 +196,12 @@ existing "Log in to GHCR" step, so no new secrets are needed.
 ## Idempotency and history
 
 `oras attach` **adds** a referrer; it does not replace existing ones. Because the
-action only runs when `copied == true`, each acquisition changes the destination
-digest (for a non-referrer copy the digests differed by definition), so each new
-acquisition referrer attaches to a **new** subject digest. Re-pulling the same
-unchanged tag does not create duplicates. Multiple acquisition referrers on the
-*same* subject digest are therefore not expected in normal operation; pruning of
-historical referrers is out of scope for this design.
+action only runs when the acquired digest changed (see
+[When it runs](#when-it-runs)), each new acquisition referrer attaches to a
+**new** subject digest. Re-pulling the same unchanged tag — including the
+`copy_referrers` re-sync path — does not create duplicates. Multiple acquisition
+referrers on the *same* subject digest are therefore not expected in normal
+operation; pruning of historical referrers is out of scope for this design.
 
 ## Retrieval
 

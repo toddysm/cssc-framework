@@ -98,7 +98,7 @@ recording where it was acquired from (source registry/repository/tag/digest),
 when, and by which workflow run. Attached to the index/tag manifest and each
 per-platform child manifest (artifact type `application/vnd.in-toto+json`,
 predicate type `https://toddysm.com/acquisition-provenance/v0.1`). Runs only on
-external → quarantine acquisition, and only when a copy actually happened. See
+external → quarantine acquisition, and only when the acquired digest changed. See
 [acquisition provenance](acquisition-provenance.md).
 
 | Input | Required | Default | Description |

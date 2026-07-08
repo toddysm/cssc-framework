@@ -166,8 +166,9 @@ Key tooling characteristics:
   attached to the mirrored image (index and each per-platform manifest) recording
   the source registry/repository/tag/digest, the acquisition timestamp, and the
   workflow run. It is an in-toto statement discoverable with `oras discover`,
-  written only for external → quarantine acquisitions and only when a copy
-  happened. Controlled by the `record_acquisition_provenance` input (default on).
+  written only for external → quarantine acquisitions and only when the
+  acquired digest changed. Controlled by the `record_acquisition_provenance`
+  input (default on).
 - **Authenticated sources.** Setting `source_login_registry` (plus the
   `source_registry_username` / `source_registry_password` secrets) lets the
   mirror pull from private or non–Docker Hub upstreams such as `dhi.io`. Public

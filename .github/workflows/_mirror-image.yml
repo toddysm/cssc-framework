@@ -99,7 +99,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-          with-oras: ${{ inputs.copy_referrers }}
+          with-oras: ${{ inputs.copy_referrers || inputs.record_acquisition_provenance }}
 
       - name: Mirror image
         id: mirror
@@ -114,10 +114,14 @@ jobs:
 
       - name: Attach acquisition provenance
         # Record where this image was acquired from, but only for external ->
-        # quarantine acquisitions (this reusable workflow) and only when a copy
-        # actually happened. Promotion uses the promote-from-quarantine
-        # workflows, which do not call this step.
-        if: ${{ inputs.record_acquisition_provenance && steps.mirror.outputs.copied == 'true' }}
+        # quarantine acquisitions (this reusable workflow) and only when the
+        # acquired digest actually changed. The digest guard matters because
+        # with copy_referrers the mirror reports copied=true even when the
+        # image digest is unchanged (it re-syncs referrers), and we do not want
+        # to attach a duplicate acquisition referrer to the same subject digest.
+        # Promotion uses the promote-from-quarantine workflows, which do not
+        # call this step.
+        if: ${{ inputs.record_acquisition_provenance && steps.mirror.outputs.copied == 'true' && steps.mirror.outputs.digest != steps.mirror.outputs.previous-digest }}
         uses: ./.github/actions/attach-acquisition-provenance
         with:
           source-image: ${{ inputs.source_image }}

@@ -95,11 +95,23 @@ runs:
         #   $3 = platform source digest ("" for the index-level statement)
         build_statement() {
           local subject_digest="$1" out="$2" platform_digest="$3"
-          local subject_sha="${subject_digest#sha256:}"
+          # Digests are <algorithm>:<hex> (e.g. sha256:...). Parse the algorithm
+          # generically rather than assuming sha256, and fail fast on anything
+          # that does not look like a digest.
+          case "${subject_digest}" in
+            ?*:?*) : ;;
+            *)
+              echo "::error::Unexpected digest '${subject_digest}' (expected <algorithm>:<hex>)."
+              return 1
+              ;;
+          esac
+          local subject_algo="${subject_digest%%:*}"
+          local subject_hex="${subject_digest#*:}"
           jq -n \
             --arg predicate_type "${PREDICATE_TYPE}" \
             --arg dest_image "${DEST_IMAGE}" \
-            --arg subject_sha "${subject_sha}" \
+            --arg subject_algo "${subject_algo}" \
+            --arg subject_hex "${subject_hex}" \
             --arg source_ref "${source_ref}" \
             --arg source_registry "${source_registry}" \
             --arg source_repository "${source_repository}" \
@@ -120,7 +132,7 @@ runs:
             '{
               _type: "https://in-toto.io/Statement/v1",
               predicateType: $predicate_type,
-              subject: [ { name: $dest_image, digest: { "sha256": $subject_sha } } ],
+              subject: [ { name: $dest_image, digest: { ($subject_algo): $subject_hex } } ],
               predicate: ({
                 source: {
                   reference: $source_ref,
@@ -174,7 +186,10 @@ runs:
         child_digests="$(crane manifest "${DEST_IMAGE}@${ACQUIRED_DIGEST}" \
           | jq -r '.manifests[]?
               | select((.platform.os // "") != "" and (.platform.os // "") != "unknown")
-              | [.digest, (.platform.os + "-" + .platform.architecture)] | @tsv' || true)"
+              | [ .digest,
+                  (.platform.os + "-" + .platform.architecture
+                   + (if (.platform.variant // "") != "" then "-" + .platform.variant else "" end)) ]
+              | @tsv' || true)"
 
         if [ -n "${child_digests}" ]; then
           while IFS=$'\t' read -r digest platform; do

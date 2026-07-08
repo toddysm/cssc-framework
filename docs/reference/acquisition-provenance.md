@@ -6,7 +6,7 @@ the image came from and how it was acquired. It is attached by the
 [`attach-acquisition-provenance`](workflow-actions.md#attach-acquisition-provenance)
 action from the [`_mirror-image.yml`](../../.github/workflows/_mirror-image.yml)
 workflow, only on external → quarantine acquisitions (never on promotion), and
-only when a copy actually happened.
+only when the acquired digest changed.
 
 The architecture and rationale are in
 [docs/architecture/acquire/acquisition-provenance.md](../architecture/acquire/acquisition-provenance.md).
