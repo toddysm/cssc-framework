@@ -1,0 +1,189 @@
+# Composite action: attach-acquisition-provenance
+#
+# Attach an acquisition-provenance OCI 1.1 referrer to a freshly-mirrored image.
+# For every image acquired from an external registry into quarantine, this
+# records where the image came from (source registry/repository/tag/digest),
+# where it landed, when it was acquired, and by which workflow run.
+#
+# The referrer is an in-toto Statement (artifact type
+# application/vnd.in-toto+json, predicate type
+# https://toddysm.com/acquisition-provenance/v0.1). One statement is attached to
+# the index/tag manifest and one to each per-platform child manifest; the
+# per-platform statements additionally record the platform source digest.
+#
+# This action is intended to run only on the external -> quarantine acquisition
+# (from _mirror-image.yml), not on quarantine -> golden promotion.
+#
+# Terminology and the action catalogue: see docs/reference/workflow-actions.md.
+name: attach-acquisition-provenance
+description: Attach an acquisition-provenance in-toto referrer to a mirrored image.
+
+inputs:
+  source-image:
+    description: "Fully qualified source image without tag (e.g. docker.io/library/python)."
+    required: true
+  source-tag:
+    description: "Source image tag that was acquired (e.g. 3.14-slim)."
+    required: true
+  dest-image:
+    description: "Fully qualified destination image without tag (e.g. ghcr.io/owner/quarantine/python)."
+    required: true
+  dest-tag:
+    description: "Destination image tag."
+    required: true
+  acquired-digest:
+    description: "Digest of the acquired image at the destination (the mirror-image 'digest' output)."
+    required: true
+  copy-referrers:
+    description: "Whether the mirror copied OCI referrers (selects the copy method oras vs crane)."
+    required: false
+    default: "false"
+  source-authenticated:
+    description: "'true' when the mirror logged in to the source registry (e.g. dhi.io) instead of an anonymous pull."
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Attach acquisition provenance to ${{ inputs.dest-image }}:${{ inputs.dest-tag }}
+      shell: bash
+      env:
+        SOURCE_IMAGE: "${{ inputs.source-image }}"
+        SOURCE_TAG: "${{ inputs.source-tag }}"
+        DEST_IMAGE: "${{ inputs.dest-image }}"
+        DEST_TAG: "${{ inputs.dest-tag }}"
+        ACQUIRED_DIGEST: "${{ inputs.acquired-digest }}"
+        COPY_REFERRERS: "${{ inputs.copy-referrers }}"
+        SOURCE_AUTHENTICATED: "${{ inputs.source-authenticated }}"
+        ACTOR: "${{ github.actor }}"
+        WORKFLOW: "${{ github.workflow }}"
+        RUN_ID: "${{ github.run_id }}"
+        RUN_ATTEMPT: "${{ github.run_attempt }}"
+        SERVER_URL: "${{ github.server_url }}"
+        REPOSITORY: "${{ github.repository }}"
+      run: |
+        set -euo pipefail
+
+        PREDICATE_TYPE="https://toddysm.com/acquisition-provenance/v0.1"
+
+        source_ref="${SOURCE_IMAGE}:${SOURCE_TAG}"
+        dest_ref="${DEST_IMAGE}:${DEST_TAG}"
+        # Digests are preserved during the copy, so the acquired digest is also
+        # the source digest.
+        source_digest="${ACQUIRED_DIGEST}"
+
+        # Split the source image into registry + repository. The registry is the
+        # first path segment; everything after it is the repository.
+        source_registry="${SOURCE_IMAGE%%/*}"
+        source_repository="${SOURCE_IMAGE#*/}"
+
+        if [ "${COPY_REFERRERS}" = "true" ]; then
+          copy_method="oras"
+        else
+          copy_method="crane"
+        fi
+
+        acquired_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        run_url="${SERVER_URL}/${REPOSITORY}/actions/runs/${RUN_ID}"
+
+        work="$(mktemp -d)"
+
+        # Build one in-toto Statement. Arguments:
+        #   $1 = subject digest (sha256:...)
+        #   $2 = output file
+        #   $3 = platform source digest ("" for the index-level statement)
+        build_statement() {
+          local subject_digest="$1" out="$2" platform_digest="$3"
+          local subject_sha="${subject_digest#sha256:}"
+          jq -n \
+            --arg predicate_type "${PREDICATE_TYPE}" \
+            --arg dest_image "${DEST_IMAGE}" \
+            --arg subject_sha "${subject_sha}" \
+            --arg source_ref "${source_ref}" \
+            --arg source_registry "${source_registry}" \
+            --arg source_repository "${source_repository}" \
+            --arg source_tag "${SOURCE_TAG}" \
+            --arg source_digest "${source_digest}" \
+            --arg dest_ref "${dest_ref}" \
+            --arg dest_digest "${ACQUIRED_DIGEST}" \
+            --arg acquired_at "${acquired_at}" \
+            --arg run_url "${run_url}" \
+            --arg actor "${ACTOR}" \
+            --arg workflow "${WORKFLOW}" \
+            --arg run_id "${RUN_ID}" \
+            --arg run_attempt "${RUN_ATTEMPT}" \
+            --arg copy_method "${copy_method}" \
+            --argjson copy_referrers "${COPY_REFERRERS}" \
+            --argjson source_authenticated "${SOURCE_AUTHENTICATED}" \
+            --arg platform_digest "${platform_digest}" \
+            '{
+              _type: "https://in-toto.io/Statement/v1",
+              predicateType: $predicate_type,
+              subject: [ { name: $dest_image, digest: { "sha256": $subject_sha } } ],
+              predicate: ({
+                source: {
+                  reference: $source_ref,
+                  registry: $source_registry,
+                  repository: $source_repository,
+                  tag: $source_tag,
+                  digest: $source_digest
+                },
+                destination: {
+                  reference: $dest_ref,
+                  digest: $dest_digest
+                },
+                acquiredAt: $acquired_at,
+                runUrl: $run_url,
+                actor: $actor,
+                workflow: { name: $workflow, runId: $run_id, runAttempt: $run_attempt },
+                copyMethod: $copy_method,
+                copyReferrers: $copy_referrers,
+                sourceAuthenticated: $source_authenticated
+              } + (if $platform_digest == "" then {} else { platformSourceDigest: $platform_digest } end))
+            }' > "${out}"
+        }
+
+        # Attach a statement file to a subject as an OCI 1.1 referrer.
+        #   $1 = subject ref (image@digest)
+        #   $2 = statement file
+        #   $3 = title annotation value
+        attach_statement() {
+          local subject_ref="$1" file="$2" title="$3"
+          oras attach \
+            --artifact-type application/vnd.in-toto+json \
+            --annotation "in-toto.io/predicate-type=${PREDICATE_TYPE}" \
+            --annotation "org.opencontainers.image.title=${title}" \
+            --annotation "com.toddysm.acquisition.source=${source_ref}" \
+            --annotation "com.toddysm.acquisition.source-digest=${source_digest}" \
+            --annotation "com.toddysm.acquisition.timestamp=${acquired_at}" \
+            --annotation "com.toddysm.acquisition.run-url=${run_url}" \
+            --disable-path-validation \
+            "${subject_ref}" \
+            "${file}:application/vnd.in-toto+json"
+        }
+
+        # Index / tag level statement (whole acquired image).
+        index_file="${work}/acquisition-provenance.json"
+        build_statement "${ACQUIRED_DIGEST}" "${index_file}" ""
+        echo "Attaching index-level acquisition provenance to ${DEST_IMAGE}@${ACQUIRED_DIGEST}"
+        attach_statement "${DEST_IMAGE}@${ACQUIRED_DIGEST}" "${index_file}" "acquisition-provenance.json"
+
+        # Per-platform statements. Enumerate real platform child manifests (skip
+        # attestation/unknown entries), matching the scan-sbom platform filter.
+        child_digests="$(crane manifest "${DEST_IMAGE}@${ACQUIRED_DIGEST}" \
+          | jq -r '.manifests[]?
+              | select((.platform.os // "") != "" and (.platform.os // "") != "unknown")
+              | [.digest, (.platform.os + "-" + .platform.architecture)] | @tsv' || true)"
+
+        if [ -n "${child_digests}" ]; then
+          while IFS=$'\t' read -r digest platform; do
+            [ -n "${digest}" ] || continue
+            file="${work}/acquisition-provenance-${platform}.json"
+            build_statement "${digest}" "${file}" "${digest}"
+            echo "Attaching ${platform} acquisition provenance to ${DEST_IMAGE}@${digest}"
+            attach_statement "${DEST_IMAGE}@${digest}" "${file}" "acquisition-provenance-${platform}.json"
+          done <<< "${child_digests}"
+        else
+          echo "No per-platform child manifests found; index-level provenance only."
+        fi

@@ -31,6 +31,7 @@ phrasings it replaces.
 | __scan-sbom__ | Scan one image's per-platform SBOM attestations with `trivy sbom`. | "scan platform SBOMs" |
 | __evaluate-findings__ | Apply the severity threshold + CVE exceptions to produce a gate decision. | "gate on scan findings" |
 | __attach-scan-report__ | Attach the OCI scan-report referrer to a promoted image. | "attach scan-report attestation" |
+| __attach-acquisition-provenance__ | Attach the acquisition-provenance in-toto referrer to a mirrored image. | "acquisition provenance" |
 | __delete-image__ | Delete one tag from a GHCR repository via the Packages API. | "delete promoted tags from quarantine" |
 
 Standard nouns:
@@ -89,6 +90,26 @@ promotion (promotion is a mirror with `force: true`).
 | `copy-referrers` | no | `false` | Use `oras cp -r` to carry referrers (SBOM/provenance/VEX/signatures). |
 
 Outputs: `copied`, `digest`, `previous-digest`, `referrers-note`.
+
+### attach-acquisition-provenance
+
+Attach an acquisition-provenance in-toto referrer to a freshly-mirrored image,
+recording where it was acquired from (source registry/repository/tag/digest),
+when, and by which workflow run. Attached to the index/tag manifest and each
+per-platform child manifest (artifact type `application/vnd.in-toto+json`,
+predicate type `https://toddysm.com/acquisition-provenance/v0.1`). Runs only on
+external → quarantine acquisition, and only when a copy actually happened. See
+[acquisition provenance](acquisition-provenance.md).
+
+| Input | Required | Default | Description |
+| ----- | -------- | ------- | ----------- |
+| `source-image` | yes | — | Source image without tag. |
+| `source-tag` | yes | — | Source tag that was acquired. |
+| `dest-image` | yes | — | Destination image without tag. |
+| `dest-tag` | yes | — | Destination tag. |
+| `acquired-digest` | yes | — | Digest of the acquired image (the `mirror-image` `digest` output). |
+| `copy-referrers` | no | `false` | Whether the mirror copied referrers (records the copy method). |
+| `source-authenticated` | no | `false` | `true` when the mirror logged in to the source registry. |
 
 ### scan-image
 

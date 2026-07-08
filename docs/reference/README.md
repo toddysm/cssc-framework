@@ -7,3 +7,4 @@ Reference material and conventions for the `cssc-framework` repository.
    nouns), and how the reusable workflows compose the actions.
 - [Image annotations](image-annotations.md) — OCI manifest annotations carried by the CSSC Dashboard images.
 - [Image attestations](image-attestations.md) — SBOM and provenance attestations published as OCI 1.1 referrers on the CSSC Dashboard images.
+- [Acquisition provenance](acquisition-provenance.md) — the OCI 1.1 referrer attached to mirrored images recording where they were acquired from.

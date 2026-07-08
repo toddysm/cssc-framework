@@ -161,6 +161,13 @@ Key tooling characteristics:
   per-platform child manifest. This is what lets downstream SBOM-based scanning
   read attestations straight from quarantine. It works for any image that has
   referrers, not just Docker Hardened Images.
+- **Acquisition provenance.** After a successful copy, an
+  [acquisition-provenance referrer](../../reference/acquisition-provenance.md) is
+  attached to the mirrored image (index and each per-platform manifest) recording
+  the source registry/repository/tag/digest, the acquisition timestamp, and the
+  workflow run. It is an in-toto statement discoverable with `oras discover`,
+  written only for external → quarantine acquisitions and only when a copy
+  happened. Controlled by the `record_acquisition_provenance` input (default on).
 - **Authenticated sources.** Setting `source_login_registry` (plus the
   `source_registry_username` / `source_registry_password` secrets) lets the
   mirror pull from private or non–Docker Hub upstreams such as `dhi.io`. Public
@@ -184,10 +191,11 @@ Key tooling characteristics:
 - **No image scanning or vulnerability gating.** Despite the `quarantine/`
   naming, the workflows do not scan images or block copying based on CVEs,
   policy, or signatures — they perform a straight mirror.
-- **No signing or attestation generation.** Mirrored images are not signed (e.g.
-  cosign) and no new provenance/SBOM attestations are produced or verified. When
-  `copy_referrers` is enabled, existing referrers (including the upstream's
-  SBOMs and signatures) are copied verbatim but are not re-verified.
+- **No signing, SBOM, or verification.** Mirrored images are not signed (e.g.
+  cosign), no SBOMs are generated, and existing referrers are not re-verified.
+  When `copy_referrers` is enabled, upstream referrers (SBOMs and signatures) are
+  copied verbatim but not re-verified. The one attestation the mirror *does*
+  produce is the first-party acquisition-provenance referrer described above.
 - **No automatic tag discovery.** Each workflow mirrors one explicitly pinned
   source tag (e.g. `python:3.14-slim`). New tags or floating/`latest` tags are
   not discovered or tracked automatically; updating a tag is a manual edit to the
