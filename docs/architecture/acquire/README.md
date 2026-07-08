@@ -8,3 +8,9 @@ controlled namespace before they are used.
 - [Image mirror workflows](image-mirror-workflows.md) — how the Docker Hub →
   GHCR mirroring actions are structured, the tooling they use, and what they do
   and deliberately do not do.
+
+## Supply Chain Observability
+
+- [Acquisition provenance referrer](acquisition-provenance.md) — an OCI 1.1
+  referrer attached to each mirrored image recording where it was acquired from
+  and how (source registry, tag, digest, timestamp, workflow run).
