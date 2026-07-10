@@ -78,12 +78,15 @@ the natural next attestation to store the same way.
 | B. Raw Trivy JSON as the payload blob | *(none — proprietary)* | Full per-CVE detail; already produced for gating. | Not an in-toto attestation; Trivy-proprietary schema; not verifiable as an attestation. |
 | C. In-toto native vuln predicate | `https://in-toto.io/attestation/vulns/v0.1` | in-toto-native; scanner-agnostic. | Trivy does not emit this directly; would require hand-assembly of the predicate. |
 
-**Recommendation: Option A**, and additionally embed the full `trivy --format
-json` report as a second layer (or as an annotation-referenced companion) so the
-detailed finding set is retrievable too. The cosign-vuln predicate gives a
-standard, verifiable attestation; the raw report gives the auditable detail. If
-we must pick one payload, the cosign-vuln statement wins because it is a real
-attestation.
+**Recommendation: Option A** — attach the cosign-vuln in-toto Statement as the
+single referrer payload. The cosign-vuln predicate gives a standard, verifiable
+attestation and embeds the per-package finding set from Trivy's report, so it is
+both a real attestation and retrievable evidence.
+
+> **Optional future enhancement:** additionally embed the full
+> `trivy --format json` report as a second layer (or an annotation-referenced
+> companion) for consumers that want Trivy's native schema. This is **not**
+> implemented — the current referrer carries only the cosign-vuln statement.
 
 ### Referrer shape
 
