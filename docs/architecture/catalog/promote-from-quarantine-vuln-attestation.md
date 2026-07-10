@@ -1,7 +1,11 @@
 # Vulnerability-attestation scan report
 
-> **Status: proposed.** This document describes a planned change to the
-> promote-from-quarantine scan-report referrer. It is not yet implemented.
+> **Status: implemented.** The promote-from-quarantine scan-report referrer is
+> a content-bearing in-toto vulnerability attestation (see the
+> [scan-image](../../../.github/actions/scan-image/action.yml),
+> [scan-sbom](../../../.github/actions/scan-sbom/action.yml), and
+> [attach-scan-report](../../../.github/actions/attach-scan-report/action.yml)
+> actions).
 
 This document describes replacing the **empty** OCI scan-report referrer that
 the promote-from-quarantine workflows attach today with a **content-bearing

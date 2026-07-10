@@ -30,7 +30,7 @@ phrasings it replaces.
 | __scan-image__ | Scan one image filesystem with `trivy image`. | "scan images with Trivy" |
 | __scan-sbom__ | Scan one image's per-platform SBOM attestations with `trivy sbom`. | "scan platform SBOMs" |
 | __evaluate-findings__ | Apply the severity threshold + CVE exceptions to produce a gate decision. | "gate on scan findings" |
-| __attach-scan-report__ | Attach the OCI scan-report referrer to a promoted image. | "attach scan-report attestation" |
+| __attach-scan-report__ | Attach the OCI scan-report referrer — an in-toto vulnerability attestation payload plus summary annotations — to a promoted image. | "attach scan-report attestation" |
 | __attach-acquisition-provenance__ | Attach the acquisition-provenance in-toto referrer to a mirrored image. | "acquisition provenance" |
 | __delete-image__ | Delete one tag from a GHCR repository via the Packages API. | "delete promoted tags from quarantine" |
 
