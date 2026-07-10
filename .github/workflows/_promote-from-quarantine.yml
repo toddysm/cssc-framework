@@ -241,6 +241,7 @@ jobs:
         uses: ./.github/actions/attach-scan-report
         with:
           image-ref: ${{ inputs.dest_repo }}:${{ matrix.tag }}
+          attestation-file: ${{ steps.scan.outputs.attestation-path }}
           source-repo: ${{ inputs.source_repo }}
           tag: ${{ matrix.tag }}
           threshold: ${{ inputs.severity_threshold }}

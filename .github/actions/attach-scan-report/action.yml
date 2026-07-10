@@ -1,17 +1,23 @@
 # Composite action: attach-scan-report
 #
-# Attach an empty OCI scan-report referrer to a promoted image with `oras
-# attach`. The referrer records how and when the image was cleared: its scan
-# method, source, tag, threshold, excepted CVEs, and scanner name/version. It
-# carries annotations only (no layer blobs); its subject is the promoted image.
+# Attach an OCI vulnerability-attestation referrer to a promoted image with
+# `oras attach`. The referrer carries the scan result as an in-toto
+# vulnerability attestation (a Cosign vuln scan record, predicate type
+# https://cosign.sigstore.dev/attestation/vuln/v1) in its payload layer, and
+# records how and when the image was cleared as manifest annotations: its scan
+# method, source, tag, threshold, excepted CVEs, and scanner name/version. Its
+# subject is the promoted image.
 #
 # Terminology: see docs/reference/workflow-actions.md.
 name: attach-scan-report
-description: Attach an empty OCI scan-report referrer to a promoted image.
+description: Attach an OCI vulnerability-attestation referrer to a promoted image.
 
 inputs:
   image-ref:
     description: "Promoted image to attach the referrer to (repo:tag)."
+    required: true
+  attestation-file:
+    description: "Path to the in-toto vulnerability attestation to attach as the referrer payload."
     required: true
   source-repo:
     description: "Repository the image was promoted from (recorded in the referrer)."
@@ -61,6 +67,7 @@ runs:
       shell: bash
       env:
         IMAGE_REF: "${{ inputs.image-ref }}"
+        ATTESTATION_FILE: "${{ inputs.attestation-file }}"
         SOURCE_REPO: "${{ inputs.source-repo }}"
         TAG: "${{ inputs.tag }}"
         THRESHOLD: "${{ inputs.threshold }}"
@@ -79,8 +86,14 @@ runs:
         created="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         echo "Attaching scan report to ${IMAGE_REF}"
 
+        if [ ! -s "${ATTESTATION_FILE}" ]; then
+          echo "::error::attestation-file '${ATTESTATION_FILE}' is missing or empty" >&2
+          exit 1
+        fi
+
         args=(
-          --artifact-type application/vnd.cssc.scan-report.v1+json
+          --artifact-type application/vnd.in-toto+json
+          --annotation "in-toto.io/predicate-type=https://cosign.sigstore.dev/attestation/vuln/v1"
           --annotation "org.opencontainers.image.created=${created}"
           --annotation "com.cssc.scan.source=${SOURCE_REPO}"
           --annotation "com.cssc.scan.tag=${TAG}"
@@ -111,4 +124,5 @@ runs:
           )
         fi
 
-        oras attach "${args[@]}" "${IMAGE_REF}"
+        oras attach "${args[@]}" --disable-path-validation \
+          "${IMAGE_REF}" "${ATTESTATION_FILE}:application/vnd.in-toto+json"
