@@ -227,7 +227,7 @@ promoted into a dedicated `base/hardened/<image>` namespace rather than the
 | **GitHub Actions** | Orchestration: scheduling, manual dispatch, reusable-workflow composition, concurrency, and job summaries. |
 | **[Trivy](https://github.com/aquasecurity/trivy)** | Vulnerability scanner. Scans each remote image and emits JSON filtered to the configured severity floor. |
 | **[`crane`](https://github.com/google/go-containerregistry/blob/main/cmd/crane/README.md)** | Registry client: `crane ls` to enumerate tags and `crane copy` to promote images (preserving multi-architecture manifest lists). |
-| **[`oras`](https://oras.land)** | Creates and attaches the empty scan-report referrer (`oras attach` with annotations only). |
+| **[`oras`](https://oras.land)** | Builds and attaches the scan-report referrer — an in-toto vulnerability attestation payload plus summary annotations (`oras attach`). |
 | **`jq`** | Parses Trivy JSON and computes the blocking, excepted, and remaining CVE sets. |
 | **`GITHUB_TOKEN`** | Built-in token used to authenticate to GHCR for scan, copy, and attach (`packages: write`). |
 | **Optional `ghcr_delete_token` PAT** | Used only for deleting quarantine tags via the GitHub Packages REST API. |
@@ -243,13 +243,18 @@ Key characteristics:
 ## Scan-report referrer artifact
 
 For every promoted image the workflow attaches an **OCI referrer artifact** to
-the image in `golden/<image>`. It is an *empty* artifact — a manifest with the
-standard empty config descriptor and **no layer blobs** — created with
-`oras attach` using annotations only. Its `subject` is the promoted image, so
-registry clients (`oras discover`, `crane manifest`, etc.) can list it as a
-referrer of the image.
+the image in `golden/<image>`. It carries the scan result as an **in-toto
+vulnerability attestation** in its payload layer — a
+[Cosign vulnerability scan record](https://trivy.dev/docs/latest/supply-chain/attestation/vuln/)
+(produced by `trivy convert --format cosign-vuln`, no re-scan) wrapped in an
+in-toto `Statement` — and records how/when the image was cleared as manifest
+**annotations**. Its `subject` is the promoted image, so registry clients
+(`oras discover`, `crane manifest`, etc.) can list it as a referrer of the
+image; pulling the referrer yields the full finding set.
 
-- **Artifact type:** `application/vnd.cssc.scan-report.v1+json`
+- **Artifact type:** `application/vnd.in-toto+json`
+- **Predicate type:** `https://cosign.sigstore.dev/attestation/vuln/v1`
+  (recorded in the `in-toto.io/predicate-type` annotation)
 
 | Annotation key | Example value | Meaning |
 | -------------- | ------------- | ------- |
@@ -272,8 +277,9 @@ referrer of the image.
 - **Per-repository tag enumeration.** Every tag in the quarantine repository is
   scanned and gated independently in one run.
 - **Multi-architecture preservation** via `crane copy`.
-- **Scan-report provenance.** Each promoted image gets an empty OCI referrer
-  artifact recording scan date, source, tag, threshold, excepted CVEs, and
+- **Scan-report provenance.** Each promoted image gets an in-toto
+  vulnerability-attestation referrer carrying the full finding set, plus
+  annotations recording scan date, source, tag, threshold, excepted CVEs, and
   scanner name/version.
 - **Quarantine cleanup.** Promoted tags are deleted from quarantine when a
   delete token is configured (see below).
@@ -305,11 +311,12 @@ The workflow therefore treats deletion as configurable:
 
 ### Not implemented (deliberately out of scope)
 
-- **No signing.** Promoted images are not signed (e.g. cosign). The image-based
-  scanner (`_promote-from-quarantine.yml`) produces no SBOM/provenance; the SBOM-based
-  scanner (`_promote-from-quarantine-sbom.yml`) does not generate attestations but copies the
-  upstream's existing SBOM/provenance/VEX/signature referrers verbatim during
-  promotion.
+- **No signing.** The vulnerability-attestation referrer is recorded but **not
+  signed** (e.g. with cosign); signing can be layered on later without changing
+  the payload. The image-based scanner (`_promote-from-quarantine.yml`) produces
+  no SBOM/provenance of its own; the SBOM-based scanner
+  (`_promote-from-quarantine-sbom.yml`) copies the upstream's existing
+  SBOM/provenance/VEX/signature referrers verbatim during promotion.
 - **No automatic remediation.** Blocked images are left in quarantine; the
   workflow does not patch, rebuild, or open tickets for them.
 - **No cross-scanner support.** Trivy is the only scanner; the referrer schema

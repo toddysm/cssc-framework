@@ -13,3 +13,7 @@ on a vulnerability policy, and promoting the ones that pass into `golden/*`.
 - [Promotion override approval](promote-from-quarantine-override-approval.md) —
   the human-in-the-loop approve/deny path for promoting an image that a policy
   would otherwise block.
+- [Vulnerability-attestation scan report](promote-from-quarantine-vuln-attestation.md)
+  — replacing the empty scan-report referrer with a content-bearing in-toto
+  vulnerability attestation while keeping the `com.cssc.scan.*` summary
+  annotations. (Also serves **Supply Chain Observability**.)

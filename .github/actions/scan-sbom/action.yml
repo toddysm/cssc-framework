@@ -9,7 +9,9 @@
 #
 # Emits the union of vulnerability IDs across all platforms, the number of
 # platforms whose SBOM could not be found (a blocking condition), the platform
-# count, and a Markdown fragment with the per-platform breakdown.
+# count, a Markdown fragment with the per-platform breakdown, and an image-level
+# in-toto vulnerability attestation (a Cosign vuln scan record built from the
+# merged per-platform findings).
 #
 # Terminology: see docs/reference/workflow-actions.md.
 name: scan-sbom
@@ -48,6 +50,9 @@ outputs:
   platform-detail-path:
     description: "Path to a Markdown fragment with the per-platform findings table rows."
     value: ${{ steps.scan.outputs.platform-detail-path }}
+  attestation-path:
+    description: "Path to the image-level in-toto vulnerability attestation (Cosign vuln predicate) built from the merged per-platform findings."
+    value: ${{ steps.scan.outputs.attestation-path }}
 
 runs:
   using: composite
@@ -120,6 +125,8 @@ runs:
         : > "${tag_blocking}"
         plat_detail="${OUTPUT_DIR}/platdetail.md"
         : > "${plat_detail}"
+        reports_list="${OUTPUT_DIR}/reports.txt"        # per-platform report paths
+        : > "${reports_list}"
         missing_sbom=0
         platform_count=0
 
@@ -139,6 +146,7 @@ runs:
           report="${OUTPUT_DIR}/report-$(printf '%s' "${plat_name}" | tr '/' '_').json"
           trivy sbom --quiet --scanners vuln --severity "${SEVERITIES}" \
             --format json --output "${report}" "${sbom_file}"
+          printf '%s\n' "${report}" >> "${reports_list}"
 
           plat_ids="${OUTPUT_DIR}/ids.txt"
           jq -r '[.Results[]?.Vulnerabilities[]?.VulnerabilityID] | unique | .[]' \
@@ -163,7 +171,44 @@ runs:
         # platforms is reported once (matches the documented output semantics).
         sort -u "${tag_blocking}" -o "${tag_blocking}"
 
+        # Build one image-level vulnerability attestation: merge the per-platform
+        # Trivy JSON reports into a single report, convert it to a Cosign vuln
+        # scan record (no re-scan), and wrap it in an in-toto Statement whose
+        # subject is the image (index) digest.
+        merged="${OUTPUT_DIR}/merged-report.json"
+        attestation="${OUTPUT_DIR}/vuln-attestation.json"
+        vuln="${OUTPUT_DIR}/cosign-vuln.json"
+        if [ -s "${reports_list}" ]; then
+          # shellcheck disable=SC2046
+          jq -s '
+            { SchemaVersion: (.[0].SchemaVersion // 2),
+              ArtifactName: (.[0].ArtifactName // ""),
+              ArtifactType: (.[0].ArtifactType // ""),
+              Metadata: (.[0].Metadata // {}),
+              Results: ( map(.Results // []) | add | unique ) }
+          ' $(tr '\n' ' ' < "${reports_list}") > "${merged}"
+        else
+          jq -n '{SchemaVersion: 2, Results: []}' > "${merged}"
+        fi
+        trivy convert --quiet --format cosign-vuln --output "${vuln}" "${merged}"
+
+        ref_digest="$(crane digest "${src}")"
+        algo="${ref_digest%%:*}"
+        hexv="${ref_digest#*:}"
+        jq -n \
+          --arg name "${src%:*}" \
+          --arg algo "${algo}" \
+          --arg hexv "${hexv}" \
+          --slurpfile pred "${vuln}" \
+          '{
+            _type: "https://in-toto.io/Statement/v1",
+            subject: [ { name: $name, digest: { ($algo): $hexv } } ],
+            predicateType: "https://cosign.sigstore.dev/attestation/vuln/v1",
+            predicate: $pred[0]
+          }' > "${attestation}"
+
         echo "missing-sbom-count=${missing_sbom}" >> "${GITHUB_OUTPUT}"
         echo "platform-count=${platform_count}" >> "${GITHUB_OUTPUT}"
         echo "blocking-ids-path=${tag_blocking}" >> "${GITHUB_OUTPUT}"
         echo "platform-detail-path=${plat_detail}" >> "${GITHUB_OUTPUT}"
+        echo "attestation-path=${attestation}" >> "${GITHUB_OUTPUT}"
