@@ -86,22 +86,71 @@ The blob is the history document:
 ```json
 {
   "schemaVersion": 1,
-  "image": "ghcr.io/<owner>/quarantine/python",
+  "image": "ghcr.io/toddysm/quarantine/python",
   "source": "docker.io/library/python",
   "entries": [
     {
       "sourceTag": "3.14-slim",
-      "sourceDigest": "sha256:<source-manifest-digest>",
+      "sourceDigest": "sha256:aaaa1111...",
       "destTag": "3.14-slim",
       "syncedAt": "2026-07-30T06:00:00Z",
-      "runUrl": "https://github.com/<owner>/cssc-framework/actions/runs/<id>",
-      "runId": "<id>",
+      "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/123",
+      "runId": "123",
       "runAttempt": "1",
       "force": false
+    },
+    {
+      "sourceTag": "3.14-slim",
+      "sourceDigest": "sha256:bbbb2222...",
+      "destTag": "3.14-slim",
+      "syncedAt": "2026-08-13T06:00:00Z",
+      "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/456",
+      "runId": "456",
+      "runAttempt": "1",
+      "force": false
+    },
+    {
+      "sourceTag": "3.13-slim",
+      "sourceDigest": "sha256:cccc3333...",
+      "destTag": "3.13-slim",
+      "syncedAt": "2026-08-13T06:01:00Z",
+      "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/457",
+      "runId": "457",
+      "runAttempt": "1",
+      "force": true
     }
   ]
 }
 ```
+
+The first two entries (same `sourceTag`, different `sourceDigest`) are the common
+case: upstream re-pointed `3.14-slim` to a new digest, so both were mirrored once
+and both are recorded. A different tag (`3.13-slim`) lives in the same log.
+
+### Field reference
+
+| Field | Meaning |
+| ----- | ------- |
+| `schemaVersion` | Integer, currently `1`. Lets the format evolve. |
+| `image` | Destination repo the history belongs to. |
+| `source` | Upstream source image (without tag). |
+| `entries[]` | Append-only list; never pruned (unbounded). Ordered chronologically, oldest first. |
+| `entries[].sourceTag` | Source tag that was mirrored. Half of the dedupe key. |
+| `entries[].sourceDigest` | Source manifest digest. A match on `(sourceTag, sourceDigest)` means "already synchronized". Because the copy preserves digests, this is also the destination digest. |
+| `entries[].destTag` | Tag written in quarantine. |
+| `entries[].syncedAt` | RFC 3339 UTC timestamp of the sync. |
+| `entries[].runUrl` / `runId` / `runAttempt` | Workflow run that performed the sync (audit trail + the dashboard's run link). |
+| `entries[].force` | `true` when this sync was a `force` run (bypassed the history check). |
+
+**Locked schema decisions:**
+
+- **No separate `destDigest` field** — the copy preserves digests, so `sourceDigest`
+  is also the destination digest; storing it twice would be redundant.
+- **`force` appends a new entry** even when the same `(sourceTag, sourceDigest)`
+  is already recorded, so the log stays a complete, ordered audit trail rather
+  than mutating past entries.
+- **Chronological order** — new entries are appended to the end (oldest → newest);
+  consumers (e.g. the dashboard) sort/reverse as needed.
 
 - **History key** = `(sourceTag, sourceDigest)`. A digest is "already
   synchronized" when an entry exists with the same `sourceTag` **and**
