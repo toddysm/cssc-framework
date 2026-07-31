@@ -11,6 +11,11 @@ from typing import Any
 from ..clients import IssuesServiceClient, PackagesServiceClient
 from .base import Stage
 
+# Reserved tag under which the mirror workflows store the per-repo history
+# artifact. It is not a real image tag, so it is excluded when deciding whether
+# a repository still holds a quarantined image.
+MIRROR_HISTORY_TAG = "mirror-history"
+
 
 class AcquisitionProvider:
     stage = Stage(
@@ -68,6 +73,15 @@ class AcquisitionProvider:
 
         for pkg in packages:
             name = pkg.get("name", "")
+            # A repository still holds a quarantined image only if it has a tag
+            # other than the reserved history tag; a history-only package (its
+            # image already promoted and deleted) is not "in quarantine".
+            real_tags = [
+                tag.get("tag")
+                for tag in self._packages.get_tags(name)
+                if tag.get("tag") and tag.get("tag") != MIRROR_HISTORY_TAG
+            ]
+            synchronized = self._packages.get_history(name)
             issues: list[dict[str, Any]] = []
             for issue in all_issues:
                 if self._matches(issue.get("image") or "", name):
@@ -79,9 +93,10 @@ class AcquisitionProvider:
                     "name": name,
                     "visibility": pkg.get("visibility"),
                     "updated_at": pkg.get("updated_at"),
-                    "tag_count": pkg.get("tag_count"),
-                    "in_quarantine": True,
+                    "tag_count": len(real_tags),
+                    "in_quarantine": bool(real_tags),
                     "issues": issues,
+                    "synchronized": synchronized,
                 }
             )
 
@@ -107,6 +122,7 @@ class AcquisitionProvider:
                     "tag_count": None,
                     "in_quarantine": False,
                     "issues": issues,
+                    "synchronized": [],
                 }
             )
 
