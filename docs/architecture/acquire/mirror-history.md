@@ -1,6 +1,6 @@
 # Mirror history: skip re-synchronizing already-mirrored digests
 
-- **Status:** proposed (design under review)
+- **Status:** implemented on branch `feature/mirror-history` (pending end-to-end validation)
 - **Tracking issue:** [#157](https://github.com/toddysm/cssc-framework/issues/157)
 - **Stage:** Acquire
 
