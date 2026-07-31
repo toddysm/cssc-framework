@@ -73,6 +73,9 @@ class AcquisitionProvider:
 
         for pkg in packages:
             name = pkg.get("name", "")
+            # Two per-package reads (tags + history): acceptable at the demo's
+            # scale of a handful of quarantine repos; tags are served from
+            # packages-service's cached GitHub responses.
             # A repository still holds a quarantined image only if it has a tag
             # other than the reserved history tag; a history-only package (its
             # image already promoted and deleted) is not "in quarantine".

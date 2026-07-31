@@ -141,6 +141,10 @@ runs:
           echo "::error::mirror-history: 'record' requires dest-tag."
           exit 1
         fi
+        if [ -z "${SOURCE_IMAGE}" ]; then
+          echo "::error::mirror-history: 'record' requires source-image."
+          exit 1
+        fi
 
         synced_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         run_url="${SERVER_URL}/${REPOSITORY}/actions/runs/${RUN_ID}"

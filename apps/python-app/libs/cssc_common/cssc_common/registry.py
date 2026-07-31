@@ -35,6 +35,7 @@ class OciRegistryClient:
         registry: str = "ghcr.io",
         owner: str = "",
         token: str | None = None,
+        username: str | None = None,
         client: httpx.Client | None = None,
         transport: httpx.BaseTransport | None = None,
         timeout: float = 10.0,
@@ -42,6 +43,10 @@ class OciRegistryClient:
         self._registry = registry
         self._owner = owner
         self._token = token
+        # The token endpoint's Basic-auth username is the authenticating GitHub
+        # user, which is not necessarily the package owner (the owner may be an
+        # org). Default to the owner only as a fallback.
+        self._username = username or owner or "x"
 
         if client is not None:
             self._client = client
@@ -64,7 +69,7 @@ class OciRegistryClient:
         headers: dict[str, str] = {}
         if self._token:
             basic = base64.b64encode(
-                f"{self._owner or 'x'}:{self._token}".encode()
+                f"{self._username}:{self._token}".encode()
             ).decode()
             headers["Authorization"] = f"Basic {basic}"
         response = self._client.get(

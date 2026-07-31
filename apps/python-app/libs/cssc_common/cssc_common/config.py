@@ -16,6 +16,7 @@ class GitHubSettings:
     cache_ttl: int
     token: str | None = None
     owner_type: str = "user"
+    username: str | None = None
 
 
 def github_settings() -> GitHubSettings:
@@ -27,6 +28,9 @@ def github_settings() -> GitHubSettings:
     * ``GITHUB_OWNER`` / ``GITHUB_REPO`` — repository coordinates.
     * ``GITHUB_OWNER_TYPE`` — ``user`` (default) or ``org``; selects the
       ``/users/{owner}`` vs ``/orgs/{owner}`` Packages API root.
+    * ``GITHUB_USERNAME`` — the authenticating user's login, used as the
+      registry token-exchange Basic-auth username (defaults to ``GITHUB_OWNER``,
+      which is only correct when the owner is a user account).
     * ``GITHUB_API_URL`` — defaults to ``https://api.github.com``.
     * ``CACHE_TTL_SECONDS`` — response cache TTL (defaults to ``60``).
     """
@@ -38,4 +42,5 @@ def github_settings() -> GitHubSettings:
         cache_ttl=int(os.environ.get("CACHE_TTL_SECONDS", "60")),
         token=os.environ.get("GITHUB_TOKEN") or None,
         owner_type=os.environ.get("GITHUB_OWNER_TYPE", "user"),
+        username=os.environ.get("GITHUB_USERNAME") or None,
     )

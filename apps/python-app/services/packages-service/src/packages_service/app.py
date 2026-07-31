@@ -19,7 +19,9 @@ def build_client() -> PackagesClient:
         api_url=settings.api_url,
         cache_ttl=settings.cache_ttl,
     )
-    registry = OciRegistryClient(owner=settings.owner, token=settings.token)
+    registry = OciRegistryClient(
+        owner=settings.owner, token=settings.token, username=settings.username
+    )
     return PackagesClient(github, registry)
 
 

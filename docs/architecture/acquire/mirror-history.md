@@ -4,7 +4,7 @@
 - **Tracking issue:** [#157](https://github.com/toddysm/cssc-framework/issues/157)
 - **Stage:** Acquire
 
-This document proposes a durable **mirror history** so the image-mirror workflows
+This document describes the durable **mirror history** that lets the image-mirror workflows
 stop re-synchronizing a digest they have already acquired once — even after that
 digest has been promoted out of quarantine and deleted.
 
