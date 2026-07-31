@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI, Query
 
-from cssc_common import GitHubClient, github_settings
+from cssc_common import GitHubClient, OciRegistryClient, github_settings
 
 from .client import PackagesClient
 
@@ -19,7 +19,8 @@ def build_client() -> PackagesClient:
         api_url=settings.api_url,
         cache_ttl=settings.cache_ttl,
     )
-    return PackagesClient(github)
+    registry = OciRegistryClient(owner=settings.owner, token=settings.token)
+    return PackagesClient(github, registry)
 
 
 def create_app(client: PackagesClient | None = None) -> FastAPI:
@@ -52,6 +53,10 @@ def create_app(client: PackagesClient | None = None) -> FastAPI:
     @app.get("/packages/{name:path}/tags")
     def list_tags(name: str) -> list[dict]:
         return [tag.model_dump() for tag in get_client().list_tags(name)]
+
+    @app.get("/packages/{name:path}/history")
+    def get_history(name: str) -> list[dict]:
+        return [entry.model_dump() for entry in get_client().get_history(name)]
 
     return app
 

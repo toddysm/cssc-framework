@@ -4,14 +4,26 @@ from __future__ import annotations
 
 from urllib.parse import quote
 
-from cssc_common import GitHubClient, MirroredImage, Tag
+from cssc_common import (
+    MIRROR_HISTORY_TAG,
+    GitHubClient,
+    MirroredImage,
+    MirrorHistoryEntry,
+    OciRegistryClient,
+    Tag,
+)
 
 
 class PackagesClient:
     """Read container packages and their tags for the configured owner."""
 
-    def __init__(self, github: GitHubClient) -> None:
+    def __init__(
+        self,
+        github: GitHubClient,
+        registry: OciRegistryClient | None = None,
+    ) -> None:
         self._gh = github
+        self._registry = registry
 
     def _owner_root(self) -> str:
         """Return the Packages API root for the owner (user vs org).
@@ -75,3 +87,19 @@ class PackagesClient:
                     )
                 )
         return tags
+
+    def get_history(self, name: str) -> list[MirrorHistoryEntry]:
+        """Return the recorded synchronization history for a repository.
+
+        Reads the ``<name>:mirror-history`` OCI artifact from the registry.
+        Returns an empty list when no registry client is configured or the
+        repository has no history yet (the reserved tag is absent).
+        """
+
+        if self._registry is None:
+            return []
+        document = self._registry.fetch_json_artifact(name, MIRROR_HISTORY_TAG)
+        if not document:
+            return []
+        entries = document.get("entries") or []
+        return [MirrorHistoryEntry.model_validate(entry) for entry in entries]
