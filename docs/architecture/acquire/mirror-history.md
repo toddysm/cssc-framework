@@ -176,25 +176,43 @@ Key points:
 | Multi-arch | Unaffected; history keys on the index/source digest. |
 | Concurrency | Per-image group already serializes runs → safe read-modify-write. |
 | Promotion / delete-image | Benefits: the `mirror-history` tag keeps the package alive, avoiding the last-tagged-version delete workaround. No change required in promote workflows. |
-| Dashboard (`packages-service`) | Trade-off: after promotion+delete the `quarantine/<image>` package now persists (holding only `:mirror-history`). The dashboard may show a quarantine repo with no image tags. See open question O1. |
+| Dashboard | Extended: the Acquisition view surfaces a per-repo **synchronized history** read from the `:mirror-history` artifact, and excludes the reserved `mirror-history` tag when deciding whether an image is actually present in quarantine (see [Dashboard integration](#dashboard-integration)). |
+
+## Dashboard integration
+
+Rather than hide the persisted package, the CSSC Dashboard's **Acquisition** view
+is extended to *surface* what each repo has already synchronized (this resolves
+O1).
+
+- **Read the history.** `packages-service` gains a capability to fetch and parse
+  the `:mirror-history` artifact for a `quarantine/<image>` repo: resolve the
+  `mirror-history` tag manifest, read its single JSON layer blob, and return the
+  parsed `entries` (source tag, source digest, dest tag, `syncedAt`, run URL). It
+  reads the registry (GHCR v2) blob, not just the Packages API, since the entries
+  live in the artifact body. A new endpoint (e.g. `GET /packages/{name}/history`)
+  exposes it.
+- **Correct the "in quarantine" signal.** The reserved `mirror-history` tag is
+  excluded when determining whether an image is actually present in quarantine,
+  so a history-only package (image already promoted and deleted) is no longer
+  shown as if an image were still awaiting promotion.
+- **Render per repo.** Each Acquisition card shows, alongside its promotion
+  issues, a **Synchronized** list: the source tags/digests already mirrored (with
+  timestamp and run link), so it is clear what has flowed through the repo even
+  after the image itself has left quarantine.
+
+The access model is unchanged: only the outbound GitHub/registry read is
+authenticated (the existing `read:packages` token); no new inbound auth.
 
 ## Open questions for review
 
-- **O1 — Dashboard visibility (OPEN).** Keeping the package alive means
-  `quarantine/<image>` no longer vanishes when emptied by promotion. The CSSC
-  Dashboard's Acquisition view lists every `quarantine/*` package from the GHCR
-  Packages API and marks it `in_quarantine: true`; the package's `version_count`
-  is shown as its tag count. With this feature a promoted-and-deleted image still
-  has its `:mirror-history` tag, so the dashboard would keep showing a card for it
-  as if an image were still quarantined. Options: (a) accept it; (b) teach
-  `packages-service` / the Acquisition provider to ignore the reserved
-  `mirror-history` tag and treat a history-only package as empty (drop or badge
-  the card); (c) move history to a sibling `quarantine-history/<image>` repo so
-  quarantine still empties out. Pending decision — likely a small follow-up child
-  item under option (b).
+_All design questions are currently resolved — see below._
 
 ### Resolved
 
+- **O1 — Dashboard visibility.** Resolved: **surface, don't hide**. The dashboard
+  is extended to read the `:mirror-history` artifact and show a per-repo
+  synchronized history, and to exclude the reserved tag from the "in quarantine"
+  signal (see [Dashboard integration](#dashboard-integration)).
 - **O2 — `copy_referrers` + history.** Resolved: a recorded digest **also
   suppresses** the referrer re-copy (skip once recorded); `force` refreshes
   referrers on demand.
@@ -208,7 +226,10 @@ Key points:
 
 1. `mirror-history` composite action (`check` + `record`).
 2. `_mirror-image.yml` wiring (check before copy, record after).
-3. Reference + architecture docs (this doc finalized, action catalogue entry, a
+3. Dashboard integration: a `packages-service` history read + endpoint, and the
+   Acquisition view surfacing per-repo synchronized history (and excluding the
+   reserved tag from the "in quarantine" signal).
+4. Reference + architecture docs (this doc finalized, action catalogue entry, a
    `mirror-history` reference page, acquire index link).
-4. End-to-end validation: mirror → promote → delete → re-run mirror shows
+5. End-to-end validation: mirror → promote → delete → re-run mirror shows
    **skipped (already synchronized)** instead of re-copy.
