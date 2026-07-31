@@ -52,6 +52,11 @@ on:
         required: false
         default: true
         type: boolean
+      record_history:
+        description: "Maintain a mirror-history artifact (dest-image:mirror-history) and skip re-synchronizing a source digest already recorded for the tag (unless force). Records every synchronized digest."
+        required: false
+        default: true
+        type: boolean
     secrets:
       source_registry_username:
         description: "Username for source_login_registry. Required only when source_login_registry is set."
@@ -74,9 +79,10 @@ jobs:
         uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
 
       - name: Set up oras
-        # Needed when copying referrers or when attaching the acquisition
-        # provenance referrer; the plain crane-only path stays lightweight.
-        if: ${{ inputs.copy_referrers || inputs.record_acquisition_provenance }}
+        # Needed when copying referrers, attaching the acquisition provenance
+        # referrer, or maintaining the mirror-history artifact; the plain
+        # crane-only path stays lightweight.
+        if: ${{ inputs.copy_referrers || inputs.record_acquisition_provenance || inputs.record_history }}
         uses: oras-project/setup-oras@38de303aac69abb66f3e6255b7198bff35f323e3 # v2.0.0
         with:
           version: 1.3.1
@@ -99,10 +105,40 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-          with-oras: ${{ inputs.copy_referrers || inputs.record_acquisition_provenance }}
+          with-oras: ${{ inputs.copy_referrers || inputs.record_acquisition_provenance || inputs.record_history }}
+
+      - name: Resolve source digest
+        # Resolve the source digest up front so the history can be consulted
+        # before any copy. crane is already authenticated to the source.
+        id: source
+        if: ${{ inputs.record_history }}
+        env:
+          SOURCE_REF: "${{ inputs.source_image }}:${{ inputs.source_tag }}"
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest="$(crane digest "${SOURCE_REF}")"
+          echo "Source digest: ${digest}"
+          echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+
+      - name: Check mirror history
+        id: check
+        if: ${{ inputs.record_history }}
+        uses: ./.github/actions/mirror-history
+        with:
+          operation: check
+          dest-image: ${{ inputs.dest_image }}
+          source-image: ${{ inputs.source_image }}
+          source-tag: ${{ inputs.source_tag }}
+          source-digest: ${{ steps.source.outputs.digest }}
 
       - name: Mirror image
         id: mirror
+        # Skip the copy when this source digest for this tag has already been
+        # synchronized once (even if it was later promoted and deleted from
+        # quarantine), unless force is set. With history disabled the mirror
+        # always runs, preserving the original behaviour.
+        if: ${{ !inputs.record_history || steps.check.outputs.already-synchronized != 'true' || inputs.force }}
         uses: ./.github/actions/mirror-image
         with:
           source-image: ${{ inputs.source_image }}
@@ -132,6 +168,23 @@ jobs:
           copy-referrers: ${{ inputs.copy_referrers }}
           source-authenticated: ${{ inputs.source_login_registry != '' }}
 
+      - name: Record mirror history
+        # Record whenever the mirror actually ran (copied, or found the
+        # destination already up to date) — a run skipped by the history check
+        # leaves the mirror outputs empty. force runs append too, keeping the
+        # log a complete audit trail.
+        id: record
+        if: ${{ inputs.record_history && steps.mirror.outputs.digest != '' }}
+        uses: ./.github/actions/mirror-history
+        with:
+          operation: record
+          dest-image: ${{ inputs.dest_image }}
+          source-image: ${{ inputs.source_image }}
+          source-tag: ${{ inputs.source_tag }}
+          source-digest: ${{ steps.source.outputs.digest }}
+          dest-tag: ${{ inputs.dest_tag }}
+          force: ${{ inputs.force }}
+
       - name: Write job summary
         env:
           SOURCE_REF: "${{ inputs.source_image }}:${{ inputs.source_tag }}"
@@ -140,9 +193,20 @@ jobs:
           DIGEST: "${{ steps.mirror.outputs.digest }}"
           PREVIOUS_DIGEST: "${{ steps.mirror.outputs.previous-digest }}"
           REFERRERS_NOTE: "${{ steps.mirror.outputs.referrers-note }}"
+          SKIPPED: "${{ inputs.record_history && steps.mirror.outputs.digest == '' }}"
+          SOURCE_DIGEST: "${{ steps.source.outputs.digest }}"
         run: |
           set -euo pipefail
-          if [ "${COPIED}" = "true" ]; then
+          if [ "${SKIPPED}" = "true" ]; then
+            {
+              echo "### Mirror image: skipped, already synchronized :fast_forward:"
+              echo ""
+              echo "- **Source:** \`${SOURCE_REF}\`"
+              echo "- **Destination:** \`${DEST_REF}\`"
+              echo "- **Digest:** \`${SOURCE_DIGEST}\`"
+              echo "- This source digest was mirrored before; not re-synchronized."
+            } >> "${GITHUB_STEP_SUMMARY}"
+          elif [ "${COPIED}" = "true" ]; then
             {
               echo "### Mirror image: copied :inbox_tray:"
               echo ""
