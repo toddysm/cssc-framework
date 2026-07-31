@@ -32,6 +32,7 @@ phrasings it replaces.
 | __evaluate-findings__ | Apply the severity threshold + CVE exceptions to produce a gate decision. | "gate on scan findings" |
 | __attach-scan-report__ | Attach the OCI scan-report referrer — an in-toto vulnerability attestation payload plus summary annotations — to a promoted image. | "attach scan-report attestation" |
 | __attach-acquisition-provenance__ | Attach the acquisition-provenance in-toto referrer to a mirrored image. | "acquisition provenance" |
+| __mirror-history__ | Record/query the source digests a mirror has already synchronized, in a per-repo `:mirror-history` OCI artifact. | "mirror history", "already synchronized" |
 | __delete-image__ | Delete one tag from a GHCR repository via the Packages API. | "delete promoted tags from quarantine" |
 
 Standard nouns:
@@ -110,6 +111,30 @@ external → quarantine acquisition, and only when the acquired digest changed. 
 | `acquired-digest` | yes | — | Digest of the acquired image (the `mirror-image` `digest` output). |
 | `copy-referrers` | no | `false` | Whether the mirror copied referrers (records the copy method). |
 | `source-authenticated` | no | `false` | `true` when the mirror logged in to the source registry. |
+
+### mirror-history
+
+Maintain a durable, deletion-surviving record of the source digests a mirror has
+already synchronized into a repository. The record is an append-only JSON log
+stored as an OCI artifact under the reserved tag `<dest-image>:mirror-history`
+(artifact type `application/vnd.cssc.mirror-history.v1+json`, pushed with
+`oras push --artifact-type`). Because it is a separate tag it survives image-tag
+deletion during promotion, so a digest that was mirrored once is not
+re-synchronized after it is promoted out of and deleted from quarantine. See
+[mirror history](../architecture/acquire/mirror-history.md).
+
+| Input | Required | Default | Description |
+| ----- | -------- | ------- | ----------- |
+| `operation` | yes | — | `check` or `record`. |
+| `dest-image` | yes | — | Destination image without tag (the repo the history belongs to). |
+| `source-tag` | yes | — | Source tag being synchronized. |
+| `source-digest` | yes | — | Source manifest digest being synchronized. |
+| `source-image` | no | `""` | Source image without tag (recorded on the entry; used by `record`). |
+| `dest-tag` | no | `""` | Destination tag written in quarantine (required for `record`). |
+| `force` | no | `false` | Recorded on the entry when the sync was a force run. |
+
+Outputs: `already-synchronized` (`check` only — `true` when the `(source-tag,
+source-digest)` pair is already recorded).
 
 ### scan-image
 

@@ -28,6 +28,16 @@ class PackagesServiceClient:
         response.raise_for_status()
         return response.json()
 
+    def get_tags(self, name: str) -> list[dict[str, Any]]:
+        response = self._client.get(f"{self._base}/packages/{name}/tags")
+        response.raise_for_status()
+        return response.json()
+
+    def get_history(self, name: str) -> list[dict[str, Any]]:
+        response = self._client.get(f"{self._base}/packages/{name}/history")
+        response.raise_for_status()
+        return response.json()
+
 
 class IssuesServiceClient:
     def __init__(

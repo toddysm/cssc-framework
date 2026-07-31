@@ -12,15 +12,19 @@ This package holds cross-cutting concerns that every dashboard service needs:
 from .cache import TTLCache
 from .config import GitHubSettings, github_settings
 from .github import GitHubClient
-from .models import Cve, MirroredImage, PromotionIssue, Tag
+from .models import Cve, MirroredImage, MirrorHistoryEntry, PromotionIssue, Tag
+from .registry import MIRROR_HISTORY_TAG, OciRegistryClient
 
 __all__ = [
     "TTLCache",
     "GitHubSettings",
     "github_settings",
     "GitHubClient",
+    "OciRegistryClient",
+    "MIRROR_HISTORY_TAG",
     "Cve",
     "MirroredImage",
+    "MirrorHistoryEntry",
     "PromotionIssue",
     "Tag",
 ]

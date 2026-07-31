@@ -16,6 +16,20 @@ class FakePackages:
             }
         ]
 
+    def get_tags(self, name):
+        return [{"tag": "3.14-slim", "digest": "sha256:aaaa"}]
+
+    def get_history(self, name):
+        return [
+            {
+                "source_tag": "3.14-slim",
+                "source_digest": "sha256:aaaabbbbcccc",
+                "synced_at": "2026-07-30T06:00:00Z",
+                "run_url": "https://github.com/toddysm/cssc-framework/actions/runs/9",
+                "force": False,
+            }
+        ]
+
 
 class FakeIssues:
     def get_issues(self, image=None, tag=None, state="all"):
@@ -65,6 +79,8 @@ def test_fragment_renders_table_with_cve_links():
     assert 'target="_blank"' in body
     assert 'rel="noopener"' in body
     assert "Open" in body
+    assert "Synchronized" in body
+    assert 'href="https://github.com/toddysm/cssc-framework/actions/runs/9"' in body
 
 
 def test_unknown_stage_returns_404():

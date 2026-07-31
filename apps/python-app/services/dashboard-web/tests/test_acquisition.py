@@ -2,11 +2,19 @@ from dashboard_web.stages.acquisition import AcquisitionProvider
 
 
 class FakePackages:
-    def __init__(self, data):
+    def __init__(self, data, tags=None, history=None):
         self._data = data
+        self._tags = tags or {}
+        self._history = history or {}
 
     def get_packages(self, namespace):
         return self._data
+
+    def get_tags(self, name):
+        return self._tags.get(name, [])
+
+    def get_history(self, name):
+        return self._history.get(name, [])
 
 
 class FakeIssues:
@@ -133,11 +141,61 @@ def test_pending_issue_with_package_is_not_duplicated():
             "blocking_cves": [],
         }
     ]
-    data = AcquisitionProvider(FakePackages(packages), FakeIssues(issues)).get_data()
+    data = AcquisitionProvider(
+        FakePackages(packages, tags={"quarantine/node": [{"tag": "26-alpine"}]}),
+        FakeIssues(issues),
+    ).get_data()
     # Shown under its package card only — no duplicate orphan card.
     assert len(data["images"]) == 1
     assert data["images"][0]["in_quarantine"] is True
     assert [i["number"] for i in data["images"][0]["issues"]] == [88]
+
+
+def test_synchronized_history_is_surfaced():
+    history = {
+        "quarantine/python": [
+            {
+                "source_tag": "3.14-slim",
+                "source_digest": "sha256:aaaa",
+                "synced_at": "2026-07-30T06:00:00Z",
+                "run_url": "https://github.com/toddysm/cssc-framework/actions/runs/1",
+                "force": False,
+            }
+        ]
+    }
+    provider = AcquisitionProvider(
+        FakePackages(
+            PACKAGES,
+            tags={"quarantine/python": [{"tag": "3.14-slim"}]},
+            history=history,
+        ),
+        FakeIssues([]),
+    )
+    image = provider.get_data()["images"][0]
+    assert image["in_quarantine"] is True
+    assert image["tag_count"] == 1
+    assert [e["source_digest"] for e in image["synchronized"]] == ["sha256:aaaa"]
+
+
+def test_history_only_package_is_not_in_quarantine():
+    # The image was promoted and deleted; only the reserved history tag remains.
+    history = {
+        "quarantine/python": [
+            {"source_tag": "3.14-slim", "source_digest": "sha256:aaaa"}
+        ]
+    }
+    provider = AcquisitionProvider(
+        FakePackages(
+            PACKAGES,
+            tags={"quarantine/python": [{"tag": "mirror-history"}]},
+            history=history,
+        ),
+        FakeIssues([]),
+    )
+    image = provider.get_data()["images"][0]
+    assert image["in_quarantine"] is False
+    assert image["tag_count"] == 0
+    assert len(image["synchronized"]) == 1
 
 
 def test_cve_url_normalizes_missing_trailing_slash():

@@ -108,6 +108,17 @@ main {
   border-color: var(--open);
 }
 
+details.synchronized {
+  margin-top: 0.75rem;
+}
+
+details.synchronized > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.9rem;
+  padding: 0.25rem 0;
+}
+
 table.issues {
   width: 100%;
   border-collapse: collapse;

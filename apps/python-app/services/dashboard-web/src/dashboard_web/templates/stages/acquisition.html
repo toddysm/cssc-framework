@@ -50,6 +50,31 @@
     </tbody>
   </table>
   {% endif %}
+  {% if image.synchronized %}
+  <details class="synchronized">
+    <summary>Synchronized ({{ image.synchronized|length }})</summary>
+    <table class="issues">
+      <thead>
+        <tr>
+          <th>Source tag</th>
+          <th>Digest</th>
+          <th>Synced</th>
+          <th>Run</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in image.synchronized %}
+        <tr>
+          <td>{% if entry.source_tag %}<code>{{ entry.source_tag }}</code>{% else %}—{% endif %}</td>
+          <td>{% if entry.source_digest %}<code>{{ entry.source_digest[:19] }}…</code>{% else %}—{% endif %}</td>
+          <td>{{ entry.synced_at or "—" }}{% if entry.force %} <span class="badge badge-warn">forced</span>{% endif %}</td>
+          <td>{% if entry.run_url %}<a href="{{ entry.run_url }}" target="_blank" rel="noopener">run</a>{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endif %}
 </article>
 {% endfor %}
 {% endif %}

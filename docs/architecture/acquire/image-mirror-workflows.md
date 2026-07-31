@@ -55,6 +55,7 @@ It is triggered only through `workflow_call` and exposes these inputs:
 | `force` | no | `false` | Copy even when the source and destination digests match. |
 | `source_login_registry` | no | `""` | Registry to authenticate to before pulling the source (e.g. `dhi.io`). Empty means an anonymous public pull. |
 | `copy_referrers` | no | `false` | Also copy OCI referrer artifacts (SBOMs, provenance, VEX, signatures) attached to the image. Switches the copy to `oras`. Works for any image that has referrers, not just hardened images. |
+| `record_history` | no | `true` | Maintain a per-repo `mirror-history` artifact and skip re-synchronizing a source digest already recorded for the tag (unless `force`). |
 
 It also accepts two optional secrets, used only for authenticated sources:
 
@@ -161,6 +162,12 @@ Key tooling characteristics:
   per-platform child manifest. This is what lets downstream SBOM-based scanning
   read attestations straight from quarantine. It works for any image that has
   referrers, not just Docker Hardened Images.
+- **Mirror history.** Before copying, the source digest is checked against a
+   durable per-repo [mirror-history artifact](mirror-history.md)
+   (`quarantine/<image>:mirror-history`); a digest already synchronized for the
+   tag is skipped (even after it was promoted and deleted from quarantine),
+   unless `force`. Every synchronized digest is recorded. Controlled by the
+   `record_history` input (default on).
 - **Acquisition provenance.** After a successful copy, an
   [acquisition-provenance referrer](../../reference/acquisition-provenance.md) is
   attached to the mirrored image (index and each per-platform manifest) recording

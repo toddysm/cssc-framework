@@ -1,0 +1,198 @@
+# Composite action: mirror-history
+#
+# Maintain a durable, deletion-surviving record of the source digests a mirror
+# has already synchronized into a quarantine repository. The record is a small
+# OCI artifact stored under the reserved tag `<dest-image>:mirror-history` (an
+# append-only JSON log keyed by source tag + source digest). Because it is a
+# separate tag it survives image-tag deletion during promotion, so a digest that
+# was mirrored once is not re-synchronized after it has been promoted out of and
+# deleted from quarantine.
+#
+# Two operations:
+#   check  - output already-synchronized=true|false for a (source-tag,
+#            source-digest) pair.
+#   record - append an entry for the just-mirrored image and push the updated
+#            history artifact (created on first use).
+#
+# The action assumes oras is already authenticated to the destination registry
+# (the mirror workflow logs in to GHCR with oras).
+#
+# Terminology and the action catalogue: see docs/reference/workflow-actions.md.
+name: mirror-history
+description: Record and query the digests a mirror has already synchronized (OCI artifact per repo).
+
+inputs:
+  operation:
+    description: "Operation to perform: 'check' or 'record'."
+    required: true
+  dest-image:
+    description: "Fully qualified destination image without tag (e.g. ghcr.io/owner/quarantine/python)."
+    required: true
+  source-tag:
+    description: "Source image tag being synchronized (e.g. 3.14-slim)."
+    required: true
+  source-digest:
+    description: "Source manifest digest being synchronized (sha256:...)."
+    required: true
+  source-image:
+    description: "Fully qualified source image without tag (e.g. docker.io/library/python). Required for 'record'."
+    required: false
+    default: ""
+  dest-tag:
+    description: "Destination image tag written in quarantine. Required for 'record'."
+    required: false
+    default: ""
+  force:
+    description: "'true' when the sync was a force run (recorded on the entry)."
+    required: false
+    default: "false"
+
+outputs:
+  already-synchronized:
+    description: "'true' when the (source-tag, source-digest) pair is already in the history ('check' only; empty for 'record')."
+    value: ${{ steps.history.outputs.already-synchronized }}
+
+runs:
+  using: composite
+  steps:
+    - name: mirror-history ${{ inputs.operation }} for ${{ inputs.dest-image }}
+      id: history
+      shell: bash
+      env:
+        OPERATION: "${{ inputs.operation }}"
+        DEST_IMAGE: "${{ inputs.dest-image }}"
+        SOURCE_IMAGE: "${{ inputs.source-image }}"
+        SOURCE_TAG: "${{ inputs.source-tag }}"
+        SOURCE_DIGEST: "${{ inputs.source-digest }}"
+        DEST_TAG: "${{ inputs.dest-tag }}"
+        FORCE: "${{ inputs.force }}"
+        RUN_ID: "${{ github.run_id }}"
+        RUN_ATTEMPT: "${{ github.run_attempt }}"
+        SERVER_URL: "${{ github.server_url }}"
+        REPOSITORY: "${{ github.repository }}"
+      run: |
+        set -euo pipefail
+
+        HISTORY_TAG="mirror-history"
+        MEDIA_TYPE="application/vnd.cssc.mirror-history.v1+json"
+        HISTORY_REF="${DEST_IMAGE}:${HISTORY_TAG}"
+
+        case "${OPERATION}" in
+          check|record) : ;;
+          *)
+            echo "::error::mirror-history: unknown operation '${OPERATION}' (expected 'check' or 'record')."
+            exit 1
+            ;;
+        esac
+
+        # Normalize the force flag to a JSON boolean.
+        if [ "${FORCE}" = "true" ]; then force_json="true"; else force_json="false"; fi
+
+        work="$(mktemp -d)"
+        history_file="${work}/mirror-history.json"
+
+        # Fetch the existing history artifact into ${history_file}. A missing tag
+        # is not an error (the repo has no history yet) but any other failure is,
+        # so a transient registry problem is never silently treated as "empty".
+        load_history() {
+          local err
+          if err="$(oras manifest fetch "${HISTORY_REF}" 2>&1 >/dev/null)"; then
+            oras pull "${HISTORY_REF}" -o "${work}" >/dev/null
+            if [ ! -f "${history_file}" ]; then
+              echo "::error::mirror-history: ${HISTORY_REF} exists but did not yield mirror-history.json."
+              return 1
+            fi
+            return 0
+          fi
+          if printf '%s' "${err}" | grep -qiE "not found|manifest unknown|name unknown|404"; then
+            echo "No existing history at ${HISTORY_REF}; starting a new log."
+            jq -n \
+              --arg image "${DEST_IMAGE}" \
+              --arg source "${SOURCE_IMAGE}" \
+              '{schemaVersion: 1, image: $image, source: $source, entries: []}' \
+              > "${history_file}"
+            return 0
+          fi
+          echo "::error::mirror-history: failed to read ${HISTORY_REF}."
+          printf '%s\n' "${err}"
+          return 1
+        }
+
+        load_history
+
+        if [ "${OPERATION}" = "check" ]; then
+          match="$(jq -r \
+            --arg t "${SOURCE_TAG}" \
+            --arg d "${SOURCE_DIGEST}" \
+            '[.entries[]? | select(.sourceTag == $t and .sourceDigest == $d)] | length' \
+            "${history_file}")"
+          if [ "${match}" -gt 0 ]; then
+            echo "Digest ${SOURCE_DIGEST} for tag ${SOURCE_TAG} is already synchronized."
+            echo "already-synchronized=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "Digest ${SOURCE_DIGEST} for tag ${SOURCE_TAG} has not been synchronized yet."
+            echo "already-synchronized=false" >> "${GITHUB_OUTPUT}"
+          fi
+          exit 0
+        fi
+
+        # operation == record
+        if [ -z "${DEST_TAG}" ]; then
+          echo "::error::mirror-history: 'record' requires dest-tag."
+          exit 1
+        fi
+        if [ -z "${SOURCE_IMAGE}" ]; then
+          echo "::error::mirror-history: 'record' requires source-image."
+          exit 1
+        fi
+
+        synced_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        run_url="${SERVER_URL}/${REPOSITORY}/actions/runs/${RUN_ID}"
+
+        # Append a new entry (append-only: a force re-sync of an already-recorded
+        # digest still adds an entry, keeping the log a complete audit trail).
+        # Also refresh image/source in case the log predates this action.
+        updated_file="${work}/mirror-history.next.json"
+        jq \
+          --arg image "${DEST_IMAGE}" \
+          --arg source "${SOURCE_IMAGE}" \
+          --arg t "${SOURCE_TAG}" \
+          --arg d "${SOURCE_DIGEST}" \
+          --arg dt "${DEST_TAG}" \
+          --arg at "${synced_at}" \
+          --arg url "${run_url}" \
+          --arg rid "${RUN_ID}" \
+          --arg ra "${RUN_ATTEMPT}" \
+          --argjson force "${force_json}" \
+          '.schemaVersion = 1
+           | .image = $image
+           | .source = $source
+           | .entries = ((.entries // []) + [{
+               sourceTag: $t,
+               sourceDigest: $d,
+               destTag: $dt,
+               syncedAt: $at,
+               runUrl: $url,
+               runId: $rid,
+               runAttempt: $ra,
+               force: $force
+             }])' \
+          "${history_file}" > "${updated_file}"
+        mv "${updated_file}" "${history_file}"
+
+        count="$(jq -r '.entries | length' "${history_file}")"
+        echo "Recorded ${SOURCE_TAG}@${SOURCE_DIGEST}; history now has ${count} entr$( [ "${count}" -eq 1 ] && echo y || echo ies )."
+
+        # Push the updated artifact under the reserved tag. --artifact-type sets
+        # manifest.artifactType and uses the standard empty config; the JSON log
+        # is the single layer. cd into the work dir so the layer's title
+        # annotation is the bare filename (restores as mirror-history.json).
+        ( cd "${work}" && oras push "${HISTORY_REF}" \
+            --artifact-type "${MEDIA_TYPE}" \
+            --annotation "org.opencontainers.image.title=mirror-history.json" \
+            --annotation "com.toddysm.mirror-history.count=${count}" \
+            --annotation "com.toddysm.mirror-history.updated=${synced_at}" \
+            "mirror-history.json:${MEDIA_TYPE}" >/dev/null )
+        echo "Pushed updated history to ${HISTORY_REF}."
+
+        echo "already-synchronized=" >> "${GITHUB_OUTPUT}"
