@@ -8,6 +8,9 @@ controlled namespace before they are used.
 - [Image mirror workflows](image-mirror-workflows.md) — how the Docker Hub →
   GHCR mirroring actions are structured, the tooling they use, and what they do
   and deliberately do not do.
+- [Mirror history](mirror-history.md) — a durable, deletion-surviving record of
+  the digests the mirror has already synchronized, so a promoted-and-deleted
+  image is not re-mirrored (design, proposed).
 
 ## Supply Chain Observability
 
