@@ -144,12 +144,13 @@ Key points:
 - History is **read-modify-write**. The per-image concurrency group already
   guarantees runs of the same image never overlap
   (`cancel-in-progress: false`), so there is no race on the artifact.
-- **`copy_referrers`** currently always re-copies (referrers can change
-  independently of the subject digest). Under this design the history check is
-  **skipped when `copy_referrers` is true as well**, preserving today's behaviour
-  — referrer freshness cannot be inferred from the source digest alone. (Open
-  question O2 below asks whether we instead want history to suppress referrer
-  re-copy once recorded.)
+- **`copy_referrers`** today always re-copies (referrers can change
+  independently of the subject digest). Under this design a **recorded digest
+  also suppresses the referrer re-copy**: once `(sourceTag, sourceDigest)` is in
+  the history the mirror skips, even when `copy_referrers` is true. This trades
+  routine referrer-freshness re-syncs for not re-pulling a promoted-and-deleted
+  image; a `force` run is the escape hatch when referrers must be refreshed
+  (resolved O2).
 
 ### Where the logic lives
 
@@ -171,7 +172,7 @@ Key points:
 | ------- | --------- |
 | Acquisition provenance | Unchanged. Still attached only when a copy happened and the digest changed. A history-skip means no copy, so no new provenance — correct. |
 | `force` | Bypasses history check, copies, records. |
-| `copy_referrers` | History check skipped (as today it always re-copies); still records. |
+| `copy_referrers` | A recorded digest suppresses the re-copy too (skips); an unrecorded digest copies with `oras` and records. `force` refreshes referrers on demand. |
 | Multi-arch | Unaffected; history keys on the index/source digest. |
 | Concurrency | Per-image group already serializes runs → safe read-modify-write. |
 | Promotion / delete-image | Benefits: the `mirror-history` tag keeps the package alive, avoiding the last-tagged-version delete workaround. No change required in promote workflows. |
@@ -179,17 +180,29 @@ Key points:
 
 ## Open questions for review
 
-- **O1 — Dashboard visibility.** Keeping the package alive means quarantine repos
-  no longer vanish when emptied. Do we (a) accept it, (b) have the dashboard hide
-  the reserved `mirror-history` tag / treat a history-only package as empty, or
-  (c) move history to a sibling `quarantine-history/<image>` repo after all?
-- **O2 — `copy_referrers` + history.** Should a recorded digest also suppress the
-  referrer re-copy, or keep always-re-copy for referrer freshness?
-- **O3 — Bootstrapping.** For images already mirrored+promoted before this ships,
-  the first run will re-mirror once (no history yet) and then record. Acceptable,
-  or do we seed history from existing acquisition-provenance referrers?
-- **O4 — Reserved-tag collisions.** `mirror-history` must never be a real upstream
-  tag we mirror. Confirm the reserved name and document it.
+- **O1 — Dashboard visibility (OPEN).** Keeping the package alive means
+  `quarantine/<image>` no longer vanishes when emptied by promotion. The CSSC
+  Dashboard's Acquisition view lists every `quarantine/*` package from the GHCR
+  Packages API and marks it `in_quarantine: true`; the package's `version_count`
+  is shown as its tag count. With this feature a promoted-and-deleted image still
+  has its `:mirror-history` tag, so the dashboard would keep showing a card for it
+  as if an image were still quarantined. Options: (a) accept it; (b) teach
+  `packages-service` / the Acquisition provider to ignore the reserved
+  `mirror-history` tag and treat a history-only package as empty (drop or badge
+  the card); (c) move history to a sibling `quarantine-history/<image>` repo so
+  quarantine still empties out. Pending decision — likely a small follow-up child
+  item under option (b).
+
+### Resolved
+
+- **O2 — `copy_referrers` + history.** Resolved: a recorded digest **also
+  suppresses** the referrer re-copy (skip once recorded); `force` refreshes
+  referrers on demand.
+- **O3 — Bootstrapping.** Resolved: **no seeding**. Images mirrored+promoted
+  before this ships will re-mirror once (no history yet) and then record — this is
+  acceptable.
+- **O4 — Reserved tag.** Resolved: the reserved tag name `mirror-history` is
+  confirmed and will be documented as never a valid upstream tag to mirror.
 
 ## Deliverables (once approved)
 
