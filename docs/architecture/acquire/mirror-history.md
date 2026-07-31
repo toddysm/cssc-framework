@@ -71,10 +71,11 @@ repo):
 
 ### Artifact format
 
-An OCI **image manifest** (artifact) with a custom config media type and one
-JSON blob layer:
+An OCI **image manifest** (artifact) with one JSON blob layer:
 
-- **manifest artifactType / config mediaType:** `application/vnd.cssc.mirror-history.v1+json`
+- **manifest artifactType:** `application/vnd.cssc.mirror-history.v1+json`
+  (pushed with `oras push --artifact-type`, so the manifest uses the standard
+  empty config `application/vnd.oci.empty.v1+json`).
 - **layer mediaType:** `application/vnd.cssc.mirror-history.v1+json`
 - **manifest annotations** (for `oras discover`/`crane manifest` visibility):
   - `org.opencontainers.image.title=mirror-history.json`
