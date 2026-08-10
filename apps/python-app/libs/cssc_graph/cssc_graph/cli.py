@@ -22,6 +22,7 @@ from .validate import (
 )
 
 DEFAULT_ROOT = "supply-chain-graph"
+DEFAULT_DATABASE = ".graph"
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
@@ -79,6 +80,55 @@ def validate(root: Path, schema_dir: Path | None, output_format: str) -> None:
 
     if diagnostics:
         sys.exit(1)
+
+
+@cli.command()
+@click.argument(
+    "root",
+    default=DEFAULT_ROOT,
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+)
+@click.option(
+    "--database",
+    "-d",
+    type=click.Path(path_type=Path),
+    default=DEFAULT_DATABASE,
+    help="LadybugDB database directory (default: .graph).",
+)
+@click.option(
+    "--schema-dir",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=None,
+    help="Schema directory (defaults to <root>/schema).",
+)
+@click.option(
+    "--rebuild",
+    is_flag=True,
+    help="Delete any existing database first for a clean rebuild.",
+)
+def index(root: Path, database: Path, schema_dir: Path | None, rebuild: bool) -> None:
+    """Validate ROOT, then index its records into a LadybugDB graph."""
+
+    resolved_schema_dir = schema_dir or default_schema_dir(root)
+    diagnostics = validate_data(root, resolved_schema_dir)
+    if diagnostics:
+        for diag in diagnostics:
+            click.echo(diag.format(root), err=True)
+        raise click.ClickException(f"{len(diagnostics)} validation error(s); nothing indexed.")
+
+    # Imported lazily so `validate` and `id` work without the native dependency.
+    from .graph import GraphStore
+    from .indexer import index_data
+
+    if rebuild:
+        GraphStore.destroy(database)
+    with GraphStore(database) as store:
+        store.init_schema()
+        stats = index_data(store, root, resolved_schema_dir)
+
+    click.echo(f"Indexed {stats.records} record(s) into {database}.")
+    for kind, count in sorted(stats.by_kind.items()):
+        click.echo(f"  {kind}: {count}")
 
 
 @cli.command(name="id")
