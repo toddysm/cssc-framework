@@ -90,15 +90,21 @@ def validate_file(path: Path, bundle: SchemaBundle) -> list[Diagnostic]:
 
     stated_id = data.get("id")
     if stated_id:
-        computed = content_id(data)
-        if stated_id != computed:
+        try:
+            computed = content_id(data)
+        except (TypeError, ValueError) as exc:
             diagnostics.append(
-                Diagnostic(
-                    path,
-                    "$.id",
-                    f"id does not match content hash (stated {stated_id}, computed {computed})",
-                )
+                Diagnostic(path, "$.id", f"could not compute content id: {exc}")
             )
+        else:
+            if stated_id != computed:
+                diagnostics.append(
+                    Diagnostic(
+                        path,
+                        "$.id",
+                        f"id does not match content hash (stated {stated_id}, computed {computed})",
+                    )
+                )
     return diagnostics
 
 
