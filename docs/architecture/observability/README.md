@@ -9,6 +9,7 @@ home rather than living inside a single stage.
   version-controlled data files (written by the acquire, catalog, build, and
   deploy workflows and by hand) are indexed into a local, rebuildable graph
   (LadybugDB) and queried through a CLI and a Kubernetes service.
+- Guide: [Querying the supply-chain graph](../../guides/observability/querying-the-supply-chain-graph.md).
 
 Requirements: [#168](https://github.com/toddysm/cssc-framework/issues/168).
 Supersedes the storage-engine choice in [#145](https://github.com/toddysm/cssc-framework/issues/145)
