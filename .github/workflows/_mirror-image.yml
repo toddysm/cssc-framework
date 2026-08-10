@@ -185,6 +185,49 @@ jobs:
           dest-tag: ${{ inputs.dest_tag }}
           force: ${{ inputs.force }}
 
+      - name: Stage mirror graph event
+        # Record the acquisition (upstream -> quarantine) as a supply-chain-graph
+        # event for the record-graph-events collector to commit. Only staged when
+        # the mirror actually resolved a digest (a history-skipped run has none).
+        if: ${{ steps.mirror.outputs.digest != '' }}
+        uses: ./.github/actions/build-graph-event
+        with:
+          kind: ArtifactMirrored
+          source-ref: ${{ inputs.source_image }}
+          source-digest: ${{ steps.mirror.outputs.digest }}
+          dest-ref: ${{ inputs.dest_image }}
+          dest-digest: ${{ steps.mirror.outputs.digest }}
+          tag: ${{ inputs.dest_tag }}
+          force: ${{ inputs.force }}
+          output-dir: ${{ runner.temp }}/graph-events
+          workflow: ${{ github.workflow }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          run-id: ${{ github.run_id }}
+          run-attempt: ${{ github.run_attempt }}
+
+      - name: Stage tag observation graph event
+        if: ${{ steps.mirror.outputs.digest != '' }}
+        uses: ./.github/actions/build-graph-event
+        with:
+          kind: TagObserved
+          dest-ref: ${{ inputs.dest_image }}
+          dest-digest: ${{ steps.mirror.outputs.digest }}
+          tag: ${{ inputs.dest_tag }}
+          output-dir: ${{ runner.temp }}/graph-events
+          workflow: ${{ github.workflow }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          run-id: ${{ github.run_id }}
+          run-attempt: ${{ github.run_attempt }}
+
+      - name: Upload graph events
+        if: ${{ steps.mirror.outputs.digest != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: graph-events
+          path: ${{ runner.temp }}/graph-events
+          if-no-files-found: ignore
+          retention-days: 1
+
       - name: Write job summary
         env:
           SOURCE_REF: "${{ inputs.source_image }}:${{ inputs.source_tag }}"
