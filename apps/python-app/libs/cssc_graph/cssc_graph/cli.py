@@ -53,8 +53,11 @@ def validate(root: Path, schema_dir: Path | None, output_format: str) -> None:
     """Validate every record under ROOT against the JSON Schemas."""
 
     resolved_schema_dir = schema_dir or default_schema_dir(root)
-    files = discover_record_files(root, resolved_schema_dir)
-    diagnostics = validate_data(root, resolved_schema_dir)
+    try:
+        files = discover_record_files(root, resolved_schema_dir)
+        diagnostics = validate_data(root, resolved_schema_dir)
+    except (FileNotFoundError, ValueError) as exc:
+        raise click.ClickException(str(exc))
 
     if output_format == "json":
         payload = {
