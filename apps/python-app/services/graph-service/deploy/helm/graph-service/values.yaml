@@ -1,0 +1,66 @@
+# Default values for the graph-service chart.
+nameOverride: ""
+fullnameOverride: ""
+
+# The service owns a single LadybugDB writer — do NOT scale beyond one replica.
+replicaCount: 1
+
+image:
+  repository: ghcr.io/toddysm/apps/cssc-dashboard/graph-service
+  tag: dev
+  pullPolicy: IfNotPresent
+
+containerPort: 8080
+
+# Numeric UID the container runs as (must match the image USER).
+runAsUser: 10001
+
+service:
+  type: ClusterIP
+  port: 80
+
+# Extra literal environment variables ([{name, value}]).
+env: []
+
+# Operator-tunable, non-secret config, injected via envFrom. DATA_ROOT and
+# DATABASE_PATH are derived from the mounted volumes in the Deployment.
+config:
+  REBUILD_ON_STARTUP: "true"
+  MAX_DEPTH: "6"
+
+probes:
+  path: /healthz
+  readinessPath: /readyz
+
+# git-sync clones the committed graph data branch into an emptyDir the service
+# indexes on startup. Disabled by default so a first deploy is green even before
+# the `supply-chain-graph-data` branch exists; enable it once events have been
+# recorded so the graph has data.
+gitSync:
+  enabled: false
+  image: registry.k8s.io/git-sync/git-sync:v4.4.0
+  repo: https://github.com/toddysm/cssc-framework
+  branch: supply-chain-graph-data
+  # Path of the data root within the checked-out worktree.
+  subPath: supply-chain-graph
+  depth: 1
+
+# Optional PVC for the graph database. When disabled the database lives on an
+# ephemeral emptyDir and is rebuilt from files on every start.
+persistence:
+  enabled: false
+  size: 1Gi
+  storageClass: ""
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+ingress:
+  enabled: false
+  className: ""
+  hosts: []

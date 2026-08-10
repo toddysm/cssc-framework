@@ -18,11 +18,11 @@
 #
 # Design: docs/architecture/observability/supply-chain-graph.md.
 name: build-graph-event
-description: Stage a supply-chain-graph event record (ArtifactMirrored / ArtifactPromoted / ArtifactBuilt / TagObserved) as JSON.
+description: Stage a supply-chain-graph event record (ArtifactMirrored / ArtifactPromoted / ArtifactBuilt / ArtifactDeployed / TagObserved) as JSON.
 
 inputs:
   kind:
-    description: "Record kind: ArtifactMirrored, ArtifactPromoted, ArtifactBuilt, or TagObserved."
+    description: "Record kind: ArtifactMirrored, ArtifactPromoted, ArtifactBuilt, ArtifactDeployed, or TagObserved."
     required: true
   source-ref:
     description: "Fully-qualified source name registry/repository (from occurrence). Required for ArtifactMirrored/ArtifactPromoted."
@@ -66,6 +66,22 @@ inputs:
     description: "Source commit the image was built from (ArtifactBuilt)."
     required: false
     default: ""
+  environment-cluster:
+    description: "Target cluster the image was deployed to (ArtifactDeployed)."
+    required: false
+    default: ""
+  environment-namespace:
+    description: "Target namespace the image was deployed to (ArtifactDeployed)."
+    required: false
+    default: ""
+  chart-name:
+    description: "Helm chart name for the deployment (ArtifactDeployed, optional)."
+    required: false
+    default: ""
+  chart-version:
+    description: "Helm chart version for the deployment (ArtifactDeployed, required with chart-name)."
+    required: false
+    default: ""
   output-dir:
     description: "Staging directory to write the event file into."
     required: false
@@ -101,6 +117,10 @@ runs:
         BASE_TAG: "${{ inputs.base-tag }}"
         BUILD_VERSION: "${{ inputs.build-version }}"
         SOURCE_COMMIT: "${{ inputs.source-commit }}"
+        ENV_CLUSTER: "${{ inputs.environment-cluster }}"
+        ENV_NAMESPACE: "${{ inputs.environment-namespace }}"
+        CHART_NAME: "${{ inputs.chart-name }}"
+        CHART_VERSION: "${{ inputs.chart-version }}"
         OUTPUT_DIR: "${{ inputs.output-dir }}"
         WORKFLOW: "${{ inputs.workflow }}"
         RUN_URL: "${{ inputs.run-url }}"
@@ -165,6 +185,20 @@ runs:
                 base:$base}
                + (if $bv == "" then {} else {buildVersion:$bv} end)
                + (if $sc == "" then {} else {sourceCommit:$sc} end)')"
+            ;;
+          ArtifactDeployed)
+            [ -n "${ENV_CLUSTER}" ] && [ -n "${ENV_NAMESPACE}" ] || {
+              echo "::error::build-graph-event: ArtifactDeployed requires environment-cluster and environment-namespace."; exit 1; }
+            split_ref "${DEST_REF}"; d_reg="${REG}"; d_repo="${REPO}"
+            record="$(jq -nc \
+              --argjson src "${source_json}" --arg now "${now}" \
+              --arg dreg "${d_reg}" --arg drepo "${d_repo}" --arg ddig "${DEST_DIGEST}" \
+              --arg cluster "${ENV_CLUSTER}" --arg ns "${ENV_NAMESPACE}" \
+              --arg cname "${CHART_NAME}" --arg cver "${CHART_VERSION}" \
+              '{schemaVersion:1, kind:"ArtifactDeployed", recordedAt:$now, source:$src,
+                image:{registry:$dreg, repository:$drepo, digest:$ddig},
+                environment:{cluster:$cluster, namespace:$ns}}
+               + (if $cname == "" then {} else {chart:{name:$cname, version:$cver}} end)')"
             ;;
           TagObserved)
             [ -n "${TAG}" ] || {

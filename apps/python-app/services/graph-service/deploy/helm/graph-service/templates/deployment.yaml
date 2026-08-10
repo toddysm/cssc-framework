@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "graph-service.fullname" . }}
+  labels:
+    {{- include "graph-service.labels" . | nindent 4 }}
+spec:
+  # One replica owns the read-write LadybugDB; recreate on rollout so a new pod
+  # never opens the database while the old one still holds it.
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "graph-service.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "graph-service.selectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ .Values.runAsUser }}
+        runAsGroup: {{ .Values.runAsUser }}
+        fsGroup: {{ .Values.runAsUser }}
+        seccompProfile:
+          type: RuntimeDefault
+      {{- if .Values.gitSync.enabled }}
+      initContainers:
+        - name: git-sync
+          image: {{ .Values.gitSync.image }}
+          args:
+            - --repo={{ .Values.gitSync.repo }}
+            - --ref={{ .Values.gitSync.branch }}
+            - --depth={{ .Values.gitSync.depth }}
+            - --root=/data
+            - --link=repo
+            - --one-time
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: graph-data
+              mountPath: /data
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.containerPort }}
+          env:
+            - name: DATA_ROOT
+              value: {{ printf "/data/repo/%s" .Values.gitSync.subPath | quote }}
+            - name: DATABASE_PATH
+              value: /var/lib/cssc-graph/graph
+            {{- with .Values.env }}
+            {{- range . }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+            {{- end }}
+          {{- if .Values.config }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "graph-service.fullname" . }}
+          {{- end }}
+          volumeMounts:
+            - name: graph-db
+              mountPath: /var/lib/cssc-graph
+            - name: graph-data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+          startupProbe:
+            httpGet:
+              path: {{ .Values.probes.readinessPath }}
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readinessPath }}
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.path }}
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: graph-data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.persistence.enabled }}
+        - name: graph-db
+          persistentVolumeClaim:
+            claimName: {{ include "graph-service.fullname" . }}
+        {{- else }}
+        - name: graph-db
+          emptyDir: {}
+        {{- end }}

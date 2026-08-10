@@ -1,0 +1,101 @@
+# Record CSSC Dashboard deployments in the supply-chain graph.
+#
+# There is no hosted cluster in CI — deployments run locally (kind) via the
+# Makefile. This workflow is the deploy-stage *producer*: dispatched with the
+# environment and the published image tag that was rolled out, it resolves each
+# service's digest from GHCR and stages an `ArtifactDeployed` event per service.
+# The record-graph-events collector then commits them to the data branch.
+#
+# Naming convention: "deploy-<app>.yml". See docs/contributing/workflow-naming.md.
+name: deploy / cssc-dashboard
+
+on:
+  workflow_dispatch:
+    inputs:
+      cluster:
+        description: "Target cluster name (environment.cluster)."
+        required: true
+        default: kind-cssc
+      namespace:
+        description: "Target namespace (environment.namespace)."
+        required: true
+        default: default
+      image_tag:
+        description: "Published image tag that was deployed (resolved to a digest)."
+        required: true
+        default: "0.1"
+      chart_version:
+        description: "Helm chart version deployed (optional)."
+        required: false
+        default: ""
+
+concurrency:
+  group: deploy-cssc-dashboard
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - packages-service
+          - issues-service
+          - graph-service
+          - dashboard-web
+    steps:
+      - name: Check out
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${ACTOR}" --password-stdin
+
+      - name: Resolve deployed digest for ${{ matrix.service }}
+        id: image
+        env:
+          IMAGE: ghcr.io/toddysm/apps/cssc-dashboard/${{ matrix.service }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          # A service that has not been published for this tag is skipped rather
+          # than failing the whole run.
+          digest="$(docker buildx imagetools inspect "${IMAGE}:${IMAGE_TAG}" \
+            --format '{{.Manifest.Digest}}' 2>/dev/null || true)"
+          if [ -z "${digest}" ]; then
+            echo "::warning::no published ${IMAGE}:${IMAGE_TAG}; skipping"
+          fi
+          echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+
+      - name: Stage deployment graph event
+        if: ${{ steps.image.outputs.digest != '' }}
+        uses: ./.github/actions/build-graph-event
+        with:
+          kind: ArtifactDeployed
+          dest-ref: ghcr.io/toddysm/apps/cssc-dashboard/${{ matrix.service }}
+          dest-digest: ${{ steps.image.outputs.digest }}
+          environment-cluster: ${{ inputs.cluster }}
+          environment-namespace: ${{ inputs.namespace }}
+          chart-name: ${{ inputs.chart_version != '' && 'cssc-dashboard' || '' }}
+          chart-version: ${{ inputs.chart_version }}
+          output-dir: ${{ runner.temp }}/graph-events
+          workflow: ${{ github.workflow }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          run-id: ${{ github.run_id }}
+          run-attempt: ${{ github.run_attempt }}
+
+      - name: Upload graph events
+        if: ${{ steps.image.outputs.digest != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: graph-events-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/graph-events
+          if-no-files-found: ignore
+          retention-days: 1

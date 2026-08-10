@@ -50,6 +50,7 @@ jobs:
         service:
           - packages-service
           - issues-service
+          - graph-service
           - dashboard-web
     steps:
       - name: Check out

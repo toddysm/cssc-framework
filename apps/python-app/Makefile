@@ -18,7 +18,7 @@ PORT         ?= 8000
 # e.g. CHART=oci://ghcr.io/toddysm/charts/cssc-dashboard (run `helm registry
 # login ghcr.io` first).
 CHART        ?= deploy/helm/cssc-dashboard
-SERVICES     := packages-service issues-service dashboard-web
+SERVICES     := packages-service issues-service graph-service dashboard-web
 # App images + base image are sourced from the package repo (GHCR). Override
 # BASE_IMAGE (e.g. python:3.14-slim) for local dev if golden is unavailable.
 IMAGE_PREFIX ?= ghcr.io/toddysm/apps/cssc-dashboard
@@ -34,7 +34,7 @@ help:
 	@echo "  venv       create the local virtualenv and install all packages"
 	@echo "  test       run unit tests for the library and all services"
 	@echo "  lint       helm lint all charts"
-	@echo "  build      build the three service images (docker)"
+	@echo "  build      build the service images (docker)"
 	@echo "  kind-up    create the kind cluster"
 	@echo "  kind-down  delete the kind cluster"
 	@echo "  load       load the images into the kind cluster"
@@ -50,11 +50,12 @@ venv:
 	python3 -m venv $(VENV)
 	$(PIP) install --upgrade pip
 	$(PIP) install -e './libs/cssc_common[test]'
+	$(PIP) install -e './libs/cssc_graph[test]'
 	for s in $(SERVICES); do $(PIP) install -e "./services/$$s[test]"; done
 
 .PHONY: test
 test:
-	@set -e; for d in libs/cssc_common $(addprefix services/,$(SERVICES)); do \
+	@set -e; for d in libs/cssc_common libs/cssc_graph $(addprefix services/,$(SERVICES)); do \
 	  echo "== $$d =="; ( cd "$$d" && $(abspath $(PYTEST)) -q ); \
 	done
 

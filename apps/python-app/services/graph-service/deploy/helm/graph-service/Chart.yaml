@@ -1,0 +1,6 @@
+apiVersion: v2
+name: graph-service
+description: CSSC Dashboard — graph-service (supply-chain graph query API)
+type: application
+version: 0.1.1
+appVersion: "0.1.1"

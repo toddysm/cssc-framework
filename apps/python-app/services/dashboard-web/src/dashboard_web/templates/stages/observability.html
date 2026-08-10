@@ -1,0 +1,31 @@
+<div class="graph-stage">
+  {% if not data.ready %}
+  <p class="empty">
+    The graph index is not ready yet, or no events have been recorded.
+  </p>
+  {% else %}
+  <p>
+    Indexed <strong>{{ data.records }}</strong> event record(s).
+    {% if data.by_kind %}
+    <span class="badges">
+      {% for kind, count in data.by_kind.items() %}
+      <span class="badge">{{ kind }}: {{ count }}</span>
+      {% endfor %}
+    </span>
+    {% endif %}
+  </p>
+  {% endif %}
+
+  <form class="graph-explore"
+        hx-get="/graph/neighborhood"
+        hx-target="#graph-neighborhood"
+        hx-swap="innerHTML">
+    <label for="graph-ref">Explore a bounded neighborhood</label>
+    <input id="graph-ref" type="text" name="ref"
+           placeholder="ghcr.io/toddysm/apps/cssc-dashboard/packages-service:0.1" />
+    <input type="hidden" name="depth" value="3" />
+    <button type="submit">Show</button>
+  </form>
+
+  <div id="graph-neighborhood"></div>
+</div>
