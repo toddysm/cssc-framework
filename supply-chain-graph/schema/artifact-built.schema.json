@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cssc.toddysm.com/schema/artifact-built.schema.json",
+  "title": "ArtifactBuilt",
+  "description": "Build-stage edge: an image built from a fully-qualified base image (name@digest).",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "recordedAt", "source", "image", "base"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "ArtifactBuilt" },
+    "id": { "$ref": "envelope.schema.json#/$defs/contentHash" },
+    "recordedAt": { "type": "string", "format": "date-time" },
+    "source": { "$ref": "envelope.schema.json#/$defs/source" },
+    "image": { "$ref": "envelope.schema.json#/$defs/occurrence" },
+    "base": {
+      "type": "object",
+      "required": ["name", "digest"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Fully-qualified base image name without digest, e.g. ghcr.io/toddysm/golden/python.",
+          "minLength": 1
+        },
+        "digest": { "$ref": "envelope.schema.json#/$defs/digest" },
+        "tag": { "type": "string" }
+      }
+    },
+    "buildVersion": { "type": "string" },
+    "sourceCommit": { "type": "string" },
+    "referrers": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sbomDigest": { "$ref": "envelope.schema.json#/$defs/digest" },
+        "provenanceDigest": { "$ref": "envelope.schema.json#/$defs/digest" }
+      }
+    }
+  }
+}

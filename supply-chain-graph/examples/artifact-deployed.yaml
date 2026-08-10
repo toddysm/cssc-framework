@@ -1,0 +1,17 @@
+schemaVersion: 1
+kind: ArtifactDeployed
+recordedAt: 2026-08-09T15:00:00Z
+source:
+  type: github-actions
+  workflow: deploy-cssc-dashboard
+  runUrl: https://github.com/toddysm/cssc-framework/actions/runs/123450005
+image:
+  registry: ghcr.io
+  repository: toddysm/apps/cssc-dashboard/issues-service
+  digest: sha256:4444444444444444444444444444444444444444444444444444444444444444
+environment:
+  cluster: kind-cssc
+  namespace: default
+chart:
+  name: cssc-dashboard
+  version: "0.1.2"

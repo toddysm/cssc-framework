@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cssc.toddysm.com/schema/artifact-observed.schema.json",
+  "title": "ArtifactObserved",
+  "description": "Establishes/enriches an occurrence node (usually derived from the registry).",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "recordedAt", "source", "artifact", "occurrence"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "ArtifactObserved" },
+    "id": { "$ref": "envelope.schema.json#/$defs/contentHash" },
+    "recordedAt": { "type": "string", "format": "date-time" },
+    "source": { "$ref": "envelope.schema.json#/$defs/source" },
+    "artifact": {
+      "type": "object",
+      "required": ["digest"],
+      "additionalProperties": false,
+      "properties": {
+        "digest": { "$ref": "envelope.schema.json#/$defs/digest" },
+        "mediaType": { "type": "string" },
+        "artifactType": { "type": "string" },
+        "platforms": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "occurrence": { "$ref": "envelope.schema.json#/$defs/occurrence" },
+    "annotations": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

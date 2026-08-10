@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cssc.toddysm.com/schema/artifact-promoted.schema.json",
+  "title": "ArtifactPromoted",
+  "description": "Catalog-stage edge: an artifact promoted from one occurrence to another (possibly on a different registry).",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "recordedAt", "source", "from", "to", "tag"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "ArtifactPromoted" },
+    "id": { "$ref": "envelope.schema.json#/$defs/contentHash" },
+    "recordedAt": { "type": "string", "format": "date-time" },
+    "source": { "$ref": "envelope.schema.json#/$defs/source" },
+    "from": { "$ref": "envelope.schema.json#/$defs/occurrence" },
+    "to": { "$ref": "envelope.schema.json#/$defs/occurrence" },
+    "tag": { "type": "string", "minLength": 1 },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "vulnAttestationDigest": { "$ref": "envelope.schema.json#/$defs/digest" },
+        "issueUrl": { "type": "string", "format": "uri" }
+      }
+    }
+  }
+}

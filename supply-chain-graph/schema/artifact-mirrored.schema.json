@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cssc.toddysm.com/schema/artifact-mirrored.schema.json",
+  "title": "ArtifactMirrored",
+  "description": "Acquire-stage edge: an artifact synchronized from an upstream occurrence into a quarantine occurrence.",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "recordedAt", "source", "from", "to", "tag"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "ArtifactMirrored" },
+    "id": { "$ref": "envelope.schema.json#/$defs/contentHash" },
+    "recordedAt": { "type": "string", "format": "date-time" },
+    "source": { "$ref": "envelope.schema.json#/$defs/source" },
+    "from": { "$ref": "envelope.schema.json#/$defs/occurrence" },
+    "to": { "$ref": "envelope.schema.json#/$defs/occurrence" },
+    "tag": { "type": "string", "minLength": 1 },
+    "force": { "type": "boolean" }
+  }
+}

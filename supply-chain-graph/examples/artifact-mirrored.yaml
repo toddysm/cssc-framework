@@ -1,0 +1,17 @@
+schemaVersion: 1
+kind: ArtifactMirrored
+recordedAt: 2026-08-09T12:15:00Z
+source:
+  type: github-actions
+  workflow: mirror-python
+  runUrl: https://github.com/toddysm/cssc-framework/actions/runs/123450001
+from:
+  registry: docker.io
+  repository: library/python
+  digest: sha256:2222222222222222222222222222222222222222222222222222222222222222
+to:
+  registry: ghcr.io
+  repository: toddysm/quarantine/python
+  digest: sha256:2222222222222222222222222222222222222222222222222222222222222222
+tag: "3.14-slim"
+force: false

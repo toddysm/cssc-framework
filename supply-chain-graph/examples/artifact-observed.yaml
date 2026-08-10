@@ -1,0 +1,20 @@
+schemaVersion: 1
+kind: ArtifactObserved
+recordedAt: 2026-08-09T14:05:00Z
+source:
+  type: github-actions
+  workflow: build-cssc-dashboard
+  runUrl: https://github.com/toddysm/cssc-framework/actions/runs/123456789
+artifact:
+  digest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+  mediaType: application/vnd.oci.image.index.v1+json
+  platforms:
+    - linux/amd64
+    - linux/arm64
+occurrence:
+  registry: ghcr.io
+  repository: toddysm/golden/python
+  digest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+annotations:
+  org.opencontainers.image.base.name: ghcr.io/toddysm/golden/python
+  com.toddysm.image.base.tag: "3.14-slim"
