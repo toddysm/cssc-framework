@@ -15,6 +15,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from jinja2 import TemplateNotFound
 
+from ..clients import GraphClient
 from ..stages.base import StageRegistry
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,10 @@ def _template_exists(templates: Jinja2Templates, name: str) -> bool:
 
 
 def add_routes(
-    app: FastAPI, registry: StageRegistry, templates: Jinja2Templates
+    app: FastAPI,
+    registry: StageRegistry,
+    templates: Jinja2Templates,
+    graph: GraphClient | None = None,
 ) -> None:
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
@@ -75,3 +79,23 @@ def add_routes(
             name=name,
             context={"stage": provider.stage, "data": data},
         )
+
+    if graph is not None:
+
+        @app.get("/graph/neighborhood", response_class=HTMLResponse)
+        def graph_neighborhood(request: Request, ref: str = "", depth: int = 3) -> HTMLResponse:
+            ref = ref.strip()
+            subgraph = None
+            error = None
+            if ref:
+                try:
+                    subgraph = graph.neighborhood(ref, depth=depth)
+                except Exception:  # log details server-side, show a generic message
+                    logger.exception("Failed to load neighborhood for %s", ref)
+                    error = "the graph could not be loaded for that reference"
+            return templates.TemplateResponse(
+                request=request,
+                name="stages/_graph_neighborhood.html",
+                context={"ref": ref, "subgraph": subgraph, "error": error},
+            )
+

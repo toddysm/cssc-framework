@@ -1,0 +1,45 @@
+{% if error %}
+<p class="empty">{{ error }}</p>
+{% elif not ref %}
+<p class="empty">Enter a reference to explore its supply-chain neighborhood.</p>
+{% elif not subgraph or not subgraph.nodes %}
+<p class="empty">No graph found for <code>{{ ref }}</code>.</p>
+{% else %}
+<p>
+  Neighborhood of <code>{{ ref }}</code>:
+  <span class="badge">{{ subgraph.nodes | length }} node(s)</span>
+  <span class="badge">{{ subgraph.edges | length }} edge(s)</span>
+</p>
+
+{% if subgraph.edges %}
+<table class="graph-edges">
+  <thead>
+    <tr>
+      <th>From</th>
+      <th>Relationship</th>
+      <th>To</th>
+      <th>Tag</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for edge in subgraph.edges %}
+    <tr>
+      <td><code>{{ edge.from }}</code></td>
+      <td>{{ edge.type }}</td>
+      <td><code>{{ edge.to }}</code></td>
+      <td>{{ edge.tag or "" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<details class="graph-nodes">
+  <summary>{{ subgraph.nodes | length }} node(s)</summary>
+  <ul>
+    {% for node in subgraph.nodes %}
+    <li><code>{{ node.ref or node.key }}</code>{% if node.digest %} <span class="badge">{{ node.digest[:19] }}…</span>{% endif %}</li>
+    {% endfor %}
+  </ul>
+</details>
+{% endif %}

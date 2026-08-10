@@ -38,6 +38,17 @@ issues-service:
     enabled: true
     name: cssc-dashboard-github
 
+graph-service:
+  fullnameOverride: graph-service
+  image:
+    repository: ghcr.io/toddysm/apps/cssc-dashboard/graph-service
+    tag: dev
+  # Enable git-sync once the supply-chain-graph-data branch has recorded events.
+  gitSync:
+    enabled: false
+    repo: https://github.com/toddysm/cssc-framework
+    branch: supply-chain-graph-data
+
 dashboard-web:
   fullnameOverride: dashboard-web
   image:
@@ -49,6 +60,7 @@ dashboard-web:
   config:
     PACKAGES_SERVICE_URL: http://packages-service
     ISSUES_SERVICE_URL: http://issues-service
+    GRAPH_SERVICE_URL: http://graph-service
     CVE_BASE_URL: https://nvd.nist.gov/vuln/detail/
     QUARANTINE_NAMESPACE: quarantine
   ingress:

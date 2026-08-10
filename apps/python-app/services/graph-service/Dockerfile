@@ -1,0 +1,33 @@
+# graph-service Dockerfile.
+#
+# Build context is apps/python-app/ (so the shared libs/cssc_graph library is
+# available):
+#
+#   docker build -f services/graph-service/Dockerfile -t graph-service .
+# Base image is sourced from the package repo (golden). Overridable for local
+# dev if the golden tag is not yet available.
+ARG BASE_IMAGE=ghcr.io/toddysm/golden/python:3.14-slim
+FROM ${BASE_IMAGE}
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/src
+
+WORKDIR /app
+
+# Install the shared graph library (cssc_graph + the native LadybugDB engine)
+# first so its layer is cached across builds.
+COPY libs/cssc_graph /tmp/cssc_graph
+RUN pip install --no-cache-dir /tmp/cssc_graph && rm -rf /tmp/cssc_graph
+
+COPY services/graph-service/requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY services/graph-service/src ./src
+
+# Run as an unprivileged user.
+RUN useradd --create-home --uid 10001 appuser
+USER 10001
+
+EXPOSE 8080
+CMD ["uvicorn", "graph_service.app:app", "--host", "0.0.0.0", "--port", "8080"]

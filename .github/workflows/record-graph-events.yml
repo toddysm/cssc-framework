@@ -30,6 +30,7 @@ on:
       - "promote from quarantine / quarantine/openjdk"
       - "promote from quarantine / quarantine/hardened/python"
       - "build / cssc-dashboard"
+      - "deploy / cssc-dashboard"
     types: [completed]
 
 # One writer at a time so appends to the data branch cannot race.
