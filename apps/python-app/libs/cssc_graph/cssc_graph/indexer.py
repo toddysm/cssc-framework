@@ -97,8 +97,10 @@ class Indexer:
 
     def index_record(self, record: Mapping[str, Any]) -> None:
         kind = record.get("kind")
+        if not isinstance(kind, str) or not kind:
+            raise ValueError(f"record is missing a string 'kind': {kind!r}")
         handler = getattr(self, f"_index_{_snake(kind)}", None)
-        if handler is None:  # pragma: no cover - schema restricts kinds
+        if handler is None:
             raise ValueError(f"no indexer for kind {kind!r}")
         handler(record)
 

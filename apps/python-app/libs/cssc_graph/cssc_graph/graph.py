@@ -77,9 +77,20 @@ class GraphStore:
 
     @staticmethod
     def destroy(database_path: str | Path) -> None:
-        """Delete an existing database directory/file for a clean rebuild."""
+        """Delete an existing database directory/file for a clean rebuild.
 
-        path = Path(database_path)
+        Refuses obviously dangerous targets (filesystem root, home, or the
+        current working directory) so a mistyped ``--database`` cannot wipe them.
+        """
+
+        path = Path(database_path).resolve()
+        unsafe = {
+            Path(path.anchor).resolve(),
+            Path.home().resolve(),
+            Path.cwd().resolve(),
+        }
+        if path in unsafe:
+            raise ValueError(f"refusing to delete {path} (unsafe database path)")
         if path.is_dir():
             shutil.rmtree(path)
         elif path.exists():

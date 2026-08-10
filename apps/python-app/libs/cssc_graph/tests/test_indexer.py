@@ -6,8 +6,12 @@ import pytest
 
 pytest.importorskip("ladybug")
 
+import yaml  # noqa: E402
+from click.testing import CliRunner  # noqa: E402
+
+from cssc_graph.cli import cli  # noqa: E402
 from cssc_graph.graph import GraphStore  # noqa: E402
-from cssc_graph.indexer import index_data  # noqa: E402
+from cssc_graph.indexer import Indexer, index_data  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 DATA_ROOT = REPO_ROOT / "supply-chain-graph"
@@ -87,3 +91,46 @@ def test_indexing_is_idempotent(tmp_path: Path):
         assert _count(gs, "MATCH (o:Occurrence) RETURN count(o)") == occ1
         assert _count(gs, "MATCH ()-[e:PROMOTED_FROM]->() RETURN count(e)") == pf1
         assert _count(gs, "MATCH ()-[e:POINTED_TO]->() RETURN count(e)") == pt1
+
+
+def test_index_record_rejects_missing_kind(tmp_path: Path):
+    with GraphStore(tmp_path / "graph") as gs:
+        gs.init_schema()
+        with pytest.raises(ValueError):
+            Indexer(gs).index_record({"schemaVersion": 1})
+
+
+def test_destroy_refuses_unsafe_paths():
+    with pytest.raises(ValueError):
+        GraphStore.destroy(Path.cwd())
+    with pytest.raises(ValueError):
+        GraphStore.destroy(Path(Path.cwd().anchor))
+
+
+def test_cli_index_success(tmp_path: Path):
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["index", str(EXAMPLES), "--database", str(tmp_path / "g"), "--schema-dir", str(SCHEMA_DIR)],
+    )
+    assert result.exit_code == 0, result.output
+    assert "Indexed" in result.output
+
+
+def test_cli_index_rebuild_is_repeatable(tmp_path: Path):
+    runner = CliRunner()
+    args = ["index", str(EXAMPLES), "--database", str(tmp_path / "g"), "--schema-dir", str(SCHEMA_DIR), "--rebuild"]
+    assert runner.invoke(cli, args).exit_code == 0
+    assert runner.invoke(cli, args).exit_code == 0
+
+
+def test_cli_index_validation_failure(tmp_path: Path):
+    bad = tmp_path / "data"
+    bad.mkdir()
+    (bad / "bad.yaml").write_text(yaml.safe_dump({"kind": "Nope"}), encoding="utf-8")
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["index", str(bad), "--database", str(tmp_path / "g"), "--schema-dir", str(SCHEMA_DIR)]
+    )
+    assert result.exit_code != 0
+    assert "nothing indexed" in result.output

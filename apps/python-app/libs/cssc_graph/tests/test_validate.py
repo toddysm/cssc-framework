@@ -6,6 +6,7 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
+from cssc_graph import yamlio
 from cssc_graph.cli import cli
 from cssc_graph.identity import content_id
 from cssc_graph.validate import validate_data
@@ -129,5 +130,5 @@ def test_cli_id_matches_identity():
     example = DATA_ROOT / "examples" / "artifact-mirrored.yaml"
     result = runner.invoke(cli, ["id", str(example)])
     assert result.exit_code == 0
-    expected = content_id(yaml.safe_load(example.read_text(encoding="utf-8")))
+    expected = content_id(yamlio.load(example.read_text(encoding="utf-8")))
     assert result.output.strip() == expected
