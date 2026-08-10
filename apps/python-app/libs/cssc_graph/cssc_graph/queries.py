@@ -112,23 +112,31 @@ def traverse(
             for rel in rels:
                 if direction in ("out", "both"):
                     for row in _neighbors(store, key, rel, outgoing=True):
+                        _record_node(nodes, row)
                         _add_edge(edges, seen_edges, rel, key, row["key"], row.get("tag"))
                         nxt.append(row["key"])
                 if direction in ("in", "both"):
                     for row in _neighbors(store, key, rel, outgoing=False):
+                        _record_node(nodes, row)
                         _add_edge(edges, seen_edges, rel, row["key"], key, row.get("tag"))
                         nxt.append(row["key"])
         frontier = [k for k in nxt if k not in visited]
         if not frontier:
             break
 
-    for edge in edges:
-        for endpoint in (edge["from"], edge["to"]):
-            if endpoint not in nodes:
-                occ = get_occurrence(store, endpoint)
-                if occ:
-                    nodes[endpoint] = occ
     return {"nodes": list(nodes.values()), "edges": edges}
+
+
+def _record_node(nodes: dict[str, dict[str, Any]], row: dict[str, Any]) -> None:
+    key = row["key"]
+    if key not in nodes:
+        nodes[key] = {
+            "key": key,
+            "registry": row["registry"],
+            "repository": row["repository"],
+            "digest": row["digest"],
+            "ref": row["ref"],
+        }
 
 
 def _add_edge(edges, seen, rel, frm, to, tag) -> None:
@@ -182,9 +190,9 @@ def find(
         if not sep:
             raise ValueError("annotation filter must be name=value")
         return store.query(
-            "MATCH (o:Occurrence)-[:HAS_ANNOTATION]->(a:Annotation {name: $n, value: $v}) "
+            "MATCH (o:Occurrence)-[:HAS_ANNOTATION]->(a:Annotation {key: $k}) "
             "RETURN o.key AS key, o.ref AS ref, o.digest AS digest ORDER BY o.key",
-            {"n": name, "v": value},
+            {"k": f"{name}={value}"},
         )
     if artifact_type:
         return store.query(

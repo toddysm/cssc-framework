@@ -8,6 +8,7 @@ commands, sharing the same underlying functions with the graph service.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -23,6 +24,12 @@ from .validate import (
 
 DEFAULT_ROOT = "supply-chain-graph"
 DEFAULT_DATABASE = ".graph"
+
+# Cypher clauses that would mutate the graph; the read-only `cypher` command rejects them.
+_CYPHER_WRITE = re.compile(
+    r"\b(CREATE|MERGE|SET|DELETE|DETACH|DROP|ALTER|COPY|REMOVE|INSERT|LOAD)\b",
+    re.IGNORECASE,
+)
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
@@ -363,16 +370,28 @@ def export(database: Path, digest: str | None, ref: str | None, depth: int, expo
 
 @cli.command()
 @_database_option
-@click.argument("query")
-def cypher(database: Path, query: str) -> None:
-    """Run a Cypher QUERY against the graph and print rows as JSON."""
+@_format_option
+@click.argument("query", nargs=-1, required=True)
+def cypher(database: Path, output_format: str, query: tuple[str, ...]) -> None:
+    """Run a read-only Cypher QUERY and print the rows.
 
+    Multi-word queries need no quoting; write clauses are rejected.
+    """
+
+    text = " ".join(query)
+    if _CYPHER_WRITE.search(text):
+        raise click.UsageError("cypher is read-only; write clauses are not allowed")
     store = _open_store(database)
     try:
-        rows = store.query(query)
+        rows = store.query(text)
     finally:
         store.close()
-    click.echo(json.dumps(rows, indent=2))
+    if output_format == "json":
+        click.echo(json.dumps(rows, indent=2))
+        return
+    for row in rows:
+        click.echo("  " + "  ".join(f"{k}={v}" for k, v in row.items()))
+    click.echo(f"{len(rows)} row(s).")
 
 
 @cli.command(name="id")

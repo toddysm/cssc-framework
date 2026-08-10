@@ -134,3 +134,25 @@ def test_cli_index_validation_failure(tmp_path: Path):
     )
     assert result.exit_code != 0
     assert "nothing indexed" in result.output
+
+
+def _index_examples(tmp_path: Path) -> Path:
+    db = tmp_path / "g"
+    CliRunner().invoke(
+        cli, ["index", str(EXAMPLES), "--database", str(db), "--schema-dir", str(SCHEMA_DIR)]
+    )
+    return db
+
+
+def test_cli_cypher_read(tmp_path: Path):
+    db = _index_examples(tmp_path)
+    result = CliRunner().invoke(cli, ["cypher", "-d", str(db), "MATCH", "(a:Artifact)", "RETURN", "count(a)"])
+    assert result.exit_code == 0, result.output
+    assert "row(s)." in result.output
+
+
+def test_cli_cypher_rejects_writes(tmp_path: Path):
+    db = _index_examples(tmp_path)
+    result = CliRunner().invoke(cli, ["cypher", "-d", str(db), "MATCH", "(a:Artifact)", "SET", "a.x=1"])
+    assert result.exit_code != 0
+    assert "read-only" in result.output
