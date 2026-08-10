@@ -24,7 +24,10 @@ SCHEMA_DDL: tuple[str, ...] = (
     "PRIMARY KEY(key))",
     "CREATE NODE TABLE IF NOT EXISTS Deployment("
     "key STRING, cluster STRING, namespace STRING, PRIMARY KEY(key))",
+    "CREATE NODE TABLE IF NOT EXISTS Annotation("
+    "key STRING, name STRING, value STRING, PRIMARY KEY(key))",
     "CREATE REL TABLE IF NOT EXISTS OCCURRENCE_OF(FROM Occurrence TO Artifact)",
+    "CREATE REL TABLE IF NOT EXISTS HAS_ANNOTATION(FROM Occurrence TO Annotation)",
     "CREATE REL TABLE IF NOT EXISTS MIRRORED_FROM("
     "FROM Occurrence TO Occurrence, tag STRING, runUrl STRING, recordedAt STRING)",
     "CREATE REL TABLE IF NOT EXISTS PROMOTED_FROM("
