@@ -1,0 +1,2 @@
+# Producer-written event records live here as <yyyy>/<mm>/<dd>/*.yaml.
+# This file keeps the directory in version control until the first event lands.

@@ -1,0 +1,20 @@
+schemaVersion: 1
+kind: ArtifactBuilt
+recordedAt: 2026-08-09T14:05:00Z
+source:
+  type: github-actions
+  workflow: build-cssc-dashboard
+  runUrl: https://github.com/toddysm/cssc-framework/actions/runs/123450004
+image:
+  registry: ghcr.io
+  repository: toddysm/apps/cssc-dashboard/issues-service
+  digest: sha256:4444444444444444444444444444444444444444444444444444444444444444
+base:
+  name: ghcr.io/toddysm/golden/python
+  digest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+  tag: "3.14-slim"
+buildVersion: "0.1.2-abc1234"
+sourceCommit: abc1234def5678
+referrers:
+  sbomDigest: sha256:5555555555555555555555555555555555555555555555555555555555555555
+  provenanceDigest: sha256:6666666666666666666666666666666666666666666666666666666666666666

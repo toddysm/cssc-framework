@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cssc.toddysm.com/schema/envelope.schema.json",
+  "title": "Envelope",
+  "description": "Common wrapper shared by every supply-chain-graph record, plus reusable definitions.",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "recordedAt", "source"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "type": "string", "minLength": 1 },
+    "id": { "$ref": "#/$defs/contentHash" },
+    "recordedAt": { "type": "string", "format": "date-time" },
+    "source": { "$ref": "#/$defs/source" }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "description": "An OCI content digest.",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "contentHash": {
+      "type": "string",
+      "description": "Deterministic content id of a record's semantic payload.",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "registry": {
+      "type": "string",
+      "description": "Registry login server, e.g. ghcr.io or first.registry.io.",
+      "minLength": 1,
+      "pattern": "^[^/\\s]+$"
+    },
+    "repository": {
+      "type": "string",
+      "description": "Repository path without the registry, e.g. toddysm/golden/python.",
+      "minLength": 1,
+      "pattern": "^[^\\s]+$"
+    },
+    "occurrence": {
+      "type": "object",
+      "description": "A fully-qualified artifact occurrence: registry + repository + digest.",
+      "required": ["registry", "repository", "digest"],
+      "additionalProperties": false,
+      "properties": {
+        "registry": { "$ref": "#/$defs/registry" },
+        "repository": { "$ref": "#/$defs/repository" },
+        "digest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "description": "Provenance/evidence for the record itself.",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["github-actions", "human", "registry", "kubernetes", "github"]
+        },
+        "workflow": { "type": "string" },
+        "runUrl": { "type": "string", "format": "uri" },
+        "runId": { "type": "string" },
+        "runAttempt": { "type": "string" },
+        "issueUrl": { "type": "string", "format": "uri" }
+      }
+    }
+  }
+}

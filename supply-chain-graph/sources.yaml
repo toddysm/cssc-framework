@@ -1,0 +1,14 @@
+schemaVersion: 1
+# Curated list of remote authoritative sources the indexer may crawl.
+# Heavy payloads (SBOM/scan) are deferred; these roots cover packages, the
+# mirror-history ledger, and promotion tracking issues.
+sources:
+  - type: ghcr
+    repository: ghcr.io/toddysm/golden/python
+  - type: mirror-history
+    repository: ghcr.io/toddysm/quarantine/python
+  - type: github-issues
+    repo: toddysm/cssc-framework
+    labels:
+      - promotion-pending
+      - promotion-approved

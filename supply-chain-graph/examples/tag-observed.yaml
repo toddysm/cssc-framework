@@ -1,0 +1,13 @@
+schemaVersion: 1
+kind: TagObserved
+recordedAt: 2026-08-09T13:10:05Z
+source:
+  type: github-actions
+  workflow: promote-from-quarantine-python
+  runUrl: https://github.com/toddysm/cssc-framework/actions/runs/123450002
+occurrence:
+  registry: ghcr.io
+  repository: toddysm/golden/python
+tag: "3.14-slim"
+digest: sha256:2222222222222222222222222222222222222222222222222222222222222222
+observedAt: 2026-08-09T13:10:05Z

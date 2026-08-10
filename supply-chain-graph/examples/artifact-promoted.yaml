@@ -1,0 +1,20 @@
+schemaVersion: 1
+kind: ArtifactPromoted
+recordedAt: 2026-08-09T13:10:00Z
+source:
+  type: github-actions
+  workflow: promote-from-quarantine-python
+  runUrl: https://github.com/toddysm/cssc-framework/actions/runs/123450002
+  issueUrl: https://github.com/toddysm/cssc-framework/issues/77
+from:
+  registry: ghcr.io
+  repository: toddysm/quarantine/python
+  digest: sha256:2222222222222222222222222222222222222222222222222222222222222222
+to:
+  registry: ghcr.io
+  repository: toddysm/golden/python
+  digest: sha256:2222222222222222222222222222222222222222222222222222222222222222
+tag: "3.14-slim"
+evidence:
+  vulnAttestationDigest: sha256:3333333333333333333333333333333333333333333333333333333333333333
+  issueUrl: https://github.com/toddysm/cssc-framework/issues/77

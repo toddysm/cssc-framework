@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cssc.toddysm.com/schema/sources.schema.json",
+  "title": "Sources",
+  "description": "Curated list of remote authoritative sources (sources.yaml).",
+  "type": "object",
+  "required": ["schemaVersion", "sources"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type"],
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["ghcr", "mirror-history", "github-issues", "kubernetes"]
+          },
+          "repository": { "type": "string" },
+          "repo": { "type": "string" },
+          "labels": { "type": "array", "items": { "type": "string" } },
+          "context": { "type": "string" },
+          "namespaces": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

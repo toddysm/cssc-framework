@@ -1,0 +1,18 @@
+schemaVersion: 1
+kind: ArtifactPromoted
+recordedAt: 2026-08-09T13:20:00Z
+source:
+  type: github-actions
+  workflow: promote-cross-registry
+  runUrl: https://github.com/toddysm/cssc-framework/actions/runs/123450003
+# Cross-registry promotion: the digest is preserved but the registry login
+# server differs, so from/to are two distinct occurrences and the hop is kept.
+from:
+  registry: first.registry.io
+  repository: quarantine/python
+  digest: sha256:2222222222222222222222222222222222222222222222222222222222222222
+to:
+  registry: second.registry.io
+  repository: quarantine/python
+  digest: sha256:2222222222222222222222222222222222222222222222222222222222222222
+tag: "3.14-slim"

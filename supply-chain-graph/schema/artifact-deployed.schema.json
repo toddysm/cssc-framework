@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cssc.toddysm.com/schema/artifact-deployed.schema.json",
+  "title": "ArtifactDeployed",
+  "description": "Deploy-stage edge: an image running in an environment.",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "recordedAt", "source", "image", "environment"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "ArtifactDeployed" },
+    "id": { "$ref": "envelope.schema.json#/$defs/contentHash" },
+    "recordedAt": { "type": "string", "format": "date-time" },
+    "source": { "$ref": "envelope.schema.json#/$defs/source" },
+    "image": { "$ref": "envelope.schema.json#/$defs/occurrence" },
+    "environment": {
+      "type": "object",
+      "required": ["cluster", "namespace"],
+      "additionalProperties": false,
+      "properties": {
+        "cluster": { "type": "string", "minLength": 1 },
+        "namespace": { "type": "string", "minLength": 1 }
+      }
+    },
+    "chart": {
+      "type": "object",
+      "required": ["name", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" }
+      }
+    }
+  }
+}
