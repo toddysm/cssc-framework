@@ -34,7 +34,7 @@ It follows the agreed flow:
 10. [Design decisions and alternatives](#design-decisions-and-alternatives)
 11. [Phased delivery](#phased-delivery)
 12. [Security considerations](#security-considerations)
-13. [Open questions](#open-questions)
+13. [Decisions](#decisions-resolved-2026-08-09)
 14. [Tracking issues](#tracking-issues)
 
 ## Motivation
@@ -119,12 +119,14 @@ then makes that file durable.
 ### The core rule: producers only ever create new immutable files
 
 Producers **never edit or delete** an existing data file. Every run writes a new
-file whose name is derived from its content (timestamp + stage + short content
-hash). This single rule gives us:
+file whose name carries a timestamp, the stage, and a short content hash. This
+single rule gives us:
 
 - **No merge conflicts** — two concurrent runs write two different files.
-- **Idempotency** — re-running the same step reproduces the same filename and
-  content, so a retry is a no-op (or an identical overwrite).
+- **Idempotency at indexing time** — each record also carries a content `id` (a
+  hash of its semantic payload), and the indexer upserts by that `id`, so a
+  re-recorded fact is deduplicated even though its filename (which includes a
+  timestamp) differs.
 - **A complete audit trail** — history is the set of event files, never mutated.
 
 Mutable, human-curated records (`sources.yaml`, manual corrections) are edited
@@ -546,11 +548,12 @@ flowchart LR
     GS --> USER[kubectl port-forward / ingress]
 ```
 
-- **Getting the data into the pod** (pick one, mirrors the write-back choice):
-  - *git-sync sidecar / init container* clones the repo (or the
-    `supply-chain-graph-data` branch) to a shared volume; or
-  - the service **pulls the OCI event ledger** with `OciRegistryClient` (no repo
-    clone) — preferred, since it reuses `mirror-history` mechanics.
+- **Getting the data into the pod** (mirrors the write-back choice):
+  - *git-sync sidecar / init container* (default) clones the repo — or the
+    `supply-chain-graph-data` branch — to a shared volume, consistent with the
+    durability decision that the source repository is the system of record; or
+  - *optionally*, the service pulls the OCI event ledger with `OciRegistryClient`
+    (no repo clone) as an alternative when we want to avoid a checkout.
 - **Indexing on startup.** An init container (or the app's startup hook) runs
   `cssc-graph index` into the database directory, then marks readiness only after
   the index succeeds. A **reindex** is triggered by `POST /index/rebuild` or a
@@ -590,7 +593,7 @@ flowchart LR
 | Heavy payloads | Referenced by digest; **ingestion deferred** | Unblocks core provenance/lineage now; keeps Git small | Inline SBOM/scan (bloats diffs) |
 | Tag modelling | Append-only observations | Preserves full tag history | Single mutable pointer (loses history) |
 | DB persistence | Rebuildable, PVC optional | Derived state, disposable | Treat DB as source of truth (fragile) |
-| Engine | **LadybugDB** (embedded, Cypher) — confirmed | Maintained successor to Kùzu; no server; Py 3.14 wheels | Neo4j/Memgraph (server); SQLite CTEs (verbose paths) |
+| Engine | **LadybugDB** (embedded, Cypher) — confirmed | Maintained successor to Kùzu; no server; prebuilt wheels for our Python/arch | Neo4j/Memgraph (server); SQLite CTEs (verbose paths) |
 | CLI framework | **Python Click** | Composable subcommands, typed options, one query layer shared with the API | argparse (boilerplate); Typer (extra dependency) |
 | Ingestion | Batch index at startup/CLI | Simplicity; matches flow steps 1–4 | Live API ingestion (flow step 5, later) |
 
