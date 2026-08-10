@@ -131,6 +131,224 @@ def index(root: Path, database: Path, schema_dir: Path | None, rebuild: bool) ->
         click.echo(f"  {kind}: {count}")
 
 
+# -- query commands (read-only) ----------------------------------------------
+
+
+def _database_option(func):
+    return click.option(
+        "--database",
+        "-d",
+        type=click.Path(exists=True, path_type=Path),
+        default=DEFAULT_DATABASE,
+        help="LadybugDB database directory (default: .graph).",
+    )(func)
+
+
+def _format_option(func):
+    return click.option(
+        "--format",
+        "output_format",
+        type=click.Choice(["text", "json"]),
+        default="text",
+        help="Output format.",
+    )(func)
+
+
+def _open_store(database: Path):
+    from .graph import GraphStore
+
+    return GraphStore(database).connect()
+
+
+def _emit_subgraph(subgraph: dict, output_format: str) -> None:
+    if output_format == "json":
+        click.echo(json.dumps(subgraph, indent=2))
+        return
+    refs = {n["key"]: n.get("ref", n["key"]) for n in subgraph["nodes"]}
+    click.echo(f"{len(subgraph['nodes'])} node(s), {len(subgraph['edges'])} edge(s):")
+    for edge in subgraph["edges"]:
+        tag = f" ({edge['tag']})" if edge.get("tag") else ""
+        frm = refs.get(edge["from"], edge["from"])
+        to = refs.get(edge["to"], edge["to"])
+        click.echo(f"  {frm}  --{edge['type']}-->  {to}{tag}")
+
+
+@cli.command()
+@_database_option
+@click.option("--digest", help="Seed by artifact digest (sha256:...).")
+@click.option("--ref", help="Seed by registry/repository[@digest|:tag].")
+@click.option("--depth", default=6, show_default=True, help="Max traversal depth.")
+@_format_option
+def path(database: Path, digest: str | None, ref: str | None, depth: int, output_format: str) -> None:
+    """Show the supply-chain path of an artifact (upstream and downstream)."""
+
+    if not digest and not ref:
+        raise click.UsageError("provide --digest or --ref")
+    from . import queries
+
+    store = _open_store(database)
+    try:
+        subgraph = queries.path(store, digest=digest, ref=ref, depth=depth)
+    finally:
+        store.close()
+    _emit_subgraph(subgraph, output_format)
+
+
+@cli.command(name="tag-history")
+@_database_option
+@click.option("--repo", required=True, help="Fully-qualified registry/repository.")
+@click.option("--tag", required=True)
+@_format_option
+def tag_history(database: Path, repo: str, tag: str, output_format: str) -> None:
+    """List every digest a tag pointed to over time, chronologically."""
+
+    from . import queries
+
+    store = _open_store(database)
+    try:
+        history = queries.tag_history(store, repo, tag)
+    finally:
+        store.close()
+    if output_format == "json":
+        click.echo(json.dumps(history, indent=2))
+        return
+    for entry in history:
+        click.echo(f"  {entry['observedAt']}  {entry['digest']}  {entry.get('runUrl', '')}".rstrip())
+    click.echo(f"{len(history)} observation(s).")
+
+
+@cli.command()
+@_database_option
+@click.option("--ref", required=True, help="The built image (registry/repository[@digest|:tag]).")
+@click.option("--depth", default=10, show_default=True)
+@_format_option
+def bases(database: Path, ref: str, depth: int, output_format: str) -> None:
+    """Show the direct and transitive base images of a built image."""
+
+    from . import queries
+
+    store = _open_store(database)
+    try:
+        subgraph = queries.bases(store, ref, depth=depth)
+    finally:
+        store.close()
+    _emit_subgraph(subgraph, output_format)
+
+
+@cli.command()
+@_database_option
+@click.option("--base", required=True, help="The base image (registry/repository[@digest|:tag]).")
+@click.option("--depth", default=10, show_default=True)
+@_format_option
+def derived(database: Path, base: str, depth: int, output_format: str) -> None:
+    """Show images built (transitively) from a base image."""
+
+    from . import queries
+
+    store = _open_store(database)
+    try:
+        subgraph = queries.derived(store, base, depth=depth)
+    finally:
+        store.close()
+    _emit_subgraph(subgraph, output_format)
+
+
+@cli.command()
+@_database_option
+@click.option("--annotation", help="Filter by annotation name=value.")
+@click.option("--type", "artifact_type", help="Filter by artifact/media type.")
+@click.option("--ref", help="Filter by registry/repository.")
+@_format_option
+def find(database: Path, annotation: str | None, artifact_type: str | None, ref: str | None, output_format: str) -> None:
+    """Find occurrences by annotation, artifact type, or repository."""
+
+    if not any((annotation, artifact_type, ref)):
+        raise click.UsageError("provide --annotation, --type, or --ref")
+    from . import queries
+
+    store = _open_store(database)
+    try:
+        results = queries.find(store, annotation=annotation, artifact_type=artifact_type, ref=ref)
+    finally:
+        store.close()
+    if output_format == "json":
+        click.echo(json.dumps(results, indent=2))
+        return
+    for row in results:
+        click.echo(f"  {row['ref']}  {row['digest']}")
+    click.echo(f"{len(results)} match(es).")
+
+
+@cli.command()
+@_database_option
+@click.option("--ref", required=True, help="Occurrence (registry/repository[@digest|:tag]).")
+@_format_option
+def show(database: Path, ref: str, output_format: str) -> None:
+    """Show an occurrence's details, annotations, tags, and nearby path."""
+
+    from . import queries
+
+    store = _open_store(database)
+    try:
+        data = queries.show(store, ref)
+    finally:
+        store.close()
+    if data is None:
+        raise click.ClickException(f"no occurrence found for {ref!r}")
+    if output_format == "json":
+        click.echo(json.dumps(data, indent=2))
+        return
+    occ = data["occurrence"]
+    click.echo(f"occurrence: {occ['key']}")
+    if data["artifact"]:
+        art = data["artifact"]
+        click.echo(f"  type: {art.get('artifactType') or art.get('mediaType') or '-'}")
+    for ann in data["annotations"]:
+        click.echo(f"  annotation: {ann['name']}={ann['value']}")
+    for tag in data["tags"]:
+        click.echo(f"  tag: {tag['tag']} @ {tag['observedAt']}")
+
+
+@cli.command()
+@_database_option
+@click.option("--digest", help="Seed by artifact digest.")
+@click.option("--ref", help="Seed by registry/repository[@digest|:tag].")
+@click.option("--depth", default=3, show_default=True)
+@click.option(
+    "--format",
+    "export_format",
+    type=click.Choice(["cytoscape", "mermaid", "json"]),
+    default="cytoscape",
+    show_default=True,
+)
+@click.option("--output", "-o", type=click.Path(path_type=Path), default=None, help="Write to a file.")
+def export(database: Path, digest: str | None, ref: str | None, depth: int, export_format: str, output: Path | None) -> None:
+    """Export a bounded subgraph for offline visualization."""
+
+    if not digest and not ref:
+        raise click.UsageError("provide --digest or --ref")
+    from . import queries
+
+    store = _open_store(database)
+    try:
+        subgraph = queries.path(store, digest=digest, ref=ref, depth=depth)
+    finally:
+        store.close()
+
+    if export_format == "cytoscape":
+        text = json.dumps(queries.to_cytoscape(subgraph), indent=2)
+    elif export_format == "mermaid":
+        text = queries.to_mermaid(subgraph)
+    else:
+        text = json.dumps(subgraph, indent=2)
+
+    if output is not None:
+        output.write_text(text + "\n", encoding="utf-8")
+        click.echo(f"Wrote {export_format} to {output}.")
+    else:
+        click.echo(text)
+
+
 @cli.command(name="id")
 @click.argument(
     "record",

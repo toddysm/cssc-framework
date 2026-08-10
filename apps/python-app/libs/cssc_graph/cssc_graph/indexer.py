@@ -111,11 +111,25 @@ class Indexer:
 
     def _index_artifact_observed(self, record: Mapping[str, Any]) -> None:
         occ = record["occurrence"]
-        self._merge_occurrence_from(occ)
+        occ_key = self._merge_occurrence_from(occ)
         artifact = record.get("artifact", {})
         self._set_artifact_metadata(
             occ["digest"], artifact.get("mediaType", ""), artifact.get("artifactType", "")
         )
+        self._merge_annotations(occ_key, record.get("annotations", {}))
+
+    def _merge_annotations(self, occ_key: str, annotations: Mapping[str, Any]) -> None:
+        for name, value in annotations.items():
+            akey = f"{name}={value}"
+            self._store.execute(
+                "MERGE (an:Annotation {key: $key}) SET an.name = $name, an.value = $value",
+                {"key": akey, "name": name, "value": str(value)},
+            )
+            self._store.execute(
+                "MATCH (o:Occurrence {key: $occ}), (an:Annotation {key: $key}) "
+                "MERGE (o)-[:HAS_ANNOTATION]->(an)",
+                {"occ": occ_key, "key": akey},
+            )
 
     def _index_artifact_mirrored(self, record: Mapping[str, Any]) -> None:
         self._merge_pair_edge(record, "MIRRORED_FROM", key_props=("tag",))
