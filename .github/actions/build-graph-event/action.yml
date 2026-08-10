@@ -9,10 +9,12 @@
 # Records conform to the schemas under supply-chain-graph/schema/. JSON is a
 # subset of YAML, so the indexer/validator (which accept .json) read them as-is.
 #
-# Idempotency: the filename is a content hash of the record's *semantic* payload
-# (kind + fully-qualified occurrences + tag), so re-recording the same fact
-# yields the same path. The collector only ever *adds* new files (never
-# overwrites), keeping the ledger immutable and re-runs a no-op.
+# Idempotency: the record carries a deterministic `id` — the sha256 content id
+# of its semantic payload (the whole record minus the volatile envelope fields
+# id/recordedAt/source), computed exactly as cssc_graph.identity.content_id — and
+# the file is named after that full hash. Re-recording the same fact yields the
+# same id and path. The collector only ever *adds* new files (never overwrites),
+# keeping the ledger immutable and re-runs a no-op.
 #
 # Design: docs/architecture/observability/supply-chain-graph.md.
 name: build-graph-event
@@ -108,7 +110,6 @@ runs:
               echo "::error::build-graph-event: ${KIND} requires source-ref and source-digest."; exit 1; }
             split_ref "${SOURCE_REF}"; s_reg="${REG}"; s_repo="${REPO}"
             split_ref "${DEST_REF}";   d_reg="${REG}"; d_repo="${REPO}"
-            semantic="${KIND}|${s_reg}/${s_repo}@${SOURCE_DIGEST}|${d_reg}/${d_repo}@${DEST_DIGEST}|${TAG}"
             record="$(jq -nc \
               --argjson src "${source_json}" --arg now "${now}" --arg kind "${KIND}" \
               --arg sreg "${s_reg}" --arg srepo "${s_repo}" --arg sdig "${SOURCE_DIGEST}" \
@@ -124,7 +125,6 @@ runs:
             ;;
           TagObserved)
             split_ref "${DEST_REF}"; d_reg="${REG}"; d_repo="${REPO}"
-            semantic="TagObserved|${d_reg}/${d_repo}|${TAG}|${DEST_DIGEST}"
             record="$(jq -nc \
               --argjson src "${source_json}" --arg now "${now}" \
               --arg dreg "${d_reg}" --arg drepo "${d_repo}" \
@@ -139,11 +139,15 @@ runs:
             ;;
         esac
 
-        # Filename = 16-hex content hash of the semantic payload; directory named
-        # after the kind (ArtifactMirrored -> artifact-mirrored).
-        hash="$(printf '%s' "${semantic}" | sha256sum | cut -c1-16)"
+        # Content id = sha256 over the record's canonical semantic payload (the
+        # record minus the volatile envelope fields id/recordedAt/source), matching
+        # cssc_graph.identity.content_id: sorted keys, compact separators, no
+        # trailing newline (jq -S -c -j). Store it in `id` and use the full hash as
+        # the filename so collisions are effectively impossible.
+        hex="$(printf '%s' "${record}" | jq -S -c -j 'del(.id, .recordedAt, .source)' | sha256sum | cut -d' ' -f1)"
+        record="$(printf '%s' "${record}" | jq -c --arg id "sha256:${hex}" '. + {id: $id}')"
         kdir="$(printf '%s' "${KIND}" | sed -E 's/([a-z0-9])([A-Z])/\1-\2/g' | tr '[:upper:]' '[:lower:]')"
         dir="${outdir}/events/${kdir}"
         mkdir -p "${dir}"
-        printf '%s\n' "${record}" | jq . > "${dir}/${hash}.json"
-        echo "Staged ${KIND} event: events/${kdir}/${hash}.json"
+        printf '%s\n' "${record}" | jq . > "${dir}/${hex}.json"
+        echo "Staged ${KIND} event: events/${kdir}/${hex}.json"
