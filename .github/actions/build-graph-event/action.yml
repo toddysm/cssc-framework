@@ -18,11 +18,11 @@
 #
 # Design: docs/architecture/observability/supply-chain-graph.md.
 name: build-graph-event
-description: Stage a supply-chain-graph event record (ArtifactMirrored / ArtifactPromoted / TagObserved) as JSON.
+description: Stage a supply-chain-graph event record (ArtifactMirrored / ArtifactPromoted / ArtifactBuilt / TagObserved) as JSON.
 
 inputs:
   kind:
-    description: "Record kind: ArtifactMirrored, ArtifactPromoted, or TagObserved."
+    description: "Record kind: ArtifactMirrored, ArtifactPromoted, ArtifactBuilt, or TagObserved."
     required: true
   source-ref:
     description: "Fully-qualified source name registry/repository (from occurrence). Required for ArtifactMirrored/ArtifactPromoted."
@@ -39,12 +39,33 @@ inputs:
     description: "Destination digest (sha256:...). For TagObserved this is the digest the tag points to."
     required: true
   tag:
-    description: "Image tag."
-    required: true
+    description: "Image tag. Required for ArtifactMirrored/ArtifactPromoted/TagObserved; unused for ArtifactBuilt."
+    required: false
+    default: ""
   force:
     description: "'true' when a mirror was a force copy (ArtifactMirrored only)."
     required: false
     default: "false"
+  base-name:
+    description: "Fully-qualified base image name without digest, e.g. ghcr.io/toddysm/golden/python (ArtifactBuilt)."
+    required: false
+    default: ""
+  base-digest:
+    description: "Base image digest (sha256:...) the build was pinned to (ArtifactBuilt)."
+    required: false
+    default: ""
+  base-tag:
+    description: "Base image tag at build time (ArtifactBuilt)."
+    required: false
+    default: ""
+  build-version:
+    description: "Build version / immutable build tag (ArtifactBuilt)."
+    required: false
+    default: ""
+  source-commit:
+    description: "Source commit the image was built from (ArtifactBuilt)."
+    required: false
+    default: ""
   output-dir:
     description: "Staging directory to write the event file into."
     required: false
@@ -75,6 +96,11 @@ runs:
         DEST_DIGEST: "${{ inputs.dest-digest }}"
         TAG: "${{ inputs.tag }}"
         FORCE: "${{ inputs.force }}"
+        BASE_NAME: "${{ inputs.base-name }}"
+        BASE_DIGEST: "${{ inputs.base-digest }}"
+        BASE_TAG: "${{ inputs.base-tag }}"
+        BUILD_VERSION: "${{ inputs.build-version }}"
+        SOURCE_COMMIT: "${{ inputs.source-commit }}"
         OUTPUT_DIR: "${{ inputs.output-dir }}"
         WORKFLOW: "${{ inputs.workflow }}"
         RUN_URL: "${{ inputs.run-url }}"
@@ -122,6 +148,23 @@ runs:
             if [ "${KIND}" = "ArtifactMirrored" ] && [ "${FORCE}" = "true" ]; then
               record="$(printf '%s' "${record}" | jq -c '. + {force:true}')"
             fi
+            ;;
+          ArtifactBuilt)
+            [ -n "${BASE_NAME}" ] && [ -n "${BASE_DIGEST}" ] || {
+              echo "::error::build-graph-event: ArtifactBuilt requires base-name and base-digest."; exit 1; }
+            split_ref "${DEST_REF}"; d_reg="${REG}"; d_repo="${REPO}"
+            base_json="$(jq -nc \
+              --arg name "${BASE_NAME}" --arg dig "${BASE_DIGEST}" --arg tag "${BASE_TAG}" \
+              '{name:$name, digest:$dig} + (if $tag == "" then {} else {tag:$tag} end)')"
+            record="$(jq -nc \
+              --argjson src "${source_json}" --arg now "${now}" \
+              --arg dreg "${d_reg}" --arg drepo "${d_repo}" --arg ddig "${DEST_DIGEST}" \
+              --argjson base "${base_json}" --arg bv "${BUILD_VERSION}" --arg sc "${SOURCE_COMMIT}" \
+              '{schemaVersion:1, kind:"ArtifactBuilt", recordedAt:$now, source:$src,
+                image:{registry:$dreg, repository:$drepo, digest:$ddig},
+                base:$base}
+               + (if $bv == "" then {} else {buildVersion:$bv} end)
+               + (if $sc == "" then {} else {sourceCommit:$sc} end)')"
             ;;
           TagObserved)
             split_ref "${DEST_REF}"; d_reg="${REG}"; d_repo="${REPO}"

@@ -71,6 +71,7 @@ jobs:
         run: echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${ACTOR}" --password-stdin
 
       - name: Build and push ${{ matrix.service }}
+        id: build
         env:
           SERVICE: ${{ matrix.service }}
           IMAGE: ghcr.io/toddysm/apps/cssc-dashboard/${{ matrix.service }}
@@ -184,8 +185,22 @@ jobs:
             --tag "${IMAGE}:${major}" \
             --provenance=mode=max \
             --sbom=true \
+            --metadata-file "${RUNNER_TEMP}/metadata-${SERVICE}.json" \
             --output type=image,oci-mediatypes=true,push=true \
             .
+
+          # Expose build facts for the supply-chain-graph staging steps.
+          image_digest="$(jq -r '.["containerimage.digest"]' "${RUNNER_TEMP}/metadata-${SERVICE}.json")"
+          {
+            echo "image-digest=${image_digest}"
+            echo "base-name=${base_name}"
+            echo "base-digest=${base_digest}"
+            echo "base-tag=${base_tag}"
+            echo "tag-major=${major}"
+            echo "tag-minor=${minor}"
+            echo "tag-patch=${patch}"
+            echo "tag-build=${build}"
+          } >> "${GITHUB_OUTPUT}"
 
           {
             echo "### ${SERVICE}"
@@ -263,3 +278,88 @@ jobs:
             echo "- SBOM: SPDX in-toto statement attached per platform as an OCI 1.1 referrer (\`application/vnd.in-toto+json\`)"
             echo "- Provenance: SLSA in-toto statement attached per platform as an OCI 1.1 referrer (\`application/vnd.in-toto+json\`)"
           } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Stage build graph event
+        # Record the build (image BUILT_FROM base name@digest) as a
+        # supply-chain-graph event for the record-graph-events collector.
+        if: ${{ steps.build.outputs.image-digest != '' }}
+        uses: ./.github/actions/build-graph-event
+        with:
+          kind: ArtifactBuilt
+          dest-ref: ghcr.io/toddysm/apps/cssc-dashboard/${{ matrix.service }}
+          dest-digest: ${{ steps.build.outputs.image-digest }}
+          base-name: ${{ steps.build.outputs.base-name }}
+          base-digest: ${{ steps.build.outputs.base-digest }}
+          base-tag: ${{ steps.build.outputs.base-tag }}
+          build-version: ${{ steps.build.outputs.tag-build }}
+          source-commit: ${{ github.sha }}
+          output-dir: ${{ runner.temp }}/graph-events
+          workflow: ${{ github.workflow }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          run-id: ${{ github.run_id }}
+          run-attempt: ${{ github.run_attempt }}
+
+      - name: Stage tag observation graph event (${{ steps.build.outputs.tag-major }})
+        if: ${{ steps.build.outputs.image-digest != '' }}
+        uses: ./.github/actions/build-graph-event
+        with:
+          kind: TagObserved
+          dest-ref: ghcr.io/toddysm/apps/cssc-dashboard/${{ matrix.service }}
+          dest-digest: ${{ steps.build.outputs.image-digest }}
+          tag: ${{ steps.build.outputs.tag-major }}
+          output-dir: ${{ runner.temp }}/graph-events
+          workflow: ${{ github.workflow }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          run-id: ${{ github.run_id }}
+          run-attempt: ${{ github.run_attempt }}
+
+      - name: Stage tag observation graph event (${{ steps.build.outputs.tag-minor }})
+        if: ${{ steps.build.outputs.image-digest != '' }}
+        uses: ./.github/actions/build-graph-event
+        with:
+          kind: TagObserved
+          dest-ref: ghcr.io/toddysm/apps/cssc-dashboard/${{ matrix.service }}
+          dest-digest: ${{ steps.build.outputs.image-digest }}
+          tag: ${{ steps.build.outputs.tag-minor }}
+          output-dir: ${{ runner.temp }}/graph-events
+          workflow: ${{ github.workflow }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          run-id: ${{ github.run_id }}
+          run-attempt: ${{ github.run_attempt }}
+
+      - name: Stage tag observation graph event (${{ steps.build.outputs.tag-patch }})
+        if: ${{ steps.build.outputs.image-digest != '' }}
+        uses: ./.github/actions/build-graph-event
+        with:
+          kind: TagObserved
+          dest-ref: ghcr.io/toddysm/apps/cssc-dashboard/${{ matrix.service }}
+          dest-digest: ${{ steps.build.outputs.image-digest }}
+          tag: ${{ steps.build.outputs.tag-patch }}
+          output-dir: ${{ runner.temp }}/graph-events
+          workflow: ${{ github.workflow }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          run-id: ${{ github.run_id }}
+          run-attempt: ${{ github.run_attempt }}
+
+      - name: Stage tag observation graph event (${{ steps.build.outputs.tag-build }})
+        if: ${{ steps.build.outputs.image-digest != '' }}
+        uses: ./.github/actions/build-graph-event
+        with:
+          kind: TagObserved
+          dest-ref: ghcr.io/toddysm/apps/cssc-dashboard/${{ matrix.service }}
+          dest-digest: ${{ steps.build.outputs.image-digest }}
+          tag: ${{ steps.build.outputs.tag-build }}
+          output-dir: ${{ runner.temp }}/graph-events
+          workflow: ${{ github.workflow }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          run-id: ${{ github.run_id }}
+          run-attempt: ${{ github.run_attempt }}
+
+      - name: Upload graph events
+        if: ${{ steps.build.outputs.image-digest != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: graph-events-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/graph-events
+          if-no-files-found: ignore
+          retention-days: 1

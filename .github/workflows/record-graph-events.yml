@@ -1,10 +1,11 @@
 # Workflow: record-graph-events
 #
-# Serialized collector for the supply-chain graph. The mirror and
-# promote-from-quarantine workflows stage event records (build-graph-event) and
-# upload them as `graph-events*` artifacts. This workflow subscribes to their
-# completion via `workflow_run`, downloads those artifacts, and commits the new
-# event files to the dedicated `supply-chain-graph-data` branch.
+# Serialized collector for the supply-chain graph. The mirror,
+# promote-from-quarantine, and build workflows stage event records
+# (build-graph-event) and upload them as `graph-events*` artifacts. This
+# workflow subscribes to their completion via `workflow_run`, downloads those
+# artifacts, and commits the new event files to the dedicated
+# `supply-chain-graph-data` branch.
 #
 # A single writer (one concurrency group) commits, so there is no ref race, and
 # only this workflow needs `contents: write` — the producer jobs keep their
@@ -28,6 +29,7 @@ on:
       - "promote from quarantine / quarantine/node"
       - "promote from quarantine / quarantine/openjdk"
       - "promote from quarantine / quarantine/hardened/python"
+      - "build / cssc-dashboard"
     types: [completed]
 
 # One writer at a time so appends to the data branch cannot race.
