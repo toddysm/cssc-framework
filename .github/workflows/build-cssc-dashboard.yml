@@ -190,7 +190,7 @@ jobs:
             .
 
           # Expose build facts for the supply-chain-graph staging steps.
-          image_digest="$(jq -r '.["containerimage.digest"]' "${RUNNER_TEMP}/metadata-${SERVICE}.json")"
+          image_digest="$(jq -r '.["containerimage.digest"] // empty' "${RUNNER_TEMP}/metadata-${SERVICE}.json")"
           {
             echo "image-digest=${image_digest}"
             echo "base-name=${base_name}"

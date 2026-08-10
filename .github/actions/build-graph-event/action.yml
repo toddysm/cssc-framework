@@ -132,8 +132,8 @@ runs:
 
         case "${KIND}" in
           ArtifactMirrored|ArtifactPromoted)
-            [ -n "${SOURCE_REF}" ] && [ -n "${SOURCE_DIGEST}" ] || {
-              echo "::error::build-graph-event: ${KIND} requires source-ref and source-digest."; exit 1; }
+            [ -n "${SOURCE_REF}" ] && [ -n "${SOURCE_DIGEST}" ] && [ -n "${TAG}" ] || {
+              echo "::error::build-graph-event: ${KIND} requires source-ref, source-digest and tag."; exit 1; }
             split_ref "${SOURCE_REF}"; s_reg="${REG}"; s_repo="${REPO}"
             split_ref "${DEST_REF}";   d_reg="${REG}"; d_repo="${REPO}"
             record="$(jq -nc \
@@ -167,6 +167,8 @@ runs:
                + (if $sc == "" then {} else {sourceCommit:$sc} end)')"
             ;;
           TagObserved)
+            [ -n "${TAG}" ] || {
+              echo "::error::build-graph-event: TagObserved requires tag."; exit 1; }
             split_ref "${DEST_REF}"; d_reg="${REG}"; d_repo="${REPO}"
             record="$(jq -nc \
               --argjson src "${source_json}" --arg now "${now}" \
