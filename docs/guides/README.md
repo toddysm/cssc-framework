@@ -12,3 +12,6 @@ and **Supply Chain Observability**.
   app images.
 - [Deploy](deploy/) — deploying the demo apps.
 - [Run](run/) — running the applications.
+- [Observability](observability/) — querying the supply-chain graph (artifact
+  lineage, base images, tag history) through the `cssc-graph` CLI and the
+  `graph-service` API. Cross-cutting across stages.
