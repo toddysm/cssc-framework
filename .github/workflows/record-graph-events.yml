@@ -1,0 +1,123 @@
+# Workflow: record-graph-events
+#
+# Serialized collector for the supply-chain graph. The mirror and
+# promote-from-quarantine workflows stage event records (build-graph-event) and
+# upload them as `graph-events*` artifacts. This workflow subscribes to their
+# completion via `workflow_run`, downloads those artifacts, and commits the new
+# event files to the dedicated `supply-chain-graph-data` branch.
+#
+# A single writer (one concurrency group) commits, so there is no ref race, and
+# only this workflow needs `contents: write` — the producer jobs keep their
+# minimal permissions and merely upload artifacts. Records are immutable: an
+# event file whose content-hash name already exists is never overwritten, which
+# makes re-runs a no-op.
+#
+# `workflow_run` always runs this file from the default branch.
+#
+# Design: docs/architecture/observability/supply-chain-graph.md.
+name: record / graph-events
+
+on:
+  workflow_run:
+    workflows:
+      - "mirror / quarantine/python"
+      - "mirror / quarantine/node"
+      - "mirror / quarantine/openjdk"
+      - "mirror / quarantine/hardened/python"
+      - "promote from quarantine / quarantine/python"
+      - "promote from quarantine / quarantine/node"
+      - "promote from quarantine / quarantine/openjdk"
+      - "promote from quarantine / quarantine/hardened/python"
+    types: [completed]
+
+# One writer at a time so appends to the data branch cannot race.
+concurrency:
+  group: record-graph-events
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  record:
+    # Only a successful producing run can have staged trustworthy events.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Download staged graph events
+        id: download
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        continue-on-error: true
+        with:
+          pattern: graph-events*
+          merge-multiple: true
+          path: _events
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Record events on the data branch
+        env:
+          BRANCH: supply-chain-graph-data
+          SRC_WORKFLOW: "${{ github.event.workflow_run.name }}"
+          SRC_RUN_URL: "${{ github.event.workflow_run.html_url }}"
+        run: |
+          set -euo pipefail
+
+          staged="_events"
+          if [ -z "$(find "${staged}" -type f -name '*.json' 2>/dev/null | head -n1)" ]; then
+            echo "No graph events uploaded by '${SRC_WORKFLOW}'; nothing to record."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Switch to the data branch (create it on first use from the current tree).
+          if git ls-remote --exit-code --heads origin "${BRANCH}" >/dev/null 2>&1; then
+            git fetch origin "${BRANCH}"
+            git checkout -B "${BRANCH}" "origin/${BRANCH}"
+          else
+            echo "Creating ${BRANCH}."
+            git checkout -B "${BRANCH}"
+          fi
+
+          # Copy only new event files — the ledger is append-only and immutable.
+          added=0
+          while IFS= read -r f; do
+            rel="${f#"${staged}"/}"                       # events/<kind>/<hash>.json
+            target="supply-chain-graph/${rel}"
+            if [ -e "${target}" ]; then
+              continue
+            fi
+            mkdir -p "$(dirname "${target}")"
+            cp "${f}" "${target}"
+            git add "${target}"
+            added=$((added + 1))
+          done < <(find "${staged}" -type f -name '*.json' | sort)
+
+          if [ "${added}" -eq 0 ] || git diff --cached --quiet; then
+            echo "No new graph events to record."
+            exit 0
+          fi
+
+          git commit -m "chore(graph): record ${added} event(s) from ${SRC_WORKFLOW}" \
+                     -m "Source run: ${SRC_RUN_URL}"
+
+          # Serialised by the concurrency group; rebase-retry guards a racing push.
+          for attempt in 1 2 3; do
+            if git push origin "HEAD:${BRANCH}"; then
+              echo "Recorded ${added} event(s) on ${BRANCH}."
+              exit 0
+            fi
+            echo "::warning::push failed (attempt ${attempt}/3); rebasing onto ${BRANCH}."
+            git fetch origin "${BRANCH}"
+            git rebase "origin/${BRANCH}" || git rebase --abort
+          done
+          echo "::error::failed to push graph events after 3 attempts."
+          exit 1
