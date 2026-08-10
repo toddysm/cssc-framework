@@ -269,6 +269,8 @@ def find(database: Path, annotation: str | None, artifact_type: str | None, ref:
     store = _open_store(database)
     try:
         results = queries.find(store, annotation=annotation, artifact_type=artifact_type, ref=ref)
+    except ValueError as exc:
+        raise click.UsageError(str(exc))
     finally:
         store.close()
     if output_format == "json":
@@ -286,6 +288,10 @@ def find(database: Path, annotation: str | None, artifact_type: str | None, ref:
 def show(database: Path, ref: str, output_format: str) -> None:
     """Show an occurrence's details, annotations, tags, and nearby path."""
 
+    if "@" not in ref and ":" not in ref.rpartition("/")[2]:
+        raise click.UsageError(
+            "provide a specific occurrence: registry/repository@digest or registry/repository:tag"
+        )
     from . import queries
 
     store = _open_store(database)
@@ -347,6 +353,20 @@ def export(database: Path, digest: str | None, ref: str | None, depth: int, expo
         click.echo(f"Wrote {export_format} to {output}.")
     else:
         click.echo(text)
+
+
+@cli.command()
+@_database_option
+@click.argument("query")
+def cypher(database: Path, query: str) -> None:
+    """Run a Cypher QUERY against the graph and print rows as JSON."""
+
+    store = _open_store(database)
+    try:
+        rows = store.query(query)
+    finally:
+        store.close()
+    click.echo(json.dumps(rows, indent=2))
 
 
 @cli.command(name="id")

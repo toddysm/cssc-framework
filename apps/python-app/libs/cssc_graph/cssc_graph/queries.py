@@ -94,6 +94,11 @@ def traverse(
     seen_edges: set[tuple[str, str, str]] = set()
     visited: set[str] = set()
     frontier = list(dict.fromkeys(seeds))
+    # Seed nodes are included even at depth 0 so a query always shows its subjects.
+    for seed in frontier:
+        occ = get_occurrence(store, seed)
+        if occ:
+            nodes[seed] = occ
 
     for _ in range(max_depth):
         nxt: list[str] = []
@@ -239,11 +244,16 @@ def to_cytoscape(subgraph: dict[str, Any]) -> dict[str, Any]:
     return {"elements": elements}
 
 
+def _mermaid_label(text: str) -> str:
+    # Mermaid labels are quoted; neutralize quotes/newlines to avoid broken output.
+    return str(text).replace('"', "#quot;").replace("\n", " ").replace("\r", " ")
+
+
 def to_mermaid(subgraph: dict[str, Any]) -> str:
     lines = ["flowchart LR"]
     ids = {n["key"]: f"n{i}" for i, n in enumerate(subgraph["nodes"])}
     for n in subgraph["nodes"]:
-        label = n.get("ref", n["key"])
+        label = _mermaid_label(n.get("ref", n["key"]))
         lines.append(f'    {ids[n["key"]]}["{label}"]')
     for e in subgraph["edges"]:
         frm, to = ids.get(e["from"]), ids.get(e["to"])

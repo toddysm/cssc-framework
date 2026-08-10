@@ -83,3 +83,14 @@ def test_export_builders(store):
     assert mermaid.startswith("flowchart")
     cyto = queries.to_cytoscape(sub)
     assert cyto["elements"]
+
+
+def test_traverse_includes_seed_at_depth_zero(store):
+    sub = queries.traverse(store, [GOLDEN1_KEY], queries.PATH_RELS, "both", 0)
+    keys = {n["key"] for n in sub["nodes"]}
+    assert GOLDEN1_KEY in keys
+    assert sub["edges"] == []
+
+
+def test_mermaid_label_escaping():
+    assert queries._mermaid_label('a"b\nc') == "a#quot;b c"
