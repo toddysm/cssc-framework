@@ -235,6 +235,53 @@ Design intent of the layout:
 All records share a common **envelope** so the indexer can dispatch on `kind`
 and enforce identity/idempotency uniformly.
 
+### How the envelope, artifacts, and events relate
+
+Three roles, one rule: **the envelope is the frame on every record, artifacts and
+occurrences are the nouns (graph nodes), and events are the verbs (graph edges).**
+Records never point at each other by file path — they converge by *identity* when
+the indexer folds them in.
+
+- **Envelope** (every record). The shared wrapper — `schemaVersion`, `kind`, `id`,
+  `recordedAt`, `source`. It is not a node: `kind` selects the handler, `id` (a
+  hash of the semantic payload) makes a fact idempotent, and `source` attaches
+  evidence to that record. Both artifact records and event records are enveloped.
+- **Artifact / occurrence** (nouns → nodes). An *artifact* is an immutable digest;
+  an *occurrence* is that digest at a fully-qualified location
+  (`registry + repository + digest`). Occurrences are the endpoints events connect.
+- **Event** (verbs → edges). Each event names two occurrences by their key and
+  produces one relationship (`MIRRORED_FROM`, `PROMOTED_FROM`, `BUILT_FROM`,
+  `POINTED_TO`, `RUNS`), carrying the timestamp and evidence.
+
+Because endpoints are named by key (not by a pointer to an `ArtifactObserved`
+file), an event and an `ArtifactObserved` for the same occurrence resolve to the
+**same node** regardless of order — and an event can *imply* its endpoint nodes
+even with no `ArtifactObserved` present. `ArtifactObserved` then only *enriches* a
+node (media type, platforms, annotations, signers). This identity-based fold is
+what makes indexing order-independent and idempotent.
+
+```mermaid
+flowchart TB
+    subgraph ENV["Envelope — on every record (kind · id · recordedAt · source)"]
+      direction LR
+      AO["ArtifactObserved (noun)"]
+      EV["ArtifactPromoted (verb)"]
+    end
+    AO -->|defines / enriches| N1["Occurrence node\nregistry + repository + digest"]
+    EV -->|from → key| N1
+    EV -->|to → key| N2["Occurrence node\nregistry + repository + digest"]
+    EV ==>|becomes| E(["PROMOTED_FROM edge\n+ tag, evidence, time"])
+    N1 -.->|same artifact| N2
+```
+
+Worked example — one digest, four independently-written files fold into a path:
+`ArtifactMirrored` (`docker.io/library/python` → `first.registry.io/quarantine/python`)
+creates two occurrences + `MIRRORED_FROM`; `ArtifactPromoted`
+(`first.registry.io/quarantine/python` → `second.registry.io/quarantine/python`)
+reuses the first node and adds the second + `PROMOTED_FROM`; `TagObserved` adds a
+`Tag` node + a time-stamped `POINTED_TO`; `ArtifactBuilt` matches the promoted
+occurrence as its base and adds `BUILT_FROM`.
+
 ### Envelope
 
 ```yaml
@@ -274,9 +321,21 @@ sources:
 ### Artifact and occurrence identity
 
 An **artifact** is immutable content (a digest). An **occurrence** is that digest
-appearing in a specific repository/role. The same digest in
-`quarantine/python` and `golden/python` is one artifact, two occurrences — this
-is what lets promotion be an edge instead of a self-loop.
+appearing at a specific **fully-qualified location** — the registry login server
+**and** the repository path. An occurrence is keyed by
+`registry + repository + digest`, and every reference in the data is written
+fully qualified as `registry/repository@sha256:…` (never a bare `repository`).
+
+This is what keeps cross-registry chains intact. The *same* digest promoted
+`docker.io/library/python@sha256:…` →
+`first.registry.io/quarantine/python@sha256:…` →
+`second.registry.io/quarantine/python@sha256:…` is **one artifact and three
+distinct occurrences**, linked by `MIRRORED_FROM` / `PROMOTED_FROM` edges. Because
+the registry login server is part of the key, the two `quarantine/python`
+occurrences on different registries never collapse into one node and no hop is
+lost. (Within a single registry, `ghcr.io/…/quarantine/python` and
+`ghcr.io/…/golden/python` are likewise two occurrences of one artifact — which is
+what lets promotion be an edge instead of a self-loop.)
 
 ```yaml
 # kind: ArtifactObserved  (usually derived from the registry, rarely hand-written)
@@ -289,8 +348,8 @@ artifact:
   mediaType: application/vnd.oci.image.index.v1+json
   artifactType: ""            # set for referrers (SBOM, vuln, provenance)
   platforms: [linux/amd64, linux/arm64]
-occurrence:
-  registry: ghcr.io
+occurrence:                   # registry + repository + digest = occurrence key
+  registry: ghcr.io           # login server — REQUIRED, part of the identity
   repository: toddysm/golden/python
 annotations:
   org.opencontainers.image.base.name: ghcr.io/toddysm/golden/python
@@ -300,7 +359,11 @@ source: { type: github-actions, runUrl: … }
 
 ### Supply-chain events
 
-Each stage is one edge-producing record. Examples:
+Each stage is one edge-producing record. Endpoints are **fully-qualified
+occurrences** — always `registry` + `repository` + `digest` — so an event whose
+`from` and `to` sit on different registries (e.g. `first.registry.io` →
+`second.registry.io`) is just a normal cross-registry hop, with no location
+information lost. Examples:
 
 ```yaml
 # acquire
@@ -319,6 +382,14 @@ tag:  "3.14-slim"
 evidence:
   vulnAttestationDigest: sha256:att…      # referrer to pull for CVE detail
   issueUrl: https://github.com/toddysm/cssc-framework/issues/77
+source: { type: github-actions, runUrl: … }
+---
+# catalog — cross-registry promotion; the digest is preserved but the registry
+# login server differs, so the two occurrences stay distinct and the hop is kept
+kind: ArtifactPromoted
+from: { registry: first.registry.io,  repository: quarantine/python, digest: sha256:up… }
+to:   { registry: second.registry.io, repository: quarantine/python, digest: sha256:up… }
+tag:  "3.14-slim"
 source: { type: github-actions, runUrl: … }
 ---
 # build
@@ -391,8 +462,9 @@ silently producing a partial graph.
 - **Resolve** remote references (registry manifests/referrers, GitHub issues,
   optional kube state) named by events and `sources.yaml`.
 - **Upsert** nodes and edges into LadybugDB using deterministic keys
-  (`digest+repository` for occurrences, `id` for events), so re-indexing is
-  idempotent — a full rebuild and an incremental pass converge to the same graph.
+  (`registry+repository+digest` for occurrences, `id` for events), so re-indexing
+  is idempotent — a full rebuild and an incremental pass converge to the same
+  graph.
 - **Tombstones**: a `kind: Retraction` record (human, via PR) can supersede an
   earlier event without deleting history; the indexer marks the target inactive.
 
