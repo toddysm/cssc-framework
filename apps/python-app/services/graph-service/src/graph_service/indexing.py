@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import logging
 import threading
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from cssc_graph.graph import GraphStore
 from cssc_graph.indexer import index_data
@@ -28,6 +29,10 @@ class IndexingError(RuntimeError):
     def __init__(self, diagnostics: list[str]) -> None:
         self.diagnostics = diagnostics
         super().__init__(f"{len(diagnostics)} validation error(s); nothing indexed.")
+
+
+class GraphNotReady(RuntimeError):
+    """Raised when a read is attempted before the graph has been indexed."""
 
 
 @dataclass
@@ -50,6 +55,19 @@ class GraphIndex:
     @property
     def store(self) -> GraphStore | None:
         return self._store
+
+    @contextmanager
+    def reading(self) -> Iterator[GraphStore]:
+        """Hold the single-writer lock for the duration of a read.
+
+        A concurrent :meth:`rebuild` (which closes and replaces the store) cannot
+        run while a query is in flight, and vice versa.
+        """
+
+        with self._lock:
+            if not self.ready or self._store is None:
+                raise GraphNotReady("graph index not ready")
+            yield self._store
 
     def rebuild(self) -> IndexInfo:
         """(Re)build the database from the data root; single writer via a lock."""

@@ -189,6 +189,8 @@ runs:
           ArtifactDeployed)
             [ -n "${ENV_CLUSTER}" ] && [ -n "${ENV_NAMESPACE}" ] || {
               echo "::error::build-graph-event: ArtifactDeployed requires environment-cluster and environment-namespace."; exit 1; }
+            [ -z "${CHART_NAME}" ] || [ -n "${CHART_VERSION}" ] || {
+              echo "::error::build-graph-event: ArtifactDeployed chart-name requires chart-version."; exit 1; }
             split_ref "${DEST_REF}"; d_reg="${REG}"; d_repo="${REPO}"
             record="$(jq -nc \
               --argjson src "${source_json}" --arg now "${now}" \

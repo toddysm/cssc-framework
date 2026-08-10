@@ -9,20 +9,16 @@ fallback renders the raw data.
 from __future__ import annotations
 
 import logging
-from typing import Any, Protocol
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from jinja2 import TemplateNotFound
 
+from ..clients import GraphClient
 from ..stages.base import StageRegistry
 
 logger = logging.getLogger(__name__)
-
-
-class GraphClient(Protocol):
-    def neighborhood(self, ref: str, depth: int = 3) -> dict[str, Any]: ...
 
 
 def _template_exists(templates: Jinja2Templates, name: str) -> bool:

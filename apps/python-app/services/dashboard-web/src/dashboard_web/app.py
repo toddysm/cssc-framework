@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .clients import GraphServiceClient, IssuesServiceClient, PackagesServiceClient
+from .clients import GraphClient, GraphServiceClient, IssuesServiceClient, PackagesServiceClient
 from .config import DashboardSettings, dashboard_settings
 from .stages.acquisition import AcquisitionProvider
 from .stages.base import StageRegistry
@@ -20,7 +20,7 @@ TEMPLATES_DIR = BASE_DIR / "templates"
 STATIC_DIR = BASE_DIR / "static"
 
 
-def build_registry(settings: DashboardSettings, graph: GraphServiceClient) -> StageRegistry:
+def build_registry(settings: DashboardSettings, graph: GraphClient) -> StageRegistry:
     """Construct the default stage registry from settings.
 
     New stages are registered here; the rest of the app is stage-agnostic.
@@ -45,7 +45,7 @@ def build_registry(settings: DashboardSettings, graph: GraphServiceClient) -> St
 def create_app(
     registry: StageRegistry | None = None,
     settings: DashboardSettings | None = None,
-    graph: GraphServiceClient | None = None,
+    graph: GraphClient | None = None,
 ) -> FastAPI:
     settings = settings or dashboard_settings()
     graph = graph or GraphServiceClient(settings.graph_service_url)

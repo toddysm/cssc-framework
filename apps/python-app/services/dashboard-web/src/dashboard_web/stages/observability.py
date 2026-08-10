@@ -7,15 +7,10 @@ route). Adding this provider is all it takes for the UI to show the stage.
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Any
 
+from ..clients import GraphClient
 from .base import Stage
-
-
-class GraphClient(Protocol):
-    def readiness(self) -> dict[str, Any]: ...
-
-    def neighborhood(self, ref: str, depth: int = 3) -> dict[str, Any]: ...
 
 
 class GraphProvider:

@@ -6,9 +6,17 @@ only the in-cluster capability services.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Protocol
 
 import httpx
+
+
+class GraphClient(Protocol):
+    """The subset of graph-service used by the dashboard (see GraphServiceClient)."""
+
+    def readiness(self) -> dict[str, Any]: ...
+
+    def neighborhood(self, ref: str, depth: int = 3) -> dict[str, Any]: ...
 
 
 class PackagesServiceClient:
