@@ -54,4 +54,37 @@ def occurrence_key(occurrence: Mapping[str, Any]) -> str:
         digest = occurrence["digest"]
     except KeyError as exc:  # pragma: no cover - guarded by schema in practice
         raise ValueError(f"occurrence missing {exc.args[0]!r}") from exc
+    return make_occurrence_key(registry, repository, digest)
+
+
+def make_occurrence_key(registry: str, repository: str, digest: str) -> str:
+    """Build the fully-qualified occurrence key from its parts."""
+
     return f"{registry}/{repository}@{digest}"
+
+
+def make_ref(registry: str, repository: str) -> str:
+    """The registry + repository name without a digest, e.g. ghcr.io/owner/img."""
+
+    return f"{registry}/{repository}"
+
+
+def tag_key(registry: str, repository: str, tag: str) -> str:
+    """Stable key for a tag in a repository: ``registry/repository:tag``."""
+
+    return f"{registry}/{repository}:{tag}"
+
+
+def split_ref(name: str) -> tuple[str, str]:
+    """Split a fully-qualified image name into ``(registry, repository)``.
+
+    The registry is the first path component (it carries the login server, e.g.
+    ``ghcr.io`` or ``first.registry.io``); the rest is the repository.
+    """
+
+    if "/" not in name:
+        raise ValueError(f"not a fully-qualified name (missing registry): {name!r}")
+    registry, repository = name.split("/", 1)
+    if not registry or not repository:
+        raise ValueError(f"not a fully-qualified name: {name!r}")
+    return registry, repository

@@ -168,3 +168,6 @@ stages/acquire/src/image-sync/.DS_Store
 # Includes source folders under "build" folder
 !build/**/src
 sample/src/.DS_Store
+
+# Local supply-chain graph databases (rebuildable index)
+.graph/
