@@ -200,9 +200,7 @@ Deployments are recorded as `ArtifactDeployed` (a `Deployment`—`RUNS`→`Occur
 edge). There is no dedicated verb yet, so query it with `cypher`:
 
 ```bash
-cssc-graph cypher -d "$DB" \
-  MATCH '(dep:Deployment)-[:RUNS]->(o:Occurrence)' \
-  RETURN dep.key AS deployment, o.ref AS image, o.digest AS digest
+cssc-graph cypher -d "$DB" 'MATCH (dep:Deployment)-[:RUNS]->(o:Occurrence) RETURN dep.key AS deployment, o.ref AS image, o.digest AS digest'
 ```
 
 ```text
@@ -219,11 +217,12 @@ cssc-graph export --ref ghcr.io/toddysm/quarantine/python --format mermaid -o ch
 
 #### 9. Escape hatch — read-only Cypher
 
-Anything the verbs do not cover is reachable with `cypher`. It is read-only
-(write clauses are rejected) and multi-word queries need no quoting.
+Anything the verbs do not cover is reachable with `cypher`. It is read-only —
+write clauses are rejected. Wrap the query in single quotes so the shell does not
+interpret Cypher's `()` and `[]`:
 
 ```bash
-cssc-graph cypher -d "$DB" MATCH '(o:Occurrence)' RETURN count'(o)' AS n
+cssc-graph cypher -d "$DB" 'MATCH (o:Occurrence) RETURN count(o) AS n'
 ```
 
 ---
