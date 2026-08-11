@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "kind": "TagObserved",
+  "recordedAt": "2026-08-11T07:01:35Z",
+  "source": {
+    "type": "github-actions",
+    "workflow": "mirror / quarantine/openjdk",
+    "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/31467246924",
+    "runId": "31467246924",
+    "runAttempt": "1"
+  },
+  "occurrence": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/quarantine/openjdk"
+  },
+  "tag": "27-ea-slim",
+  "digest": "sha256:51aaaaf85a0f4916dff7e464e18cc47c3b8378448b638492efe1dec002059817",
+  "observedAt": "2026-08-11T07:01:35Z",
+  "id": "sha256:9944ef6eab829f271b65bcc1656f49e0cd50cef2ad8214e75baddfccc1fe6411"
+}
