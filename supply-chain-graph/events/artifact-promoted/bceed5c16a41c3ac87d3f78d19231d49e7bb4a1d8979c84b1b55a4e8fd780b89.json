@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "kind": "ArtifactPromoted",
+  "recordedAt": "2026-08-11T08:09:53Z",
+  "source": {
+    "type": "github-actions",
+    "workflow": "promote from quarantine / quarantine/openjdk",
+    "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/31471967809",
+    "runId": "31471967809",
+    "runAttempt": "1"
+  },
+  "from": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/quarantine/openjdk",
+    "digest": "sha256:928da5128f32e52e1412d06a83cef222791e57a72256db734e266594d92de320"
+  },
+  "to": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/golden/openjdk",
+    "digest": "sha256:928da5128f32e52e1412d06a83cef222791e57a72256db734e266594d92de320"
+  },
+  "tag": "sha256-1d9af36d585cd97eadfc19a6abb27835edb4b444f7cce79475ce0d5747094b72",
+  "id": "sha256:bceed5c16a41c3ac87d3f78d19231d49e7bb4a1d8979c84b1b55a4e8fd780b89"
+}
