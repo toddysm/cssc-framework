@@ -163,6 +163,47 @@ jobs:
           force: "true"
           copy-referrers: ${{ steps.meta.outputs.copy-referrers }}
 
+      # Record the override promotion in the supply-chain graph, mirroring the
+      # automated promote path. Single job, so one `graph-events` artifact.
+      - name: Stage promotion graph event
+        if: inputs.decision == 'approve' && steps.promote.outputs.digest != ''
+        uses: ./.github/actions/build-graph-event
+        with:
+          kind: ArtifactPromoted
+          source-ref: ${{ steps.meta.outputs.source-repo }}
+          source-digest: ${{ steps.promote.outputs.digest }}
+          dest-ref: ${{ steps.meta.outputs.dest-repo }}
+          dest-digest: ${{ steps.promote.outputs.digest }}
+          tag: ${{ steps.meta.outputs.tag }}
+          output-dir: ${{ runner.temp }}/graph-events
+          workflow: ${{ github.workflow }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          run-id: ${{ github.run_id }}
+          run-attempt: ${{ github.run_attempt }}
+
+      - name: Stage tag observation graph event
+        if: inputs.decision == 'approve' && steps.promote.outputs.digest != ''
+        uses: ./.github/actions/build-graph-event
+        with:
+          kind: TagObserved
+          dest-ref: ${{ steps.meta.outputs.dest-repo }}
+          dest-digest: ${{ steps.promote.outputs.digest }}
+          tag: ${{ steps.meta.outputs.tag }}
+          output-dir: ${{ runner.temp }}/graph-events
+          workflow: ${{ github.workflow }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          run-id: ${{ github.run_id }}
+          run-attempt: ${{ github.run_attempt }}
+
+      - name: Upload graph events
+        if: inputs.decision == 'approve' && steps.promote.outputs.digest != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: graph-events
+          path: ${{ runner.temp }}/graph-events
+          if-no-files-found: ignore
+          retention-days: 1
+
       - name: Attach scan-report attestation
         if: inputs.decision == 'approve'
         uses: ./.github/actions/attach-scan-report
