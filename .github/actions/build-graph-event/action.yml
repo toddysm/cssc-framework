@@ -174,7 +174,7 @@ runs:
               record="$(printf '%s' "${record}" | jq -c '. + {force:true}')"
             fi
             if [ "${KIND}" = "ArtifactPromoted" ] && [ -n "${EVIDENCE_ISSUE_URL}" ]; then
-              record="$(printf '%s' "${record}" | jq -c --arg u "${EVIDENCE_ISSUE_URL}" '. + {evidence: {issueUrl: $u}}')"
+              record="$(printf '%s' "${record}" | jq -c --arg u "${EVIDENCE_ISSUE_URL}" '.evidence.issueUrl = $u')"
             fi
             ;;
           ArtifactBuilt)

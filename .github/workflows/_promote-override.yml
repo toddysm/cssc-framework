@@ -210,10 +210,10 @@ jobs:
       # from the recorded metadata, for attach-scan-report to publish.
       - name: Build override vulnerability attestation
         id: attestation
-        if: inputs.decision == 'approve'
+        if: inputs.decision == 'approve' && steps.promote.outputs.digest != ''
         env:
           DEST_REPO: "${{ steps.meta.outputs.dest-repo }}"
-          TAG: "${{ steps.meta.outputs.tag }}"
+          DEST_DIGEST: "${{ steps.promote.outputs.digest }}"
           APPROVER: "${{ inputs.approver }}"
           ISSUE_URL: "${{ steps.issue.outputs.issue-url }}"
           OVERRIDE_CVES: "${{ steps.meta.outputs.cves }}"
@@ -232,8 +232,9 @@ jobs:
             override: {approved: true, approver: $approver, issue: $issue, cves: $cves}
           }' > "${pred}"
 
-          ref_digest="$(crane digest "${DEST_REPO}:${TAG}")"
-          algo="${ref_digest%%:*}"; hexv="${ref_digest#*:}"
+          # Subject digest is the just-promoted digest from mirror-image (no
+          # extra registry round trip, no tag-drift risk).
+          algo="${DEST_DIGEST%%:*}"; hexv="${DEST_DIGEST#*:}"
           att="${work}/override-attestation.json"
           jq -n --arg name "${DEST_REPO}" --arg algo "${algo}" --arg hexv "${hexv}" --slurpfile pred "${pred}" '{
             _type: "https://in-toto.io/Statement/v1",
