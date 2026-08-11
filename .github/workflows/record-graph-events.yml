@@ -31,6 +31,7 @@ on:
       - "promote from quarantine / quarantine/hardened/python"
       - "build / cssc-dashboard"
       - "deploy / cssc-dashboard"
+      - "promote override"
     types: [completed]
 
 # One writer at a time so appends to the data branch cannot race.

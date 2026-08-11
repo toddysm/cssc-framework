@@ -163,11 +163,93 @@ jobs:
           force: "true"
           copy-referrers: ${{ steps.meta.outputs.copy-referrers }}
 
+      # Record the override promotion in the supply-chain graph, mirroring the
+      # automated promote path. Single job, so one `graph-events` artifact.
+      - name: Stage promotion graph event
+        if: inputs.decision == 'approve' && steps.promote.outputs.digest != ''
+        uses: ./.github/actions/build-graph-event
+        with:
+          kind: ArtifactPromoted
+          source-ref: ${{ steps.meta.outputs.source-repo }}
+          source-digest: ${{ steps.promote.outputs.digest }}
+          dest-ref: ${{ steps.meta.outputs.dest-repo }}
+          dest-digest: ${{ steps.promote.outputs.digest }}
+          tag: ${{ steps.meta.outputs.tag }}
+          evidence-issue-url: ${{ steps.issue.outputs.issue-url }}
+          output-dir: ${{ runner.temp }}/graph-events
+          workflow: ${{ github.workflow }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          run-id: ${{ github.run_id }}
+          run-attempt: ${{ github.run_attempt }}
+
+      - name: Stage tag observation graph event
+        if: inputs.decision == 'approve' && steps.promote.outputs.digest != ''
+        uses: ./.github/actions/build-graph-event
+        with:
+          kind: TagObserved
+          dest-ref: ${{ steps.meta.outputs.dest-repo }}
+          dest-digest: ${{ steps.promote.outputs.digest }}
+          tag: ${{ steps.meta.outputs.tag }}
+          output-dir: ${{ runner.temp }}/graph-events
+          workflow: ${{ github.workflow }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          run-id: ${{ github.run_id }}
+          run-attempt: ${{ github.run_attempt }}
+
+      - name: Upload graph events
+        if: inputs.decision == 'approve' && steps.promote.outputs.digest != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: graph-events
+          path: ${{ runner.temp }}/graph-events
+          if-no-files-found: ignore
+          retention-days: 1
+
+      # The override path runs no fresh scan, so synthesize the in-toto vuln
+      # attestation (subject = promoted image) documenting the approved exception
+      # from the recorded metadata, for attach-scan-report to publish.
+      - name: Build override vulnerability attestation
+        id: attestation
+        if: inputs.decision == 'approve' && steps.promote.outputs.digest != ''
+        env:
+          DEST_REPO: "${{ steps.meta.outputs.dest-repo }}"
+          DEST_DIGEST: "${{ steps.promote.outputs.digest }}"
+          APPROVER: "${{ inputs.approver }}"
+          ISSUE_URL: "${{ steps.issue.outputs.issue-url }}"
+          OVERRIDE_CVES: "${{ steps.meta.outputs.cves }}"
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+          work="$(mktemp -d)"
+          now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          cves="$(printf '%s' "${OVERRIDE_CVES}" | jq -R 'split("|") | map(select(length > 0))')"
+
+          pred="${work}/override-vuln.json"
+          jq -n --arg now "${now}" --arg approver "${APPROVER}" --arg issue "${ISSUE_URL}" --argjson cves "${cves}" '{
+            scanner: {name: "cssc-override", version: "n/a"},
+            metadata: {scanStartedAt: $now, scanFinishedAt: $now},
+            override: {approved: true, approver: $approver, issue: $issue, cves: $cves}
+          }' > "${pred}"
+
+          # Subject digest is the just-promoted digest from mirror-image (no
+          # extra registry round trip, no tag-drift risk).
+          algo="${DEST_DIGEST%%:*}"; hexv="${DEST_DIGEST#*:}"
+          att="${work}/override-attestation.json"
+          jq -n --arg name "${DEST_REPO}" --arg algo "${algo}" --arg hexv "${hexv}" --slurpfile pred "${pred}" '{
+            _type: "https://in-toto.io/Statement/v1",
+            subject: [ { name: $name, digest: { ($algo): $hexv } } ],
+            predicateType: "https://cosign.sigstore.dev/attestation/vuln/v1",
+            predicate: $pred[0]
+          }' > "${att}"
+          echo "path=${att}" >> "${GITHUB_OUTPUT}"
+
       - name: Attach scan-report attestation
         if: inputs.decision == 'approve'
         uses: ./.github/actions/attach-scan-report
         with:
           image-ref: ${{ steps.meta.outputs.dest-repo }}:${{ steps.meta.outputs.tag }}
+          attestation-file: ${{ steps.attestation.outputs.path }}
           source-repo: ${{ steps.meta.outputs.source-repo }}
           tag: ${{ steps.meta.outputs.tag }}
           threshold: ${{ steps.meta.outputs.threshold }}
