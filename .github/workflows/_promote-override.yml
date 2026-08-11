@@ -175,6 +175,7 @@ jobs:
           dest-ref: ${{ steps.meta.outputs.dest-repo }}
           dest-digest: ${{ steps.promote.outputs.digest }}
           tag: ${{ steps.meta.outputs.tag }}
+          evidence-issue-url: ${{ steps.issue.outputs.issue-url }}
           output-dir: ${{ runner.temp }}/graph-events
           workflow: ${{ github.workflow }}
           run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -204,11 +205,50 @@ jobs:
           if-no-files-found: ignore
           retention-days: 1
 
+      # The override path runs no fresh scan, so synthesize the in-toto vuln
+      # attestation (subject = promoted image) documenting the approved exception
+      # from the recorded metadata, for attach-scan-report to publish.
+      - name: Build override vulnerability attestation
+        id: attestation
+        if: inputs.decision == 'approve'
+        env:
+          DEST_REPO: "${{ steps.meta.outputs.dest-repo }}"
+          TAG: "${{ steps.meta.outputs.tag }}"
+          APPROVER: "${{ inputs.approver }}"
+          ISSUE_URL: "${{ steps.issue.outputs.issue-url }}"
+          OVERRIDE_CVES: "${{ steps.meta.outputs.cves }}"
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+          work="$(mktemp -d)"
+          now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          cves="$(printf '%s' "${OVERRIDE_CVES}" | jq -R 'split("|") | map(select(length > 0))')"
+
+          pred="${work}/override-vuln.json"
+          jq -n --arg now "${now}" --arg approver "${APPROVER}" --arg issue "${ISSUE_URL}" --argjson cves "${cves}" '{
+            scanner: {name: "cssc-override", version: "n/a"},
+            metadata: {scanStartedAt: $now, scanFinishedAt: $now},
+            override: {approved: true, approver: $approver, issue: $issue, cves: $cves}
+          }' > "${pred}"
+
+          ref_digest="$(crane digest "${DEST_REPO}:${TAG}")"
+          algo="${ref_digest%%:*}"; hexv="${ref_digest#*:}"
+          att="${work}/override-attestation.json"
+          jq -n --arg name "${DEST_REPO}" --arg algo "${algo}" --arg hexv "${hexv}" --slurpfile pred "${pred}" '{
+            _type: "https://in-toto.io/Statement/v1",
+            subject: [ { name: $name, digest: { ($algo): $hexv } } ],
+            predicateType: "https://cosign.sigstore.dev/attestation/vuln/v1",
+            predicate: $pred[0]
+          }' > "${att}"
+          echo "path=${att}" >> "${GITHUB_OUTPUT}"
+
       - name: Attach scan-report attestation
         if: inputs.decision == 'approve'
         uses: ./.github/actions/attach-scan-report
         with:
           image-ref: ${{ steps.meta.outputs.dest-repo }}:${{ steps.meta.outputs.tag }}
+          attestation-file: ${{ steps.attestation.outputs.path }}
           source-repo: ${{ steps.meta.outputs.source-repo }}
           tag: ${{ steps.meta.outputs.tag }}
           threshold: ${{ steps.meta.outputs.threshold }}

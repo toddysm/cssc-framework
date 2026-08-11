@@ -46,6 +46,10 @@ inputs:
     description: "'true' when a mirror was a force copy (ArtifactMirrored only)."
     required: false
     default: "false"
+  evidence-issue-url:
+    description: "Approval/tracking issue URL recorded as evidence.issueUrl (ArtifactPromoted)."
+    required: false
+    default: ""
   base-name:
     description: "Fully-qualified base image name without digest, e.g. ghcr.io/toddysm/golden/python (ArtifactBuilt)."
     required: false
@@ -112,6 +116,7 @@ runs:
         DEST_DIGEST: "${{ inputs.dest-digest }}"
         TAG: "${{ inputs.tag }}"
         FORCE: "${{ inputs.force }}"
+        EVIDENCE_ISSUE_URL: "${{ inputs.evidence-issue-url }}"
         BASE_NAME: "${{ inputs.base-name }}"
         BASE_DIGEST: "${{ inputs.base-digest }}"
         BASE_TAG: "${{ inputs.base-tag }}"
@@ -167,6 +172,9 @@ runs:
                 tag:$tag}')"
             if [ "${KIND}" = "ArtifactMirrored" ] && [ "${FORCE}" = "true" ]; then
               record="$(printf '%s' "${record}" | jq -c '. + {force:true}')"
+            fi
+            if [ "${KIND}" = "ArtifactPromoted" ] && [ -n "${EVIDENCE_ISSUE_URL}" ]; then
+              record="$(printf '%s' "${record}" | jq -c --arg u "${EVIDENCE_ISSUE_URL}" '. + {evidence: {issueUrl: $u}}')"
             fi
             ;;
           ArtifactBuilt)
