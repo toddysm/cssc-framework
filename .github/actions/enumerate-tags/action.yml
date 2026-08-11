@@ -5,9 +5,10 @@
 # failure such as an auth or transient registry error (fails loudly).
 #
 # Emits the tags as a JSON array so a calling workflow can fan them out across a
-# job matrix (strategy.matrix). Optionally filters out OCI referrer fallback
-# tags (sha256-*), which is needed when enumerating image tags in a repository
-# that also stores referrers as tags.
+# job matrix (strategy.matrix). The reserved `mirror-history` tag (a CSSC
+# metadata artifact, not an image) is always dropped. Optionally also filters out
+# OCI referrer fallback tags (sha256-*), which is needed when enumerating image
+# tags in a repository that also stores referrers as tags.
 #
 # Terminology: see docs/reference/workflow-actions.md.
 name: enumerate-tags
@@ -57,10 +58,13 @@ runs:
           fi
         fi
 
+        # The reserved `mirror-history` tag is a CSSC metadata artifact
+        # (application/vnd.cssc.mirror-history.v1+json), never a scannable or
+        # promotable image, so it is always dropped.
+        tags="$(printf '%s\n' "${all_tags}" | grep -vxF 'mirror-history' || true)"
+
         if [ "${EXCLUDE_REFERRER_TAGS}" = "true" ]; then
-          tags="$(printf '%s\n' "${all_tags}" | grep -vE '^sha256-' || true)"
-        else
-          tags="${all_tags}"
+          tags="$(printf '%s\n' "${tags}" | grep -vE '^sha256-' || true)"
         fi
 
         # Build a JSON array of non-empty tag names for matrix fan-out.
