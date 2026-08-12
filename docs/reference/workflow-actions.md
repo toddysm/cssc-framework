@@ -117,8 +117,8 @@ external → quarantine acquisition, and only when the acquired digest changed. 
 Maintain a durable, deletion-surviving record of the source digests a mirror has
 already synchronized into a repository. The record is an append-only JSON log
 stored as an OCI artifact under the reserved tag `<dest-image>:mirror-history`
-(artifact type `application/vnd.cssc.mirror-history.v1+json`, pushed with
-`oras push --artifact-type`). Because it is a separate tag it survives image-tag
+(artifact type and config media type `application/vnd.toddysm.mirror-history.v1+json`,
+pushed with `oras push --artifact-type --config`). Because it is a separate tag it survives image-tag
 deletion during promotion, so a digest that was mirrored once is not
 re-synchronized after it is promoted out of and deleted from quarantine. See
 [mirror history](../architecture/acquire/mirror-history.md).

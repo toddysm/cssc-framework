@@ -58,8 +58,8 @@ runs:
           fi
         fi
 
-        # The reserved `mirror-history` tag is a CSSC metadata artifact
-        # (application/vnd.cssc.mirror-history.v1+json), never a scannable or
+        # The reserved `mirror-history` tag is a custom metadata artifact
+        # (application/vnd.toddysm.mirror-history.v1+json), never a scannable or
         # promotable image, so it is always dropped.
         tags="$(printf '%s\n' "${all_tags}" | grep -vxF 'mirror-history' || true)"
 

@@ -74,7 +74,7 @@ runs:
         set -euo pipefail
 
         HISTORY_TAG="mirror-history"
-        MEDIA_TYPE="application/vnd.cssc.mirror-history.v1+json"
+        MEDIA_TYPE="application/vnd.toddysm.mirror-history.v1+json"
         HISTORY_REF="${DEST_IMAGE}:${HISTORY_TAG}"
 
         case "${OPERATION}" in
@@ -183,12 +183,27 @@ runs:
         count="$(jq -r '.entries | length' "${history_file}")"
         echo "Recorded ${SOURCE_TAG}@${SOURCE_DIGEST}; history now has ${count} entr$( [ "${count}" -eq 1 ] && echo y || echo ies )."
 
-        # Push the updated artifact under the reserved tag. --artifact-type sets
-        # manifest.artifactType and uses the standard empty config; the JSON log
-        # is the single layer. cd into the work dir so the layer's title
-        # annotation is the bare filename (restores as mirror-history.json).
+        # A custom config blob makes the manifest self-describing: both
+        # config.mediaType and artifactType become ${MEDIA_TYPE}, so the tag is
+        # never mistaken for a runnable image (OCI 1.1 tooling reads
+        # artifactType; older tooling falls back to config.mediaType). The
+        # summary lets `crane config` surface the essentials at a glance.
+        config_name="config.json"
+        config_file="${work}/${config_name}"
+        jq -n \
+          --arg image "${DEST_IMAGE}" \
+          --arg source "${SOURCE_IMAGE}" \
+          --argjson count "${count}" \
+          --arg updated "${synced_at}" \
+          '{schemaVersion: 1, image: $image, source: $source, count: $count, updated: $updated}' \
+          > "${config_file}"
+
+        # Push the updated artifact under the reserved tag. cd into the work dir
+        # so the layer's title annotation is the bare filename (restores as
+        # mirror-history.json). The JSON log is the single layer.
         ( cd "${work}" && oras push "${HISTORY_REF}" \
             --artifact-type "${MEDIA_TYPE}" \
+            --config "${config_name}:${MEDIA_TYPE}" \
             --annotation "org.opencontainers.image.title=mirror-history.json" \
             --annotation "com.toddysm.mirror-history.count=${count}" \
             --annotation "com.toddysm.mirror-history.updated=${synced_at}" \

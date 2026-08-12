@@ -24,9 +24,12 @@ package alive, avoiding the GHCR "cannot delete the last tagged version" case).
 
 ## Format
 
-- **manifest artifactType:** `application/vnd.cssc.mirror-history.v1+json`
-  (pushed with `oras push --artifact-type`; standard empty config).
-- **layer mediaType:** `application/vnd.cssc.mirror-history.v1+json`
+- **manifest artifactType:** `application/vnd.toddysm.mirror-history.v1+json`
+- **config mediaType:** `application/vnd.toddysm.mirror-history.v1+json`
+  (a small summary blob: `schemaVersion`, `image`, `source`, `count`,
+  `updated`), so the tag is self-describing and never mistaken for a
+  runnable image.
+- **layer mediaType:** `application/vnd.toddysm.mirror-history.v1+json`
 - **manifest annotations:** `org.opencontainers.image.title=mirror-history.json`,
   `com.toddysm.mirror-history.count`, `com.toddysm.mirror-history.updated`.
 
