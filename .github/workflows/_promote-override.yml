@@ -150,10 +150,34 @@ jobs:
           password: ${{ github.token }}
           with-oras: "true"
 
+      # Make approval idempotent: a duplicate or stale /approve (the image was
+      # already promoted out of quarantine) must not hard-fail on a missing
+      # source. Classify the state before copying.
+      - name: Preflight override
+        id: preflight
+        if: inputs.decision == 'approve'
+        env:
+          SOURCE_REF: "${{ steps.meta.outputs.source-repo }}:${{ steps.meta.outputs.tag }}"
+          DEST_REF: "${{ steps.meta.outputs.dest-repo }}:${{ steps.meta.outputs.tag }}"
+        run: |
+          set -euo pipefail
+          exists() { crane manifest "$1" >/dev/null 2>&1; }
+          if exists "${SOURCE_REF}"; then
+            state=promote
+            echo "Source ${SOURCE_REF} is present; promoting."
+          elif exists "${DEST_REF}"; then
+            state=already-promoted
+            echo "::notice::${SOURCE_REF} is gone but ${DEST_REF} already exists; treating this approval as already promoted (idempotent no-op)."
+          else
+            echo "::error::Nothing to promote: ${SOURCE_REF} is not in quarantine and ${DEST_REF} is not in the destination."
+            exit 1
+          fi
+          echo "state=${state}" >> "${GITHUB_OUTPUT}"
+
       # --- Approve path: promote despite the gate, record the override. --------
       - name: Promote overridden image
         id: promote
-        if: inputs.decision == 'approve'
+        if: inputs.decision == 'approve' && steps.preflight.outputs.state == 'promote'
         uses: ./.github/actions/mirror-image
         with:
           source-image: ${{ steps.meta.outputs.source-repo }}
@@ -245,7 +269,7 @@ jobs:
           echo "path=${att}" >> "${GITHUB_OUTPUT}"
 
       - name: Attach scan-report attestation
-        if: inputs.decision == 'approve'
+        if: inputs.decision == 'approve' && steps.promote.outputs.digest != ''
         uses: ./.github/actions/attach-scan-report
         with:
           image-ref: ${{ steps.meta.outputs.dest-repo }}:${{ steps.meta.outputs.tag }}
@@ -261,7 +285,7 @@ jobs:
           override-cves: ${{ steps.meta.outputs.cves }}
 
       - name: Delete overridden tag from quarantine
-        if: inputs.decision == 'approve' && inputs.delete_source
+        if: inputs.decision == 'approve' && inputs.delete_source && steps.promote.outputs.digest != ''
         uses: ./.github/actions/delete-image
         with:
           repository: ${{ steps.meta.outputs.source-repo }}
@@ -272,7 +296,7 @@ jobs:
       # the optional quarantine-delete outcome (best-effort cleanup must not
       # leave the tracking issue open after a successful override promotion).
       - name: Close issue as approved
-        if: always() && inputs.decision == 'approve' && steps.promote.conclusion == 'success'
+        if: always() && inputs.decision == 'approve' && (steps.promote.conclusion == 'success' || steps.preflight.outputs.state == 'already-promoted')
         uses: ./.github/actions/manage-issue
         with:
           operation: close
@@ -284,7 +308,7 @@ jobs:
           token: ${{ github.token }}
 
       - name: Notify Slack of approval
-        if: always() && inputs.decision == 'approve' && steps.promote.conclusion == 'success'
+        if: always() && inputs.decision == 'approve' && (steps.promote.conclusion == 'success' || steps.preflight.outputs.state == 'already-promoted')
         uses: ./.github/actions/notify-slack
         with:
           webhook-url: ${{ secrets.slack_webhook }}
