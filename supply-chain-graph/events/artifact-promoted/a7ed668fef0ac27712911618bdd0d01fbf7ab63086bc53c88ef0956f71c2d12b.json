@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "kind": "ArtifactPromoted",
+  "recordedAt": "2026-08-12T02:51:18Z",
+  "source": {
+    "type": "github-actions",
+    "workflow": "promote override",
+    "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/31558173031",
+    "runId": "31558173031",
+    "runAttempt": "1"
+  },
+  "from": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/quarantine/openjdk",
+    "digest": "sha256:51aaaaf85a0f4916dff7e464e18cc47c3b8378448b638492efe1dec002059817"
+  },
+  "to": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/golden/openjdk",
+    "digest": "sha256:51aaaaf85a0f4916dff7e464e18cc47c3b8378448b638492efe1dec002059817"
+  },
+  "tag": "27-ea-slim",
+  "evidence": {
+    "issueUrl": "https://github.com/toddysm/cssc-framework/issues/155"
+  },
+  "id": "sha256:a7ed668fef0ac27712911618bdd0d01fbf7ab63086bc53c88ef0956f71c2d12b"
+}
