@@ -188,7 +188,8 @@ runs:
         # never mistaken for a runnable image (OCI 1.1 tooling reads
         # artifactType; older tooling falls back to config.mediaType). The
         # summary lets `crane config` surface the essentials at a glance.
-        config_file="${work}/config.json"
+        config_name="config.json"
+        config_file="${work}/${config_name}"
         jq -n \
           --arg image "${DEST_IMAGE}" \
           --arg source "${SOURCE_IMAGE}" \
@@ -202,7 +203,7 @@ runs:
         # mirror-history.json). The JSON log is the single layer.
         ( cd "${work}" && oras push "${HISTORY_REF}" \
             --artifact-type "${MEDIA_TYPE}" \
-            --config "config.json:${MEDIA_TYPE}" \
+            --config "${config_name}:${MEDIA_TYPE}" \
             --annotation "org.opencontainers.image.title=mirror-history.json" \
             --annotation "com.toddysm.mirror-history.count=${count}" \
             --annotation "com.toddysm.mirror-history.updated=${synced_at}" \

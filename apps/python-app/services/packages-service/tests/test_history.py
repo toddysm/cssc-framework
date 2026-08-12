@@ -65,6 +65,17 @@ def _registry_handler(present: bool):
             )
         if path.endswith(f"/blobs/{BLOB_DIGEST}"):
             return httpx.Response(200, json=HISTORY_DOC)
+        if path.endswith(f"/blobs/{CONFIG_DIGEST}"):
+            return httpx.Response(
+                200,
+                json={
+                    "schemaVersion": 1,
+                    "image": HISTORY_DOC["image"],
+                    "source": HISTORY_DOC["source"],
+                    "count": len(HISTORY_DOC["entries"]),
+                    "updated": HISTORY_DOC["entries"][-1]["syncedAt"],
+                },
+            )
         return httpx.Response(404, json={"message": "not found"})
 
     return handler
