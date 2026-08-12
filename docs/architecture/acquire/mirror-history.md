@@ -73,10 +73,12 @@ repo):
 
 An OCI **image manifest** (artifact) with one JSON blob layer:
 
-- **manifest artifactType:** `application/vnd.cssc.mirror-history.v1+json`
-  (pushed with `oras push --artifact-type`, so the manifest uses the standard
-  empty config `application/vnd.oci.empty.v1+json`).
-- **layer mediaType:** `application/vnd.cssc.mirror-history.v1+json`
+- **manifest artifactType:** `application/vnd.toddysm.mirror-history.v1+json`
+- **config mediaType:** `application/vnd.toddysm.mirror-history.v1+json`
+  (a small summary blob — `schemaVersion`, `image`, `source`, `count`,
+  `updated` — pushed with `oras push --config`, so the tag is
+  self-describing and never mistaken for a runnable image).
+- **layer mediaType:** `application/vnd.toddysm.mirror-history.v1+json`
 - **manifest annotations** (for `oras discover`/`crane manifest` visibility):
   - `org.opencontainers.image.title=mirror-history.json`
   - `com.toddysm.mirror-history.count=<total entries>`

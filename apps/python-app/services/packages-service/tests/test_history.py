@@ -34,6 +34,7 @@ HISTORY_DOC = {
 }
 
 BLOB_DIGEST = "sha256:blob"
+CONFIG_DIGEST = "sha256:config"
 
 
 def _registry_handler(present: bool):
@@ -48,10 +49,15 @@ def _registry_handler(present: bool):
                 200,
                 json={
                     "schemaVersion": 2,
-                    "artifactType": "application/vnd.cssc.mirror-history.v1+json",
+                    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                    "artifactType": "application/vnd.toddysm.mirror-history.v1+json",
+                    "config": {
+                        "mediaType": "application/vnd.toddysm.mirror-history.v1+json",
+                        "digest": CONFIG_DIGEST,
+                    },
                     "layers": [
                         {
-                            "mediaType": "application/vnd.cssc.mirror-history.v1+json",
+                            "mediaType": "application/vnd.toddysm.mirror-history.v1+json",
                             "digest": BLOB_DIGEST,
                         }
                     ],
