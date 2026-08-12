@@ -88,7 +88,7 @@ runs:
           approved)
             [ -n "${IMAGE}" ] && [ -n "${TAG}" ] || { echo "::error::status '${STATUS}' requires 'image' and 'tag'."; exit 1; }
             header=":white_check_mark: Promotion override approved"
-            summary="*${IMAGE}:${TAG}* was promoted despite the gate${APPROVER:+ by ${APPROVER}}." ;;
+            summary="*${IMAGE}:${TAG}* is promoted despite the gate${APPROVER:+ by ${APPROVER}}." ;;
           denied)
             [ -n "${IMAGE}" ] && [ -n "${TAG}" ] || { echo "::error::status '${STATUS}' requires 'image' and 'tag'."; exit 1; }
             header=":x: Promotion override denied"
