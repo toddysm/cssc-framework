@@ -215,6 +215,49 @@ class Indexer:
 
     # -- shared edge builder ------------------------------------------------
 
+    def _index_referrer_observed(self, record: Mapping[str, Any]) -> None:
+        occ = record["occurrence"]
+        registry, repository = occ["registry"], occ["repository"]
+        subject = record["subject"]
+        referrer = record["referrer"]
+        artifact_type = referrer["artifactType"]
+        subject_key = self._merge_occurrence(registry, repository, subject["digest"])
+        referrer_key = self._merge_occurrence(registry, repository, referrer["digest"])
+        # Set only the artifactType; a ReferrerObserved does not carry the
+        # mediaType, so leave any previously indexed value untouched.
+        self._store.execute(
+            "MERGE (a:Artifact {digest: $digest}) SET a.artifactType = $artifactType",
+            {"digest": referrer["digest"], "artifactType": artifact_type},
+        )
+        # observedAt is part of the merge key so each observation is preserved
+        # (append-only), mirroring POINTED_TO for tags.
+        self._store.execute(
+            "MATCH (r:Occurrence {key: $ref}), (s:Occurrence {key: $subj}) "
+            "MERGE (r)-[e:REFERS_TO {artifactType: $artifactType, observedAt: $observedAt}]->(s) "
+            "SET e.runUrl = $runUrl",
+            {
+                "ref": referrer_key,
+                "subj": subject_key,
+                "artifactType": artifact_type,
+                "observedAt": record["observedAt"],
+                "runUrl": _run_url(record),
+            },
+        )
+
+    def _index_artifact_deleted(self, record: Mapping[str, Any]) -> None:
+        occ = record["occurrence"]
+        occ_key = self._merge_occurrence(occ["registry"], occ["repository"], record["digest"])
+        self._store.execute(
+            "MATCH (o:Occurrence {key: $occ}) "
+            "SET o.deletedAt = $deletedAt, o.deleteReason = $reason, o.deleteRunUrl = $runUrl",
+            {
+                "occ": occ_key,
+                "deletedAt": record["deletedAt"],
+                "reason": record["reason"],
+                "runUrl": _run_url(record),
+            },
+        )
+
     def _merge_pair_edge(self, record: Mapping[str, Any], rel: str, key_props: tuple[str, ...]) -> None:
         to_key = self._merge_occurrence_from(record["to"])
         from_key = self._merge_occurrence_from(record["from"])

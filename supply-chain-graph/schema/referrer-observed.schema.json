@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cssc.toddysm.com/schema/referrer-observed.schema.json",
+  "title": "ReferrerObserved",
+  "description": "Append-only observation that a referrer artifact (SBOM, provenance, VEX, signature, attestation) is attached to a subject artifact at a repository occurrence.",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "recordedAt", "source", "occurrence", "subject", "referrer", "observedAt"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "ReferrerObserved" },
+    "id": { "$ref": "envelope.schema.json#/$defs/contentHash" },
+    "recordedAt": { "type": "string", "format": "date-time" },
+    "source": { "$ref": "envelope.schema.json#/$defs/source" },
+    "occurrence": {
+      "type": "object",
+      "description": "The registry + repository the subject and its referrer live in.",
+      "required": ["registry", "repository"],
+      "additionalProperties": false,
+      "properties": {
+        "registry": { "$ref": "envelope.schema.json#/$defs/registry" },
+        "repository": { "$ref": "envelope.schema.json#/$defs/repository" }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "description": "The artifact the referrer is attached to.",
+      "required": ["digest"],
+      "additionalProperties": false,
+      "properties": {
+        "digest": { "$ref": "envelope.schema.json#/$defs/digest" },
+        "tag": { "type": "string", "minLength": 1 }
+      }
+    },
+    "referrer": {
+      "type": "object",
+      "description": "The attached referrer artifact.",
+      "required": ["digest", "artifactType"],
+      "additionalProperties": false,
+      "properties": {
+        "digest": { "$ref": "envelope.schema.json#/$defs/digest" },
+        "artifactType": { "type": "string", "minLength": 1 }
+      }
+    },
+    "observedAt": { "type": "string", "format": "date-time" }
+  }
+}

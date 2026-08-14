@@ -48,6 +48,32 @@ def test_edges_created(store: GraphStore):
     assert _count(store, "MATCH ()-[e:RUNS]->() RETURN count(e)") >= 1
 
 
+def test_referrer_observed_creates_refers_to_edge(store: GraphStore):
+    # The example referrer (digest 3…) refers to the golden subject (digest 2…),
+    # carrying its artifactType.
+    rows = store.query(
+        "MATCH (r:Occurrence)-[e:REFERS_TO]->(s:Occurrence) "
+        "RETURN r.digest AS ref, s.digest AS subj, e.artifactType AS at",
+    )
+    assert any(
+        row["subj"] == DIGEST2 and row["at"] == "application/vnd.in-toto+json"
+        for row in rows
+    )
+
+
+def test_artifact_deleted_sets_tombstone(store: GraphStore):
+    # The example ArtifactDeleted marks the quarantine occurrence as removed.
+    rows = store.query(
+        "MATCH (o:Occurrence) WHERE o.deletedAt <> '' "
+        "RETURN o.repository AS repo, o.deleteReason AS reason",
+    )
+    assert any(
+        row["repo"] == "toddysm/quarantine/python" and row["reason"] == "promoted"
+        for row in rows
+    )
+
+
+
 def test_built_from_targets_base_repository(store: GraphStore):
     n = _count(
         store,

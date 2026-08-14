@@ -1,0 +1,140 @@
+# Composite action: stage-referrer-events
+#
+# Stage one `ReferrerObserved` supply-chain-graph event per referrer of a subject
+# image, for the record-graph-events collector to commit. Discovers the referrer
+# closure of the subject (the image index plus each per-platform child manifest)
+# recursively — so referrers-of-referrers (e.g. a signature on an SBOM) are
+# recorded too — and writes one event file per (subject, referrer) edge with the
+# subject digest, referrer digest and artifactType.
+#
+# Requires oras/crane to be logged in to the registry (callers already are for
+# the copy). Best-effort: when nothing is discovered it stages nothing. The
+# content id / filename match build-graph-event (cssc_graph.identity.content_id).
+#
+# Terminology and the action catalogue: see docs/reference/workflow-actions.md.
+name: stage-referrer-events
+description: Stage a ReferrerObserved event per referrer of a subject image (recursively).
+
+inputs:
+  ref:
+    description: "Fully-qualified subject repository without tag (registry/repository)."
+    required: true
+  digest:
+    description: "Subject image (index) digest (sha256:...)."
+    required: true
+  tag:
+    description: "Subject tag (recorded on the index subject only)."
+    required: false
+    default: ""
+  output-dir:
+    description: "Staging directory to write event files into."
+    required: true
+  workflow:
+    description: "Producing workflow name (source.workflow)."
+    required: true
+  run-url:
+    description: "URL of the producing run (source.runUrl)."
+    required: true
+  run-id:
+    description: "Producing run id (source.runId)."
+    required: true
+  run-attempt:
+    description: "Producing run attempt (source.runAttempt)."
+    required: true
+
+outputs:
+  staged:
+    description: "Number of ReferrerObserved events staged."
+    value: ${{ steps.stage.outputs.staged }}
+
+runs:
+  using: composite
+  steps:
+    - name: Stage referrer events for ${{ inputs.ref }}
+      id: stage
+      shell: bash
+      env:
+        REF: "${{ inputs.ref }}"
+        DIGEST: "${{ inputs.digest }}"
+        TAG: "${{ inputs.tag }}"
+        OUTPUT_DIR: "${{ inputs.output-dir }}"
+        WORKFLOW: "${{ inputs.workflow }}"
+        RUN_URL: "${{ inputs.run-url }}"
+        RUN_ID: "${{ inputs.run-id }}"
+        RUN_ATTEMPT: "${{ inputs.run-attempt }}"
+        RUNNER_TEMP_DIR: "${{ runner.temp }}"
+      run: |
+        set -euo pipefail
+
+        outdir="${OUTPUT_DIR:-${RUNNER_TEMP_DIR}/graph-events}"
+        now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        staged=0
+
+        if ! command -v oras >/dev/null 2>&1 || ! command -v crane >/dev/null 2>&1; then
+          echo "::notice::stage-referrer-events: oras/crane not available; nothing staged."
+          echo "staged=0" >> "${GITHUB_OUTPUT}"
+          exit 0
+        fi
+
+        # Split registry (first path component) from repository (the rest).
+        reg="${REF%%/*}"; repo="${REF#*/}"
+        if [ "${reg}" = "${REF}" ] || [ -z "${repo}" ]; then
+          echo "::error::stage-referrer-events: not a fully-qualified ref: '${REF}'"; exit 1
+        fi
+
+        source_json="$(jq -nc \
+          --arg w "${WORKFLOW}" --arg u "${RUN_URL}" \
+          --arg rid "${RUN_ID}" --arg ra "${RUN_ATTEMPT}" \
+          '{type:"github-actions", workflow:$w, runUrl:$u, runId:$rid, runAttempt:$ra}')"
+
+        stage_one() {
+          # $1 subject digest, $2 referrer digest, $3 artifactType
+          local sdig="$1" rdig="$2" atype="$3" record hex kdir dir tagexpr
+          if [ "${sdig}" = "${DIGEST}" ] && [ -n "${TAG}" ]; then
+            tagexpr="{tag:\$tag}"
+          else
+            tagexpr="{}"
+          fi
+          record="$(jq -nc \
+            --argjson src "${source_json}" --arg now "${now}" \
+            --arg reg "${reg}" --arg repo "${repo}" \
+            --arg sdig "${sdig}" --arg tag "${TAG}" \
+            --arg rdig "${rdig}" --arg atype "${atype}" \
+            "{schemaVersion:1, kind:\"ReferrerObserved\", recordedAt:\$now, source:\$src,
+              occurrence:{registry:\$reg, repository:\$repo},
+              subject:({digest:\$sdig} + ${tagexpr}),
+              referrer:{digest:\$rdig, artifactType:\$atype},
+              observedAt:\$now}")"
+          hex="$(printf '%s' "${record}" | jq -S -c -j 'del(.id, .recordedAt, .source)' | sha256sum | cut -d' ' -f1)"
+          record="$(printf '%s' "${record}" | jq -c --arg id "sha256:${hex}" '. + {id: $id}')"
+          kdir="referrer-observed"
+          dir="${outdir}/events/${kdir}"
+          mkdir -p "${dir}"
+          printf '%s\n' "${record}" | jq . > "${dir}/${hex}.json"
+          staged=$((staged + 1))
+        }
+
+        # Subjects worklist: the index plus each per-platform child manifest, then
+        # every discovered referrer (so referrers-of-referrers are covered too).
+        children="$(crane manifest "${REF}@${DIGEST}" 2>/dev/null | jq -r '.manifests[]?.digest // empty' 2>/dev/null || true)"
+        pending="$(printf '%s\n%s\n' "${DIGEST}" "${children}" | sed '/^$/d' | sort -u)"
+        processed=""
+        while [ -n "$(printf '%s' "${pending}" | sed '/^$/d')" ]; do
+          subj="$(printf '%s\n' "${pending}" | sed '/^$/d' | head -n1)"
+          pending="$(printf '%s\n' "${pending}" | sed '/^$/d' | grep -vxF "${subj}" || true)"
+          printf '%s\n' "${processed}" | grep -qxF "${subj}" && continue
+          processed="$(printf '%s\n%s\n' "${processed}" "${subj}" | sed '/^$/d')"
+          # Each referrer of ${subj}: emit an edge and queue it for its own referrers.
+          pairs="$(oras discover --format json "${REF}@${subj}" 2>/dev/null \
+            | jq -rc '[.. | objects | select(has("artifactType") and has("digest"))] | unique_by(.digest) | .[] | {digest, artifactType}' 2>/dev/null || true)"
+          while IFS= read -r pair; do
+            [ -n "${pair}" ] || continue
+            rdig="$(printf '%s' "${pair}" | jq -r '.digest')"
+            atype="$(printf '%s' "${pair}" | jq -r '.artifactType // "application/octet-stream"')"
+            stage_one "${subj}" "${rdig}" "${atype}"
+            printf '%s\n' "${processed}" | grep -qxF "${rdig}" || pending="$(printf '%s\n%s\n' "${pending}" "${rdig}" | sed '/^$/d')"
+          done <<< "${pairs}"
+        done
+
+        echo "Staged ${staged} ReferrerObserved event(s) for ${REF}@${DIGEST}."
+        echo "staged=${staged}" >> "${GITHUB_OUTPUT}"
