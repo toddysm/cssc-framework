@@ -1,0 +1,111 @@
+# Composite action: stage-deletion-events
+#
+# Stage one `ArtifactDeleted` supply-chain-graph event per artifact that
+# delete-image removed from a repository (the image and each referrer), for the
+# record-graph-events collector to commit. Consumes the `deleted-json` output of
+# delete-image (a JSON array of {digest, tag?}); the occurrence registry +
+# repository come from `ref`.
+#
+# Best-effort: skips entries without a digest and stages nothing for an empty
+# array. The content id / filename match build-graph-event
+# (cssc_graph.identity.content_id).
+#
+# Terminology and the action catalogue: see docs/reference/workflow-actions.md.
+name: stage-deletion-events
+description: Stage an ArtifactDeleted event per artifact delete-image removed (image + referrers).
+
+inputs:
+  ref:
+    description: "Fully-qualified repository the artifacts were deleted from (registry/repository)."
+    required: true
+  deleted-json:
+    description: "JSON array of removed artifacts, each {digest, tag?} (the delete-image deleted-json output)."
+    required: true
+  reason:
+    description: "Why the artifacts were removed: promoted | denied-cleanup | manual."
+    required: false
+    default: "promoted"
+  output-dir:
+    description: "Staging directory to write event files into."
+    required: true
+  workflow:
+    description: "Producing workflow name (source.workflow)."
+    required: true
+  run-url:
+    description: "URL of the producing run (source.runUrl)."
+    required: true
+  run-id:
+    description: "Producing run id (source.runId)."
+    required: true
+  run-attempt:
+    description: "Producing run attempt (source.runAttempt)."
+    required: true
+
+outputs:
+  staged:
+    description: "Number of ArtifactDeleted events staged."
+    value: ${{ steps.stage.outputs.staged }}
+
+runs:
+  using: composite
+  steps:
+    - name: Stage deletion events for ${{ inputs.ref }}
+      id: stage
+      shell: bash
+      env:
+        REF: "${{ inputs.ref }}"
+        DELETED_JSON: "${{ inputs.deleted-json }}"
+        REASON: "${{ inputs.reason }}"
+        OUTPUT_DIR: "${{ inputs.output-dir }}"
+        WORKFLOW: "${{ inputs.workflow }}"
+        RUN_URL: "${{ inputs.run-url }}"
+        RUN_ID: "${{ inputs.run-id }}"
+        RUN_ATTEMPT: "${{ inputs.run-attempt }}"
+        RUNNER_TEMP_DIR: "${{ runner.temp }}"
+      run: |
+        set -euo pipefail
+
+        outdir="${OUTPUT_DIR:-${RUNNER_TEMP_DIR}/graph-events}"
+        now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        staged=0
+
+        # Nothing to do for an empty / missing array.
+        if [ -z "${DELETED_JSON}" ] || [ "$(printf '%s' "${DELETED_JSON}" | jq 'length' 2>/dev/null || echo 0)" = "0" ]; then
+          echo "staged=0" >> "${GITHUB_OUTPUT}"
+          exit 0
+        fi
+
+        # Split registry (first path component) from repository (the rest).
+        reg="${REF%%/*}"; repo="${REF#*/}"
+        if [ "${reg}" = "${REF}" ] || [ -z "${repo}" ]; then
+          echo "::error::stage-deletion-events: not a fully-qualified ref: '${REF}'"; exit 1
+        fi
+
+        source_json="$(jq -nc \
+          --arg w "${WORKFLOW}" --arg u "${RUN_URL}" \
+          --arg rid "${RUN_ID}" --arg ra "${RUN_ATTEMPT}" \
+          '{type:"github-actions", workflow:$w, runUrl:$u, runId:$rid, runAttempt:$ra}')"
+
+        while IFS= read -r entry; do
+          [ -n "${entry}" ] || continue
+          dig="$(printf '%s' "${entry}" | jq -r '.digest // empty')"
+          tag="$(printf '%s' "${entry}" | jq -r '.tag // empty')"
+          [ -n "${dig}" ] || continue
+          record="$(jq -nc \
+            --argjson src "${source_json}" --arg now "${now}" \
+            --arg reg "${reg}" --arg repo "${repo}" \
+            --arg dig "${dig}" --arg tag "${tag}" --arg reason "${REASON}" \
+            '{schemaVersion:1, kind:"ArtifactDeleted", recordedAt:$now, source:$src,
+              occurrence:{registry:$reg, repository:$repo},
+              digest:$dig, reason:$reason, deletedAt:$now}
+             + (if $tag == "" then {} else {tag:$tag} end)')"
+          hex="$(printf '%s' "${record}" | jq -S -c -j 'del(.id, .recordedAt, .source)' | sha256sum | cut -d' ' -f1)"
+          record="$(printf '%s' "${record}" | jq -c --arg id "sha256:${hex}" '. + {id: $id}')"
+          dir="${outdir}/events/artifact-deleted"
+          mkdir -p "${dir}"
+          printf '%s\n' "${record}" | jq . > "${dir}/${hex}.json"
+          staged=$((staged + 1))
+        done <<< "$(printf '%s' "${DELETED_JSON}" | jq -c '.[]')"
+
+        echo "Staged ${staged} ArtifactDeleted event(s) for ${REF}."
+        echo "staged=${staged}" >> "${GITHUB_OUTPUT}"
