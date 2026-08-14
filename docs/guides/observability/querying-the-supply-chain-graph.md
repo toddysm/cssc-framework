@@ -50,6 +50,33 @@ run every command verbatim.
 
 ---
 
+## Where the data lives
+
+The `supply-chain-graph/` folder on `main` ships the **schema**, the
+**`examples/` fixtures** used in this guide, and any hand-authored records. The
+**real, workflow-generated events are not on `main`** — each producer stages one
+immutable event file per run and the `record-graph-events` collector commits them
+(append-only) to a dedicated **`supply-chain-graph-data`** branch.
+
+To query your pipeline's actual events, fetch that branch and index it:
+
+```bash
+git fetch origin supply-chain-graph-data
+git worktree add --detach /tmp/scg-data origin/supply-chain-graph-data
+cssc-graph index /tmp/scg-data/supply-chain-graph -d /tmp/scg.db --rebuild
+```
+
+The branch carries its own `schema/`, kept current by the collector
+([#203](https://github.com/toddysm/cssc-framework/issues/203)), so no
+`--schema-dir` override is needed. In the cluster, `graph-service` gets the same
+data through its optional git-sync init container, which syncs
+`supply-chain-graph-data` into `DATA_ROOT`.
+
+The `examples/` walkthrough below uses the in-repo fixtures instead, so every
+command runs verbatim on a fresh clone.
+
+---
+
 ## Experience 1 — the `cssc-graph` CLI
 
 ### Install
