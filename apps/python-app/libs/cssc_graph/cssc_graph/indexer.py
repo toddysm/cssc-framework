@@ -220,18 +220,26 @@ class Indexer:
         registry, repository = occ["registry"], occ["repository"]
         subject = record["subject"]
         referrer = record["referrer"]
+        artifact_type = referrer["artifactType"]
         subject_key = self._merge_occurrence(registry, repository, subject["digest"])
         referrer_key = self._merge_occurrence(registry, repository, referrer["digest"])
-        self._set_artifact_metadata(referrer["digest"], "", referrer.get("artifactType", ""))
+        # Set only the artifactType; a ReferrerObserved does not carry the
+        # mediaType, so leave any previously indexed value untouched.
+        self._store.execute(
+            "MERGE (a:Artifact {digest: $digest}) SET a.artifactType = $artifactType",
+            {"digest": referrer["digest"], "artifactType": artifact_type},
+        )
+        # observedAt is part of the merge key so each observation is preserved
+        # (append-only), mirroring POINTED_TO for tags.
         self._store.execute(
             "MATCH (r:Occurrence {key: $ref}), (s:Occurrence {key: $subj}) "
-            "MERGE (r)-[e:REFERS_TO {artifactType: $artifactType}]->(s) "
-            "SET e.observedAt = $observedAt, e.runUrl = $runUrl",
+            "MERGE (r)-[e:REFERS_TO {artifactType: $artifactType, observedAt: $observedAt}]->(s) "
+            "SET e.runUrl = $runUrl",
             {
                 "ref": referrer_key,
                 "subj": subject_key,
-                "artifactType": referrer.get("artifactType", ""),
-                "observedAt": record.get("observedAt", ""),
+                "artifactType": artifact_type,
+                "observedAt": record["observedAt"],
                 "runUrl": _run_url(record),
             },
         )
@@ -244,8 +252,8 @@ class Indexer:
             "SET o.deletedAt = $deletedAt, o.deleteReason = $reason, o.deleteRunUrl = $runUrl",
             {
                 "occ": occ_key,
-                "deletedAt": record.get("deletedAt", ""),
-                "reason": record.get("reason", ""),
+                "deletedAt": record["deletedAt"],
+                "reason": record["reason"],
                 "runUrl": _run_url(record),
             },
         )
