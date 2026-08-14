@@ -123,12 +123,9 @@ jobs:
             echo "scanner-version=$(get '.scanner_version')"
             # Pipe-join the blocking CVE array for the referrer annotation.
             echo "cves=$(printf '%s' "${METADATA_JSON}" | jq -r '(.blocking_cves // []) | join("|")')"
-            # SBOM promotions must carry referrers along.
-            if [ "$(get '.method')" = "sbom" ]; then
-              echo "copy-referrers=true"
-            else
-              echo "copy-referrers=false"
-            fi
+            # Always carry referrers (SBOM/provenance/VEX/signatures) with the
+            # promoted image so golden holds the complete attestation set.
+            echo "copy-referrers=true"
           }  >> "${GITHUB_OUTPUT}"
 
       - name: Set up crane

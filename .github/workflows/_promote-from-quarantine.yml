@@ -235,6 +235,7 @@ jobs:
           dest-image: ${{ inputs.dest_repo }}
           dest-tag: ${{ matrix.tag }}
           force: "true"
+          copy-referrers: "true"
 
       - name: Attach scan-report attestation
         if: steps.evaluate.outputs.decision == 'promote'

@@ -5,6 +5,14 @@
 # a PAT carrying `delete:packages` is required. Used to remove a tag from
 # quarantine after it has been promoted.
 #
+# When `delete-referrers` is set (default), the tag's referrer closure is removed
+# first: every OCI 1.1 referrer manifest (untagged package version, resolved by
+# digest) and OCI 1.0 `sha256-<subject-digest>` fallback referrer index, for the
+# image index and each per-platform child manifest, discovered recursively so
+# referrers-of-referrers are included. This requires crane/oras to be logged in
+# to the registry (the promote jobs already are); it degrades to image-only
+# deletion otherwise. Referrer cleanup is best-effort and never fails the caller.
+#
 # Resolves the owner type (user vs organization) and the package-version id for
 # the tag, then issues the delete. When the tag is the package's last tagged
 # version (which GHCR refuses to delete via the versions API), it falls back to
@@ -13,7 +21,7 @@
 #
 # Terminology: see docs/reference/workflow-actions.md.
 name: delete-image
-description: Delete one tag from a GHCR repository via the Packages REST API.
+description: Delete one tag (and its referrer closure) from a GHCR repository via the Packages REST API.
 
 inputs:
   repository:
@@ -26,11 +34,18 @@ inputs:
     description: "PAT with delete:packages. When empty, deletion is skipped with a warning."
     required: false
     default: ""
+  delete-referrers:
+    description: "Also delete the image's referrer closure (OCI 1.1 manifests + sha256-* fallback tags, recursively). Requires crane/oras to be logged in to the registry."
+    required: false
+    default: "true"
 
 outputs:
   status:
     description: "deleted | skipped | failed."
     value: ${{ steps.delete.outputs.status }}
+  referrers-deleted:
+    description: "Number of referrer artifacts (manifests + fallback tags) removed from the repository."
+    value: ${{ steps.delete.outputs.referrers-deleted }}
 
 runs:
   using: composite
@@ -42,6 +57,7 @@ runs:
         REPOSITORY: "${{ inputs.repository }}"
         TAG: "${{ inputs.tag }}"
         DELETE_TOKEN: "${{ inputs.token }}"
+        DELETE_REFERRERS: "${{ inputs.delete-referrers }}"
       run: |
         set -euo pipefail
         export LC_ALL=C
@@ -49,6 +65,7 @@ runs:
         if [ -z "${DELETE_TOKEN}" ]; then
           echo "::warning::No delete token provided; skipping deletion of ${REPOSITORY}:${TAG}."
           echo "status=skipped" >> "${GITHUB_OUTPUT}"
+          echo "referrers-deleted=0" >> "${GITHUB_OUTPUT}"
           exit 0
         fi
 
@@ -65,9 +82,80 @@ runs:
           base="user/packages/container/${pkg_enc}"
         fi
 
-        vid="$(GH_TOKEN="${DELETE_TOKEN}" gh api --paginate "${base}/versions" \
-               --jq ".[] | select(.metadata.container.tags[]? == \"${TAG}\") | .id" 2>/dev/null \
-               | head -n1 || true)"
+        # Snapshot every package version once (id + digest name + tags). Referrer
+        # manifests are untagged versions keyed by their digest (.name); OCI 1.0
+        # fallback referrer indexes are tagged sha256-<subject-digest>.
+        versions="$(GH_TOKEN="${DELETE_TOKEN}" gh api --paginate "${base}/versions" 2>/dev/null || echo '[]')"
+        id_for_digest() { printf '%s' "${versions}" | jq -r --arg d "$1" 'map(select(.name == $d)) | .[0].id // empty'; }
+        id_for_tag()    { printf '%s' "${versions}" | jq -r --arg t "$1" 'map(select(.metadata.container.tags[]? == $t)) | .[0].id // empty'; }
+
+        referrers_deleted=0
+
+        # --- Delete the referrer closure before the image itself. ---------------
+        # Deletion runs last in the promotion, so the image + referrers still
+        # exist here and can be enumerated. This is best-effort: any failure only
+        # warns (a completed promotion must not be failed by cleanup), and it is
+        # a no-op when crane/oras are not logged in.
+        if [ "${DELETE_REFERRERS}" = "true" ] && command -v crane >/dev/null 2>&1; then
+          subject_digest="$(crane digest "${REPOSITORY}:${TAG}" 2>/dev/null || true)"
+          if [ -z "${subject_digest}" ]; then
+            echo "::notice::Could not resolve a digest for ${REPOSITORY}:${TAG}; skipping referrer cleanup."
+          else
+            # Subjects = the image index plus every per-platform child manifest.
+            children="$(crane manifest "${REPOSITORY}@${subject_digest}" 2>/dev/null | jq -r '.manifests[]?.digest // empty' 2>/dev/null || true)"
+            subjects="$(printf '%s\n%s\n' "${subject_digest}" "${children}" | sed '/^$/d' | sort -u)"
+
+            # Walk the referrer graph with a worklist so referrers-of-referrers
+            # (e.g. a signature on an SBOM) are included. oras JSON nesting varies
+            # by version, so collect any object carrying both artifactType+digest.
+            processed=""
+            pending="${subjects}"
+            referrer_digests=""
+            if command -v oras >/dev/null 2>&1; then
+              while [ -n "$(printf '%s' "${pending}" | sed '/^$/d')" ]; do
+                subj="$(printf '%s\n' "${pending}" | sed '/^$/d' | head -n1)"
+                pending="$(printf '%s\n' "${pending}" | sed '/^$/d' | grep -vxF "${subj}" || true)"
+                printf '%s\n' "${processed}" | grep -qxF "${subj}" && continue
+                processed="$(printf '%s\n%s\n' "${processed}" "${subj}" | sed '/^$/d')"
+                refs="$(oras discover --format json "${REPOSITORY}@${subj}" 2>/dev/null \
+                  | jq -r '[.. | objects | select(has("artifactType") and has("digest")) | .digest] | unique | .[]' 2>/dev/null || true)"
+                for r in ${refs}; do
+                  referrer_digests="$(printf '%s\n%s\n' "${referrer_digests}" "${r}" | sed '/^$/d')"
+                  printf '%s\n' "${processed}" | grep -qxF "${r}" || pending="$(printf '%s\n%s\n' "${pending}" "${r}" | sed '/^$/d')"
+                done
+              done
+            fi
+
+            # Delete referrer manifests (untagged versions, keyed by digest).
+            for r in $(printf '%s\n' "${referrer_digests}" | sed '/^$/d' | sort -u); do
+              rid="$(id_for_digest "${r}")"
+              [ -n "${rid}" ] || continue
+              if GH_TOKEN="${DELETE_TOKEN}" gh api -X DELETE "${base}/versions/${rid}" >/dev/null 2>&1; then
+                echo "Deleted referrer ${r} (version ${rid})."
+                referrers_deleted=$((referrers_deleted + 1))
+              else
+                echo "::warning::Failed to delete referrer ${r} (version ${rid}); leaving it in place."
+              fi
+            done
+
+            # Delete OCI 1.0 fallback referrer indexes (sha256-<subject-digest>).
+            for s in ${subjects}; do
+              fb="$(printf '%s' "${s}" | sed 's/:/-/')"
+              fid="$(id_for_tag "${fb}")"
+              [ -n "${fid}" ] || continue
+              if GH_TOKEN="${DELETE_TOKEN}" gh api -X DELETE "${base}/versions/${fid}" >/dev/null 2>&1; then
+                echo "Deleted fallback referrer tag ${fb} (version ${fid})."
+                referrers_deleted=$((referrers_deleted + 1))
+              else
+                echo "::warning::Failed to delete fallback referrer tag ${fb} (version ${fid}); leaving it in place."
+              fi
+            done
+          fi
+        fi
+        echo "referrers-deleted=${referrers_deleted}" >> "${GITHUB_OUTPUT}"
+
+        # --- Delete the image tag itself. ---------------------------------------
+        vid="$(id_for_tag "${TAG}")"
         if [ -z "${vid}" ]; then
           echo "::warning::Could not resolve a package version id for tag '${TAG}'; skipping deletion."
           echo "status=failed" >> "${GITHUB_OUTPUT}"
