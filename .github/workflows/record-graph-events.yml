@@ -79,6 +79,15 @@ jobs:
             exit 0
           fi
 
+          # Snapshot the code's schema + sources from the producing commit before
+          # switching branches (the checkout below replaces the working tree with
+          # the data branch). The data branch must carry a current schema so newly
+          # introduced event kinds validate and index.
+          schema_src="${RUNNER_TEMP}/graph-schema"
+          rm -rf "${schema_src}"
+          cp -r supply-chain-graph/schema "${schema_src}"
+          cp supply-chain-graph/sources.yaml "${RUNNER_TEMP}/graph-sources.yaml"
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
@@ -90,6 +99,14 @@ jobs:
             echo "Creating ${BRANCH}."
             git checkout -B "${BRANCH}"
           fi
+
+          # Keep the data branch a valid, self-contained data root: refresh its
+          # schema/ and sources.yaml from the producing commit. Idempotent — an
+          # unchanged schema stages no diff.
+          rm -rf supply-chain-graph/schema
+          cp -r "${schema_src}" supply-chain-graph/schema
+          cp "${RUNNER_TEMP}/graph-sources.yaml" supply-chain-graph/sources.yaml
+          git add supply-chain-graph/schema supply-chain-graph/sources.yaml
 
           # Copy only new event files — the ledger is append-only and immutable.
           added=0
@@ -105,8 +122,8 @@ jobs:
             added=$((added + 1))
           done < <(find "${staged}" -type f -name '*.json' | sort)
 
-          if [ "${added}" -eq 0 ] || git diff --cached --quiet; then
-            echo "No new graph events to record."
+          if [ "${added}" -eq 0 ] && git diff --cached --quiet; then
+            echo "No new graph events or schema changes to record."
             exit 0
           fi
 
