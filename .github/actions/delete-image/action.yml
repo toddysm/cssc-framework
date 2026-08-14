@@ -92,6 +92,7 @@ runs:
         versions="$(GH_TOKEN="${DELETE_TOKEN}" gh api --paginate "${base}/versions" 2>/dev/null || echo '[]')"
         id_for_digest() { printf '%s' "${versions}" | jq -r --arg d "$1" 'map(select(.name == $d)) | .[0].id // empty'; }
         id_for_tag()    { printf '%s' "${versions}" | jq -r --arg t "$1" 'map(select(.metadata.container.tags[]? == $t)) | .[0].id // empty'; }
+        digest_for_tag() { printf '%s' "${versions}" | jq -r --arg t "$1" 'map(select(.metadata.container.tags[]? == $t)) | .[0].name // empty'; }
 
         referrers_deleted=0
         # JSON array of artifacts actually removed (image + referrers), for the
@@ -153,9 +154,13 @@ runs:
               fb="$(printf '%s' "${s}" | sed 's/:/-/')"
               fid="$(id_for_tag "${fb}")"
               [ -n "${fid}" ] || continue
+              fdig="$(digest_for_tag "${fb}")"
               if GH_TOKEN="${DELETE_TOKEN}" gh api -X DELETE "${base}/versions/${fid}" >/dev/null 2>&1; then
                 echo "Deleted fallback referrer tag ${fb} (version ${fid})."
                 referrers_deleted=$((referrers_deleted + 1))
+                if [ -n "${fdig}" ]; then
+                  deleted_json="$(printf '%s' "${deleted_json}" | jq -c --arg d "${fdig}" --arg t "${fb}" '. + [{digest: $d, tag: $t}]')"
+                fi
               else
                 echo "::warning::Failed to delete fallback referrer tag ${fb} (version ${fid}); leaving it in place."
               fi
