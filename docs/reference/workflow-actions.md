@@ -204,15 +204,22 @@ for the full annotation schema.
 
 ### delete-image
 
-Delete one tag from a GHCR repository via the Packages REST API.
+Delete one tag from a GHCR repository via the Packages REST API. When
+`delete-referrers` is set (default), the tag's referrer closure is removed
+first — every OCI 1.1 referrer manifest (untagged version, by digest) and
+OCI 1.0 `sha256-<subject-digest>` fallback referrer index, for the image
+index and each child manifest, discovered recursively. Referrer cleanup
+needs crane/oras logged in to the registry (the promote jobs already are)
+and is best-effort.
 
 | Input | Required | Default | Description |
 | ----- | -------- | ------- | ----------- |
 | `repository` | yes | — | GHCR repository, without tag. |
 | `tag` | yes | — | Tag to delete. |
 | `token` | no | `""` | PAT with `delete:packages`; deletion is skipped when empty. |
+| `delete-referrers` | no | `true` | Also delete the tag's OCI 1.0/1.1 referrer closure. |
 
-Outputs: `status` (`deleted` / `skipped` / `failed`).
+Outputs: `status` (`deleted` / `skipped` / `failed`), `referrers-deleted` (count).
 
 ### notify-slack
 
