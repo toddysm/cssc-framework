@@ -219,7 +219,7 @@ and is best-effort.
 | `token` | no | `""` | PAT with `delete:packages`; deletion is skipped when empty. |
 | `delete-referrers` | no | `true` | Also delete the tag's OCI 1.0/1.1 referrer closure. |
 
-Outputs: `status` (`deleted` / `skipped` / `failed`), `referrers-deleted` (count).
+Outputs: `status` (`deleted` / `skipped` / `failed`), `referrers-deleted` (count), `deleted-json` (array of removed artifacts, for deletion graph events).
 
 ### notify-slack
 

@@ -46,6 +46,9 @@ outputs:
   referrers-deleted:
     description: "Number of referrer artifacts (manifests + fallback tags) removed from the repository."
     value: ${{ steps.delete.outputs.referrers-deleted }}
+  deleted-json:
+    description: "JSON array of the artifacts actually removed (image + referrers), each {digest, tag?}. Feeds stage-deletion-events."
+    value: ${{ steps.delete.outputs.deleted-json }}
 
 runs:
   using: composite
@@ -66,6 +69,7 @@ runs:
           echo "::warning::No delete token provided; skipping deletion of ${REPOSITORY}:${TAG}."
           echo "status=skipped" >> "${GITHUB_OUTPUT}"
           echo "referrers-deleted=0" >> "${GITHUB_OUTPUT}"
+          echo "deleted-json=[]" >> "${GITHUB_OUTPUT}"
           exit 0
         fi
 
@@ -90,17 +94,22 @@ runs:
         id_for_tag()    { printf '%s' "${versions}" | jq -r --arg t "$1" 'map(select(.metadata.container.tags[]? == $t)) | .[0].id // empty'; }
 
         referrers_deleted=0
+        # JSON array of artifacts actually removed (image + referrers), for the
+        # caller to turn into ArtifactDeleted graph events.
+        deleted_json='[]'
+        # Resolve the image digest once (best-effort); used for referrer
+        # discovery below and for the image's deletion event.
+        subject_digest=""
+        if command -v crane >/dev/null 2>&1; then
+          subject_digest="$(crane digest "${REPOSITORY}:${TAG}" 2>/dev/null || true)"
+        fi
 
         # --- Delete the referrer closure before the image itself. ---------------
         # Deletion runs last in the promotion, so the image + referrers still
         # exist here and can be enumerated. This is best-effort: any failure only
         # warns (a completed promotion must not be failed by cleanup), and it is
         # a no-op when crane/oras are not logged in.
-        if [ "${DELETE_REFERRERS}" = "true" ] && command -v crane >/dev/null 2>&1; then
-          subject_digest="$(crane digest "${REPOSITORY}:${TAG}" 2>/dev/null || true)"
-          if [ -z "${subject_digest}" ]; then
-            echo "::notice::Could not resolve a digest for ${REPOSITORY}:${TAG}; skipping referrer cleanup."
-          else
+        if [ "${DELETE_REFERRERS}" = "true" ] && [ -n "${subject_digest}" ]; then
             # Subjects = the image index plus every per-platform child manifest.
             children="$(crane manifest "${REPOSITORY}@${subject_digest}" 2>/dev/null | jq -r '.manifests[]?.digest // empty' 2>/dev/null || true)"
             subjects="$(printf '%s\n%s\n' "${subject_digest}" "${children}" | sed '/^$/d' | sort -u)"
@@ -133,6 +142,7 @@ runs:
               if GH_TOKEN="${DELETE_TOKEN}" gh api -X DELETE "${base}/versions/${rid}" >/dev/null 2>&1; then
                 echo "Deleted referrer ${r} (version ${rid})."
                 referrers_deleted=$((referrers_deleted + 1))
+                deleted_json="$(printf '%s' "${deleted_json}" | jq -c --arg d "${r}" '. + [{digest: $d}]')"
               else
                 echo "::warning::Failed to delete referrer ${r} (version ${rid}); leaving it in place."
               fi
@@ -150,7 +160,6 @@ runs:
                 echo "::warning::Failed to delete fallback referrer tag ${fb} (version ${fid}); leaving it in place."
               fi
             done
-          fi
         fi
         echo "referrers-deleted=${referrers_deleted}" >> "${GITHUB_OUTPUT}"
 
@@ -159,6 +168,7 @@ runs:
         if [ -z "${vid}" ]; then
           echo "::warning::Could not resolve a package version id for tag '${TAG}'; skipping deletion."
           echo "status=failed" >> "${GITHUB_OUTPUT}"
+          echo "deleted-json=${deleted_json}" >> "${GITHUB_OUTPUT}"
           exit 0
         fi
 
@@ -169,14 +179,17 @@ runs:
         #     quarantine package is the intended cleanup once its only image was
         #     promoted;
         #   - otherwise warn and report status=failed instead of aborting.
+        image_deleted=0
         if err="$(GH_TOKEN="${DELETE_TOKEN}" gh api -X DELETE "${base}/versions/${vid}" 2>&1 >/dev/null)"; then
           echo "Deleted ${REPOSITORY}:${TAG} (version ${vid})."
           echo "status=deleted" >> "${GITHUB_OUTPUT}"
+          image_deleted=1
         elif printf '%s' "${err}" | grep -qiF "last tagged version"; then
           echo "::notice::'${TAG}' is the last tagged version of ${REPOSITORY}; deleting the whole package instead."
           if perr="$(GH_TOKEN="${DELETE_TOKEN}" gh api -X DELETE "${base}" 2>&1 >/dev/null)"; then
             echo "Deleted package ${REPOSITORY} (removed last tag '${TAG}')."
             echo "status=deleted" >> "${GITHUB_OUTPUT}"
+            image_deleted=1
           else
             echo "::warning::Failed to delete package ${REPOSITORY}; leaving it in place. ${perr}"
             echo "status=failed" >> "${GITHUB_OUTPUT}"
@@ -185,3 +198,9 @@ runs:
           echo "::warning::Failed to delete ${REPOSITORY}:${TAG} (version ${vid}); leaving it in place. ${err}"
           echo "status=failed" >> "${GITHUB_OUTPUT}"
         fi
+
+        # Record the image's own deletion (with its tag) for the graph event.
+        if [ "${image_deleted}" = "1" ] && [ -n "${subject_digest}" ]; then
+          deleted_json="$(printf '%s' "${deleted_json}" | jq -c --arg d "${subject_digest}" --arg t "${TAG}" '. + [{digest: $d, tag: $t}]')"
+        fi
+        echo "deleted-json=${deleted_json}" >> "${GITHUB_OUTPUT}"

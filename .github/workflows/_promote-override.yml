@@ -295,12 +295,35 @@ jobs:
           override-cves: ${{ steps.meta.outputs.cves }}
 
       - name: Delete overridden tag from quarantine
+        id: delete
         if: inputs.decision == 'approve' && inputs.delete_source && steps.promote.outputs.digest != ''
         uses: ./.github/actions/delete-image
         with:
           repository: ${{ steps.meta.outputs.source-repo }}
           tag: ${{ steps.meta.outputs.tag }}
           token: ${{ secrets.ghcr_delete_token }}
+
+      - name: Stage deletion graph events
+        if: inputs.decision == 'approve' && inputs.delete_source && steps.promote.outputs.digest != ''
+        uses: ./.github/actions/stage-deletion-events
+        with:
+          ref: ${{ steps.meta.outputs.source-repo }}
+          deleted-json: ${{ steps.delete.outputs.deleted-json }}
+          reason: promoted
+          output-dir: ${{ runner.temp }}/graph-events-del
+          workflow: ${{ github.workflow }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          run-id: ${{ github.run_id }}
+          run-attempt: ${{ github.run_attempt }}
+
+      - name: Upload deletion graph events
+        if: inputs.decision == 'approve' && inputs.delete_source && steps.promote.outputs.digest != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: graph-events-del
+          path: ${{ runner.temp }}/graph-events-del
+          if-no-files-found: ignore
+          retention-days: 1
 
       # Close + notify once the promotion itself has succeeded, regardless of
       # the optional quarantine-delete outcome (best-effort cleanup must not

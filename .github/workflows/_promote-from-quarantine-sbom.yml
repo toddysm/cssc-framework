@@ -316,6 +316,28 @@ jobs:
           tag: ${{ matrix.tag }}
           token: ${{ secrets.ghcr_delete_token }}
 
+      - name: Stage deletion graph events
+        if: steps.evaluate.outputs.decision == 'promote' && inputs.delete_source
+        uses: ./.github/actions/stage-deletion-events
+        with:
+          ref: ${{ inputs.source_repo }}
+          deleted-json: ${{ steps.delete.outputs.deleted-json }}
+          reason: promoted
+          output-dir: ${{ runner.temp }}/graph-events-del
+          workflow: ${{ github.workflow }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          run-id: ${{ github.run_id }}
+          run-attempt: ${{ github.run_attempt }}
+
+      - name: Upload deletion graph events
+        if: steps.evaluate.outputs.decision == 'promote' && inputs.delete_source
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: graph-events-del-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/graph-events-del
+          if-no-files-found: ignore
+          retention-days: 1
+
       # When approval is enabled and the image is blocked (including a missing
       # SBOM), persist a machine-readable metadata block alongside the per-tag
       # result. The downstream `notify` job (which alone holds `issues: write`)
