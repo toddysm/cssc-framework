@@ -215,6 +215,41 @@ class Indexer:
 
     # -- shared edge builder ------------------------------------------------
 
+    def _index_referrer_observed(self, record: Mapping[str, Any]) -> None:
+        occ = record["occurrence"]
+        registry, repository = occ["registry"], occ["repository"]
+        subject = record["subject"]
+        referrer = record["referrer"]
+        subject_key = self._merge_occurrence(registry, repository, subject["digest"])
+        referrer_key = self._merge_occurrence(registry, repository, referrer["digest"])
+        self._set_artifact_metadata(referrer["digest"], "", referrer.get("artifactType", ""))
+        self._store.execute(
+            "MATCH (r:Occurrence {key: $ref}), (s:Occurrence {key: $subj}) "
+            "MERGE (r)-[e:REFERS_TO {artifactType: $artifactType}]->(s) "
+            "SET e.observedAt = $observedAt, e.runUrl = $runUrl",
+            {
+                "ref": referrer_key,
+                "subj": subject_key,
+                "artifactType": referrer.get("artifactType", ""),
+                "observedAt": record.get("observedAt", ""),
+                "runUrl": _run_url(record),
+            },
+        )
+
+    def _index_artifact_deleted(self, record: Mapping[str, Any]) -> None:
+        occ = record["occurrence"]
+        occ_key = self._merge_occurrence(occ["registry"], occ["repository"], record["digest"])
+        self._store.execute(
+            "MATCH (o:Occurrence {key: $occ}) "
+            "SET o.deletedAt = $deletedAt, o.deleteReason = $reason, o.deleteRunUrl = $runUrl",
+            {
+                "occ": occ_key,
+                "deletedAt": record.get("deletedAt", ""),
+                "reason": record.get("reason", ""),
+                "runUrl": _run_url(record),
+            },
+        )
+
     def _merge_pair_edge(self, record: Mapping[str, Any], rel: str, key_props: tuple[str, ...]) -> None:
         to_key = self._merge_occurrence_from(record["to"])
         from_key = self._merge_occurrence_from(record["from"])

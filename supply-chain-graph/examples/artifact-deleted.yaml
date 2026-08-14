@@ -1,0 +1,14 @@
+schemaVersion: 1
+kind: ArtifactDeleted
+recordedAt: 2026-08-09T13:10:10Z
+source:
+  type: github-actions
+  workflow: promote-from-quarantine-python
+  runUrl: https://github.com/toddysm/cssc-framework/actions/runs/123450002
+occurrence:
+  registry: ghcr.io
+  repository: toddysm/quarantine/python
+digest: sha256:3333333333333333333333333333333333333333333333333333333333333333
+artifactType: application/vnd.in-toto+json
+reason: promoted
+deletedAt: 2026-08-09T13:10:10Z

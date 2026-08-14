@@ -18,11 +18,11 @@
 #
 # Design: docs/architecture/observability/supply-chain-graph.md.
 name: build-graph-event
-description: Stage a supply-chain-graph event record (ArtifactMirrored / ArtifactPromoted / ArtifactBuilt / ArtifactDeployed / TagObserved) as JSON.
+description: Stage a supply-chain-graph event record (ArtifactMirrored / ArtifactPromoted / ArtifactBuilt / ArtifactDeployed / TagObserved / ReferrerObserved / ArtifactDeleted) as JSON.
 
 inputs:
   kind:
-    description: "Record kind: ArtifactMirrored, ArtifactPromoted, ArtifactBuilt, ArtifactDeployed, or TagObserved."
+    description: "Record kind: ArtifactMirrored, ArtifactPromoted, ArtifactBuilt, ArtifactDeployed, TagObserved, ReferrerObserved, or ArtifactDeleted."
     required: true
   source-ref:
     description: "Fully-qualified source name registry/repository (from occurrence). Required for ArtifactMirrored/ArtifactPromoted."
@@ -86,6 +86,18 @@ inputs:
     description: "Helm chart version for the deployment (ArtifactDeployed, required with chart-name)."
     required: false
     default: ""
+  referrer-digest:
+    description: "Referrer artifact digest (sha256:...). Required for ReferrerObserved."
+    required: false
+    default: ""
+  artifact-type:
+    description: "Referrer artifact type. Required for ReferrerObserved; optional for ArtifactDeleted (omit for a plain image)."
+    required: false
+    default: ""
+  reason:
+    description: "Why the artifact was deleted: promoted, denied-cleanup, or manual. Required for ArtifactDeleted."
+    required: false
+    default: ""
   output-dir:
     description: "Staging directory to write the event file into."
     required: false
@@ -126,6 +138,9 @@ runs:
         ENV_NAMESPACE: "${{ inputs.environment-namespace }}"
         CHART_NAME: "${{ inputs.chart-name }}"
         CHART_VERSION: "${{ inputs.chart-version }}"
+        REFERRER_DIGEST: "${{ inputs.referrer-digest }}"
+        ARTIFACT_TYPE: "${{ inputs.artifact-type }}"
+        REASON: "${{ inputs.reason }}"
         OUTPUT_DIR: "${{ inputs.output-dir }}"
         WORKFLOW: "${{ inputs.workflow }}"
         RUN_URL: "${{ inputs.run-url }}"
@@ -221,6 +236,36 @@ runs:
               '{schemaVersion:1, kind:"TagObserved", recordedAt:$now, source:$src,
                 occurrence:{registry:$dreg, repository:$drepo},
                 tag:$tag, digest:$dig, observedAt:$now}')"
+            ;;
+          ReferrerObserved)
+            [ -n "${DEST_DIGEST}" ] && [ -n "${REFERRER_DIGEST}" ] && [ -n "${ARTIFACT_TYPE}" ] || {
+              echo "::error::build-graph-event: ReferrerObserved requires dest-ref, dest-digest, referrer-digest and artifact-type."; exit 1; }
+            split_ref "${DEST_REF}"; d_reg="${REG}"; d_repo="${REPO}"
+            record="$(jq -nc \
+              --argjson src "${source_json}" --arg now "${now}" \
+              --arg dreg "${d_reg}" --arg drepo "${d_repo}" \
+              --arg sdig "${DEST_DIGEST}" --arg tag "${TAG}" \
+              --arg rdig "${REFERRER_DIGEST}" --arg atype "${ARTIFACT_TYPE}" \
+              '{schemaVersion:1, kind:"ReferrerObserved", recordedAt:$now, source:$src,
+                occurrence:{registry:$dreg, repository:$drepo},
+                subject:({digest:$sdig} + (if $tag == "" then {} else {tag:$tag} end)),
+                referrer:{digest:$rdig, artifactType:$atype},
+                observedAt:$now}')"
+            ;;
+          ArtifactDeleted)
+            [ -n "${DEST_DIGEST}" ] && [ -n "${REASON}" ] || {
+              echo "::error::build-graph-event: ArtifactDeleted requires dest-ref, dest-digest and reason."; exit 1; }
+            split_ref "${DEST_REF}"; d_reg="${REG}"; d_repo="${REPO}"
+            record="$(jq -nc \
+              --argjson src "${source_json}" --arg now "${now}" \
+              --arg dreg "${d_reg}" --arg drepo "${d_repo}" \
+              --arg dig "${DEST_DIGEST}" --arg tag "${TAG}" \
+              --arg atype "${ARTIFACT_TYPE}" --arg reason "${REASON}" \
+              '{schemaVersion:1, kind:"ArtifactDeleted", recordedAt:$now, source:$src,
+                occurrence:{registry:$dreg, repository:$drepo},
+                digest:$dig, reason:$reason, deletedAt:$now}
+               + (if $atype == "" then {} else {artifactType:$atype} end)
+               + (if $tag == "" then {} else {tag:$tag} end)')"
             ;;
           *)
             echo "::error::build-graph-event: unknown kind '${KIND}'."

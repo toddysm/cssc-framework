@@ -18,6 +18,7 @@ SCHEMA_DDL: tuple[str, ...] = (
     "digest STRING, mediaType STRING, artifactType STRING, PRIMARY KEY(digest))",
     "CREATE NODE TABLE IF NOT EXISTS Occurrence("
     "key STRING, registry STRING, repository STRING, digest STRING, ref STRING, "
+    "deletedAt STRING, deleteReason STRING, deleteRunUrl STRING, "
     "PRIMARY KEY(key))",
     "CREATE NODE TABLE IF NOT EXISTS Tag("
     "key STRING, registry STRING, repository STRING, tag STRING, ref STRING, "
@@ -41,6 +42,9 @@ SCHEMA_DDL: tuple[str, ...] = (
     "CREATE REL TABLE IF NOT EXISTS RUNS("
     "FROM Deployment TO Occurrence, chart STRING, chartVersion STRING, "
     "runUrl STRING, recordedAt STRING)",
+    "CREATE REL TABLE IF NOT EXISTS REFERS_TO("
+    "FROM Occurrence TO Occurrence, artifactType STRING, observedAt STRING, "
+    "runUrl STRING)",
 )
 
 
