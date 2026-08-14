@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "kind": "ReferrerObserved",
+  "recordedAt": "2026-08-14T03:08:14Z",
+  "source": {
+    "type": "github-actions",
+    "workflow": "promote override",
+    "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/31765848677",
+    "runId": "31765848677",
+    "runAttempt": "1"
+  },
+  "occurrence": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/golden/python"
+  },
+  "subject": {
+    "digest": "sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4",
+    "tag": "3.14-slim"
+  },
+  "referrer": {
+    "digest": "sha256:1969f3ebd6e0651637ec421da568ed15503ecacb36fc13f5eeb57f0185ab6fcd",
+    "artifactType": "application/vnd.in-toto+json"
+  },
+  "observedAt": "2026-08-14T03:08:14Z",
+  "id": "sha256:dc40183a626c2dee1f887d522e9d24d5e29e9a5167238962733fe2cfca8e6e38"
+}
