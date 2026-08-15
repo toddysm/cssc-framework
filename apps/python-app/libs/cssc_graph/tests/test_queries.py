@@ -106,6 +106,12 @@ def test_referrers_returns_edge_with_artifact_type(store):
     assert "application/vnd.in-toto+json" in {e.get("artifactType") for e in sub["edges"]}
 
 
+def test_referrers_depth_zero_returns_only_subject(store):
+    sub = queries.referrers(store, ref=f"{GOLDEN_REF}@{DIGEST2}", depth=0)
+    assert sub["edges"] == []
+    assert {n["key"] for n in sub["nodes"]} == {f"{GOLDEN_REF}@{DIGEST2}"}
+
+
 def test_show_includes_referrers(store):
     data = queries.show(store, f"{GOLDEN_REF}@{DIGEST2}")
     assert data is not None

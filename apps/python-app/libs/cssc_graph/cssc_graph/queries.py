@@ -182,14 +182,17 @@ def referrers(
     """Referrer artifacts of a subject occurrence.
 
     Returns ``{nodes, edges}`` where each ``REFERS_TO`` edge carries the
-    ``artifactType``. Follows referrers-of-referrers up to *depth* (a signature on
-    an SBOM, etc.).
+    ``artifactType``. Follows referrers-of-referrers up to *depth* levels (a
+    signature on an SBOM, etc.); ``depth=0`` returns just the subject, matching
+    :func:`traverse`.
     """
 
     seeds = resolve_seed(store, digest=digest, ref=ref)
     nodes: dict[str, dict[str, Any]] = {}
     edges: list[dict[str, Any]] = []
-    seen_edges: set[tuple[str, str]] = set()
+    # Keyed like the indexer's REFERS_TO merge so distinct observations and
+    # artifact types between the same pair are all kept, not collapsed.
+    seen_edges: set[tuple[str, str, str | None, str | None]] = set()
     for seed in seeds:
         occ = get_occurrence(store, seed)
         if occ:
@@ -197,7 +200,7 @@ def referrers(
 
     visited: set[str] = set()
     frontier = list(dict.fromkeys(seeds))
-    for _ in range(max(depth, 1)):
+    for _ in range(depth):
         nxt: list[str] = []
         for key in frontier:
             if key in visited:
@@ -213,7 +216,9 @@ def referrers(
             )
             for row in rows:
                 _record_node(nodes, row)
-                ekey = (row["key"], key)
+                atype = row.get("artifactType")
+                observed = row.get("observedAt")
+                ekey = (row["key"], key, atype, observed)
                 if ekey not in seen_edges:
                     seen_edges.add(ekey)
                     edges.append(
@@ -221,8 +226,8 @@ def referrers(
                             "type": "REFERS_TO",
                             "from": row["key"],
                             "to": key,
-                            "artifactType": row.get("artifactType"),
-                            "observedAt": row.get("observedAt"),
+                            "artifactType": atype,
+                            "observedAt": observed,
                         }
                     )
                 nxt.append(row["key"])
