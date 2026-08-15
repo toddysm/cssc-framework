@@ -238,6 +238,33 @@ def referrers(
     return {"nodes": list(nodes.values()), "edges": edges}
 
 
+def platforms(store: GraphStore, *, digest: str | None = None, ref: str | None = None) -> list[dict[str, Any]]:
+    """Per-platform child manifests of a multi-arch index occurrence."""
+
+    seeds = resolve_seed(store, digest=digest, ref=ref)
+    out: list[dict[str, Any]] = []
+    for key in seeds:
+        for row in store.query(
+            "MATCH (i:Occurrence {key: $k})-[e:HAS_PLATFORM]->(c:Occurrence) "
+            "RETURN c.key AS key, c.digest AS digest, e.os AS os, "
+            "e.architecture AS architecture, e.variant AS variant "
+            "ORDER BY e.os, e.architecture, e.variant",
+            {"k": key},
+        ):
+            out.append(row)
+    return out
+
+
+def index_of(store: GraphStore, child_key: str) -> str | None:
+    """The index occurrence key that a per-platform child belongs to, if any."""
+
+    rows = store.query(
+        "MATCH (i:Occurrence)-[:HAS_PLATFORM]->(c:Occurrence {key: $k}) RETURN i.key AS key LIMIT 1",
+        {"k": child_key},
+    )
+    return rows[0]["key"] if rows else None
+
+
 def tag_history(store: GraphStore, ref: str, tag: str) -> list[dict[str, Any]]:
     registry, repository = split_ref(ref)
     return store.query(

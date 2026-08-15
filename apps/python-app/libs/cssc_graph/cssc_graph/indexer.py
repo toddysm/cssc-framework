@@ -258,6 +258,27 @@ class Indexer:
             },
         )
 
+    def _index_image_index_observed(self, record: Mapping[str, Any]) -> None:
+        occ = record["occurrence"]
+        registry, repository = occ["registry"], occ["repository"]
+        index_key = self._merge_occurrence(registry, repository, record["index"]["digest"])
+        observed_at = record.get("observedAt", "")
+        for platform in record["platforms"]:
+            child_key = self._merge_occurrence(registry, repository, platform["digest"])
+            self._store.execute(
+                "MATCH (i:Occurrence {key: $i}), (c:Occurrence {key: $c}) "
+                "MERGE (i)-[e:HAS_PLATFORM {os: $os, architecture: $arch, variant: $variant}]->(c) "
+                "SET e.observedAt = $observedAt",
+                {
+                    "i": index_key,
+                    "c": child_key,
+                    "os": platform["os"],
+                    "arch": platform["architecture"],
+                    "variant": platform.get("variant", ""),
+                    "observedAt": observed_at,
+                },
+            )
+
     def _merge_pair_edge(self, record: Mapping[str, Any], rel: str, key_props: tuple[str, ...]) -> None:
         to_key = self._merge_occurrence_from(record["to"])
         from_key = self._merge_occurrence_from(record["from"])

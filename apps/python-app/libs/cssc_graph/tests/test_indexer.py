@@ -73,6 +73,19 @@ def test_artifact_deleted_sets_tombstone(store: GraphStore):
     )
 
 
+def test_image_index_observed_creates_has_platform_edges(store: GraphStore):
+    # The example ImageIndexObserved links the index (digest 2…) to its two
+    # per-platform child manifests (digests 4… and 5…).
+    rows = store.query(
+        "MATCH (i:Occurrence {digest: $d})-[e:HAS_PLATFORM]->(c:Occurrence) "
+        "RETURN c.digest AS child, e.os AS os, e.architecture AS arch",
+        {"d": DIGEST2},
+    )
+    pairs = {(row["os"], row["arch"]) for row in rows}
+    assert ("linux", "amd64") in pairs
+    assert ("linux", "arm64") in pairs
+    assert len(rows) == 2
+
 
 def test_built_from_targets_base_repository(store: GraphStore):
     n = _count(

@@ -136,8 +136,8 @@ by people through pull requests, not by workflows.
 
 | Workflow (stage) | Event kind(s) | Key fields |
 |---|---|---|
-| `mirror-*` (acquire) | `ArtifactMirrored`, `TagObserved`, `ReferrerObserved` | source ref+digest, dest repo+digest, dest tag, referrer digests+types, run URL |
-| `promote-from-quarantine*` (catalog) | `ArtifactPromoted`, `ScanRecorded`, `TagObserved`, `ReferrerObserved`, `ArtifactDeleted` | src/dest repo+digest, tag, referrer digests+types, deleted digests, vuln-attestation digest, issue URL, run URL |
+| `mirror-*` (acquire) | `ArtifactMirrored`, `TagObserved`, `ReferrerObserved`, `ImageIndexObserved` | source ref+digest, dest repo+digest, dest tag, referrer digests+types, per-platform child digests+platform, run URL |
+| `promote-from-quarantine*` (catalog) | `ArtifactPromoted`, `ScanRecorded`, `TagObserved`, `ReferrerObserved`, `ArtifactDeleted`, `ImageIndexObserved` | src/dest repo+digest, tag, referrer digests+types, deleted digests, per-platform child digests+platform, vuln-attestation digest, issue URL, run URL |
 | `build-cssc-dashboard` (build) | `ArtifactBuilt`, `BaseImageObserved`, `TagObserved` | image repo+digest, base name@digest + base tag, SBOM/provenance referrer digests, source commit, run URL |
 | deploy (deploy/run) | `ArtifactDeployed` | image repo+digest, environment/cluster/namespace, chart+version, run URL |
 

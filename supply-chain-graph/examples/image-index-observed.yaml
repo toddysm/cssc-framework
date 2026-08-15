@@ -1,0 +1,21 @@
+schemaVersion: 1
+kind: ImageIndexObserved
+recordedAt: 2026-08-09T13:09:00Z
+source:
+  type: github-actions
+  workflow: promote-from-quarantine-python
+  runUrl: https://github.com/toddysm/cssc-framework/actions/runs/123450002
+occurrence:
+  registry: ghcr.io
+  repository: toddysm/golden/python
+index:
+  digest: sha256:2222222222222222222222222222222222222222222222222222222222222222
+  tag: "3.14-slim"
+platforms:
+  - digest: sha256:4444444444444444444444444444444444444444444444444444444444444444
+    os: linux
+    architecture: amd64
+  - digest: sha256:5555555555555555555555555555555555555555555555555555555555555555
+    os: linux
+    architecture: arm64
+observedAt: 2026-08-09T13:09:00Z
