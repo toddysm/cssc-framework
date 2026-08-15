@@ -33,17 +33,36 @@ SUBGRAPH = {
     ],
 }
 
+REFERRERS_SUBGRAPH = {
+    "nodes": [
+        {"key": "ghcr.io/toddysm/golden/python@sha256:bb", "ref": "ghcr.io/toddysm/golden/python", "digest": "sha256:bb"},
+        {"key": "ghcr.io/toddysm/golden/python@sha256:cc", "ref": "ghcr.io/toddysm/golden/python", "digest": "sha256:cc"},
+    ],
+    "edges": [
+        {
+            "type": "REFERS_TO",
+            "from": "ghcr.io/toddysm/golden/python@sha256:cc",
+            "to": "ghcr.io/toddysm/golden/python@sha256:bb",
+            "artifactType": "application/vnd.in-toto+json",
+        }
+    ],
+}
+
 
 class FakeGraph:
-    def __init__(self, ready: bool = True, records: int = 3, by_kind=None, subgraph=None):
+    def __init__(self, ready: bool = True, records: int = 3, by_kind=None, subgraph=None, referrers=None):
         self._readiness = {"ready": ready, "records": records, "by_kind": by_kind or {"ArtifactBuilt": 2}}
         self._subgraph = subgraph if subgraph is not None else SUBGRAPH
+        self._referrers = referrers if referrers is not None else REFERRERS_SUBGRAPH
 
     def readiness(self):
         return self._readiness
 
     def neighborhood(self, ref, depth=3):
         return self._subgraph
+
+    def referrers(self, ref, depth=3):
+        return self._referrers
 
 
 def _app(graph: FakeGraph):
@@ -90,6 +109,24 @@ def test_neighborhood_route_empty_subgraph():
     assert "No graph found" in body
 
 
+def test_referrers_route_renders_artifact_type():
+    client = TestClient(_app(FakeGraph()))
+    resp = client.get("/graph/referrers", params={"ref": "ghcr.io/toddysm/golden/python:3.14-slim"})
+    assert resp.status_code == 200
+    assert "application/vnd.in-toto+json" in resp.text
+
+
+def test_referrers_route_without_ref_prompts():
+    client = TestClient(_app(FakeGraph()))
+    assert "list its referrer artifacts" in client.get("/graph/referrers").text
+
+
+def test_referrers_route_empty():
+    client = TestClient(_app(FakeGraph(referrers={"nodes": [], "edges": []})))
+    body = client.get("/graph/referrers", params={"ref": "ghcr.io/none:0"}).text
+    assert "No referrers found" in body
+
+
 def test_graph_client_readiness_ready():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/readyz"
@@ -116,3 +153,13 @@ def test_graph_client_neighborhood():
 
     client = GraphServiceClient("http://graph", client=httpx.Client(transport=httpx.MockTransport(handler)))
     assert client.neighborhood("ghcr.io/x:1")["edges"][0]["type"] == "BUILT_FROM"
+
+
+def test_graph_client_referrers():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/artifacts/referrers"
+        assert request.url.params["format"] == "json"
+        return httpx.Response(200, json=REFERRERS_SUBGRAPH)
+
+    client = GraphServiceClient("http://graph", client=httpx.Client(transport=httpx.MockTransport(handler)))
+    assert client.referrers("ghcr.io/x:1")["edges"][0]["type"] == "REFERS_TO"

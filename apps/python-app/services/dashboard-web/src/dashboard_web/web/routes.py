@@ -99,3 +99,20 @@ def add_routes(
                 context={"ref": ref, "subgraph": subgraph, "error": error},
             )
 
+        @app.get("/graph/referrers", response_class=HTMLResponse)
+        def graph_referrers(request: Request, ref: str = "", depth: int = 3) -> HTMLResponse:
+            ref = ref.strip()
+            subgraph = None
+            error = None
+            if ref:
+                try:
+                    subgraph = graph.referrers(ref, depth=depth)
+                except Exception:  # log details server-side, show a generic message
+                    logger.exception("Failed to load referrers for %s", ref)
+                    error = "the referrers could not be loaded for that reference"
+            return templates.TemplateResponse(
+                request=request,
+                name="stages/_graph_referrers.html",
+                context={"ref": ref, "subgraph": subgraph, "error": error},
+            )
+

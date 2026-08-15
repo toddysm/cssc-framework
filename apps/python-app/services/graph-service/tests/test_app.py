@@ -27,6 +27,7 @@ APP_REF = f"ghcr.io/{APP_REPO}"
 DIGEST_APP = "sha256:" + "a" * 64
 DIGEST_GOLDEN = "sha256:" + "b" * 64
 DIGEST_UP = "sha256:" + "c" * 64
+DIGEST_REF = "sha256:" + "d" * 64
 
 SOURCE = {
     "type": "github-actions",
@@ -82,6 +83,19 @@ RECORDS: list[tuple[str, dict]] = [
             "image": {"registry": "ghcr.io", "repository": APP_REPO, "digest": DIGEST_APP},
             "environment": {"cluster": "kind-cssc", "namespace": "default"},
             "chart": {"name": "cssc-dashboard", "version": "0.1.2"},
+        },
+    ),
+    (
+        "referrer-observed",
+        {
+            "schemaVersion": 1,
+            "kind": "ReferrerObserved",
+            "recordedAt": "2026-08-10T00:00:00Z",
+            "source": SOURCE,
+            "occurrence": {"registry": "ghcr.io", "repository": APP_REPO},
+            "subject": {"digest": DIGEST_APP, "tag": "0.1.0"},
+            "referrer": {"digest": DIGEST_REF, "artifactType": "application/vnd.in-toto+json"},
+            "observedAt": "2026-08-10T00:00:00Z",
         },
     ),
 ]
@@ -191,6 +205,18 @@ def test_neighborhood_cytoscape(client: TestClient) -> None:
         "/graph/neighborhood", params={"ref": f"{APP_REF}@{DIGEST_APP}", "format": "cytoscape"}
     ).json()
     assert "elements" in body
+
+
+def test_referrers_endpoint(client: TestClient) -> None:
+    body = client.get("/artifacts/referrers", params={"ref": f"{APP_REF}@{DIGEST_APP}"}).json()
+    assert any(
+        e["type"] == "REFERS_TO" and e.get("artifactType") == "application/vnd.in-toto+json"
+        for e in body["edges"]
+    )
+
+
+def test_referrers_requires_selector(client: TestClient) -> None:
+    assert client.get("/artifacts/referrers").status_code == 400
 
 
 def test_depth_is_capped(client: TestClient, tmp_path: Path) -> None:

@@ -28,4 +28,17 @@
   </form>
 
   <div id="graph-neighborhood"></div>
+
+  <form class="graph-explore"
+        hx-get="/graph/referrers"
+        hx-target="#graph-referrers"
+        hx-swap="innerHTML">
+    <label for="referrers-ref">List referrer artifacts (SBOM, provenance, VEX, signatures)</label>
+    <input id="referrers-ref" type="text" name="ref"
+           placeholder="ghcr.io/toddysm/golden/python:3.14-slim" />
+    <input type="hidden" name="depth" value="3" />
+    <button type="submit">Referrers</button>
+  </form>
+
+  <div id="graph-referrers"></div>
 </div>
