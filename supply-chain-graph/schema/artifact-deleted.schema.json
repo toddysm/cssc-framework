@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cssc.toddysm.com/schema/artifact-deleted.schema.json",
+  "title": "ArtifactDeleted",
+  "description": "Append-only record that an artifact (image or referrer) was removed from a repository occurrence.",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "recordedAt", "source", "occurrence", "digest", "reason", "deletedAt"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "ArtifactDeleted" },
+    "id": { "$ref": "envelope.schema.json#/$defs/contentHash" },
+    "recordedAt": { "type": "string", "format": "date-time" },
+    "source": { "$ref": "envelope.schema.json#/$defs/source" },
+    "occurrence": {
+      "type": "object",
+      "description": "The registry + repository the artifact was deleted from.",
+      "required": ["registry", "repository"],
+      "additionalProperties": false,
+      "properties": {
+        "registry": { "$ref": "envelope.schema.json#/$defs/registry" },
+        "repository": { "$ref": "envelope.schema.json#/$defs/repository" }
+      }
+    },
+    "digest": { "$ref": "envelope.schema.json#/$defs/digest" },
+    "artifactType": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The referrer's artifact type. Omitted when the deleted artifact is a plain image."
+    },
+    "tag": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The tag the deleted artifact carried, when it was tagged."
+    },
+    "reason": {
+      "type": "string",
+      "enum": ["promoted", "denied-cleanup", "manual"]
+    },
+    "deletedAt": { "type": "string", "format": "date-time" }
+  }
+}
