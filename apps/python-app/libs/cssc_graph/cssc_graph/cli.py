@@ -181,9 +181,10 @@ def _emit_subgraph(subgraph: dict, output_format: str) -> None:
     click.echo(f"{len(subgraph['nodes'])} node(s), {len(subgraph['edges'])} edge(s):")
     for edge in subgraph["edges"]:
         tag = f" ({edge['tag']})" if edge.get("tag") else ""
+        atype = f" [{edge['artifactType']}]" if edge.get("artifactType") else ""
         frm = refs.get(edge["from"], edge["from"])
         to = refs.get(edge["to"], edge["to"])
-        click.echo(f"  {frm}  --{edge['type']}-->  {to}{tag}")
+        click.echo(f"  {frm}  --{edge['type']}-->  {to}{tag}{atype}")
 
 
 @cli.command()
@@ -268,6 +269,27 @@ def derived(database: Path, base: str, depth: int, output_format: str) -> None:
 
 @cli.command()
 @_database_option
+@click.option("--digest", help="Seed by artifact digest (sha256:...).")
+@click.option("--ref", help="Seed by registry/repository[@digest|:tag].")
+@click.option("--depth", default=3, show_default=True, help="Max referrer depth (referrers-of-referrers).")
+@_format_option
+def referrers(database: Path, digest: str | None, ref: str | None, depth: int, output_format: str) -> None:
+    """List the referrer artifacts (SBOM/provenance/VEX/signatures) attached to an image."""
+
+    if not digest and not ref:
+        raise click.UsageError("provide --digest or --ref")
+    from . import queries
+
+    store = _open_store(database)
+    try:
+        subgraph = queries.referrers(store, digest=digest, ref=ref, depth=depth)
+    finally:
+        store.close()
+    _emit_subgraph(subgraph, output_format)
+
+
+@cli.command()
+@_database_option
 @click.option("--annotation", help="Filter by annotation name=value.")
 @click.option("--type", "artifact_type", help="Filter by artifact/media type.")
 @click.option("--ref", help="Filter by registry/repository.")
@@ -319,6 +341,9 @@ def show(database: Path, ref: str, output_format: str) -> None:
         return
     occ = data["occurrence"]
     click.echo(f"occurrence: {occ['key']}")
+    if data.get("deleted"):
+        reason = occ.get("deleteReason") or "unknown"
+        click.echo(f"  deleted: {occ.get('deletedAt')} (reason: {reason})")
     if data["artifact"]:
         art = data["artifact"]
         click.echo(f"  type: {art.get('artifactType') or art.get('mediaType') or '-'}")
@@ -326,6 +351,8 @@ def show(database: Path, ref: str, output_format: str) -> None:
         click.echo(f"  annotation: {ann['name']}={ann['value']}")
     for tag in data["tags"]:
         click.echo(f"  tag: {tag['tag']} @ {tag['observedAt']}")
+    for r in data.get("referrers", []):
+        click.echo(f"  referrer: {r.get('artifactType') or '-'} ({r['from']})")
 
 
 @cli.command()
