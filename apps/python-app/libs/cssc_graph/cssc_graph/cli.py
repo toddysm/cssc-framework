@@ -182,9 +182,10 @@ def _emit_subgraph(subgraph: dict, output_format: str) -> None:
     for edge in subgraph["edges"]:
         tag = f" ({edge['tag']})" if edge.get("tag") else ""
         atype = f" [{edge['artifactType']}]" if edge.get("artifactType") else ""
+        plat = f" {{{edge['platform']}}}" if edge.get("platform") else ""
         frm = refs.get(edge["from"], edge["from"])
         to = refs.get(edge["to"], edge["to"])
-        click.echo(f"  {frm}  --{edge['type']}-->  {to}{tag}{atype}")
+        click.echo(f"  {frm}  --{edge['type']}-->  {to}{tag}{atype}{plat}")
 
 
 @cli.command()
@@ -352,7 +353,8 @@ def show(database: Path, ref: str, output_format: str) -> None:
     for tag in data["tags"]:
         click.echo(f"  tag: {tag['tag']} @ {tag['observedAt']}")
     for r in data.get("referrers", []):
-        click.echo(f"  referrer: {r.get('artifactType') or '-'} ({r['from']})")
+        plat = f" {{{r['platform']}}}" if r.get("platform") else ""
+        click.echo(f"  referrer: {r.get('artifactType') or '-'} ({r['from']}){plat}")
 
 
 @cli.command()
