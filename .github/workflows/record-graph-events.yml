@@ -79,10 +79,13 @@ jobs:
             exit 0
           fi
 
-          # Snapshot the code's schema + sources from the producing commit before
-          # switching branches (the checkout below replaces the working tree with
-          # the data branch). The data branch must carry a current schema so newly
-          # introduced event kinds validate and index.
+          # The append-only data branch must carry a schema current enough to
+          # validate every event it holds. The checkout above is the default
+          # branch's latest commit, so snapshot its schema/ + sources.yaml here
+          # (before the checkout below swaps the working tree to the data branch)
+          # and re-apply them on the branch. Using the latest schema — not the
+          # individual producing run's — is intentional: schema evolution is
+          # additive, so the newest schema validates the whole accumulated ledger.
           schema_src="${RUNNER_TEMP}/graph-schema"
           rm -rf "${schema_src}"
           cp -r supply-chain-graph/schema "${schema_src}"
