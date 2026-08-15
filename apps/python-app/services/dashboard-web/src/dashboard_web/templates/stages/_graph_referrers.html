@@ -1,0 +1,30 @@
+{% if error %}
+<p class="empty">{{ error }}</p>
+{% elif not ref %}
+<p class="empty">Enter an image reference to list its referrer artifacts.</p>
+{% elif not subgraph or not subgraph.edges %}
+<p class="empty">No referrers found for <code>{{ ref }}</code>.</p>
+{% else %}
+<p>
+  Referrers of <code>{{ ref }}</code>:
+  <span class="badge">{{ subgraph.edges | length }} referrer(s)</span>
+</p>
+<table class="graph-edges">
+  <thead>
+    <tr>
+      <th>Artifact type</th>
+      <th>Referrer</th>
+      <th>Subject</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for edge in subgraph.edges %}
+    <tr>
+      <td>{{ edge.artifactType or edge.type }}</td>
+      <td><code>{{ edge.from }}</code></td>
+      <td><code>{{ edge.to }}</code></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}

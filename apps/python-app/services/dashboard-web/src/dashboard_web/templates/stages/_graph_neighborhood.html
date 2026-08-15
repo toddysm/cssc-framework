@@ -38,7 +38,7 @@
   <summary>{{ subgraph.nodes | length }} node(s)</summary>
   <ul>
     {% for node in subgraph.nodes %}
-    <li><code>{{ node.ref or node.key }}</code>{% if node.digest %} <span class="badge">{{ node.digest[:19] }}…</span>{% endif %}</li>
+    <li><code>{{ node.ref or node.key }}</code>{% if node.digest %} <span class="badge">{{ node.digest[:19] }}…</span>{% endif %}{% if node.deletedAt %} <span class="badge badge-deleted">deleted</span>{% endif %}</li>
     {% endfor %}
   </ul>
 </details>

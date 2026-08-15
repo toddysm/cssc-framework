@@ -18,6 +18,8 @@ class GraphClient(Protocol):
 
     def neighborhood(self, ref: str, depth: int = 3) -> dict[str, Any]: ...
 
+    def referrers(self, ref: str, depth: int = 3) -> dict[str, Any]: ...
+
 
 class PackagesServiceClient:
     def __init__(
@@ -101,6 +103,14 @@ class GraphServiceClient:
     def neighborhood(self, ref: str, depth: int = 3) -> dict[str, Any]:
         response = self._client.get(
             f"{self._base}/graph/neighborhood",
+            params={"ref": ref, "depth": depth, "format": "json"},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def referrers(self, ref: str, depth: int = 3) -> dict[str, Any]:
+        response = self._client.get(
+            f"{self._base}/artifacts/referrers",
             params={"ref": ref, "depth": depth, "format": "json"},
         )
         response.raise_for_status()
