@@ -17,7 +17,8 @@ DEFAULT_DEPTH = 6
 
 _OCC_RETURN = (
     "n.key AS key, n.registry AS registry, n.repository AS repository, "
-    "n.digest AS digest, n.ref AS ref"
+    "n.digest AS digest, n.ref AS ref, n.deletedAt AS deletedAt, "
+    "n.deleteReason AS deleteReason"
 )
 
 
@@ -25,7 +26,8 @@ def get_occurrence(store: GraphStore, key: str) -> dict[str, Any] | None:
     rows = store.query(
         "MATCH (o:Occurrence {key: $k}) "
         "RETURN o.key AS key, o.registry AS registry, o.repository AS repository, "
-        "o.digest AS digest, o.ref AS ref",
+        "o.digest AS digest, o.ref AS ref, o.deletedAt AS deletedAt, "
+        "o.deleteReason AS deleteReason",
         {"k": key},
     )
     return rows[0] if rows else None
@@ -136,6 +138,8 @@ def _record_node(nodes: dict[str, dict[str, Any]], row: dict[str, Any]) -> None:
             "repository": row["repository"],
             "digest": row["digest"],
             "ref": row["ref"],
+            "deletedAt": row.get("deletedAt"),
+            "deleteReason": row.get("deleteReason"),
         }
 
 
@@ -166,6 +170,72 @@ def bases(store: GraphStore, ref: str, depth: int = 10) -> dict[str, Any]:
 def derived(store: GraphStore, base: str, depth: int = 10) -> dict[str, Any]:
     seeds = resolve_seed(store, ref=base)
     return traverse(store, seeds, ("BUILT_FROM",), direction="in", max_depth=depth)
+
+
+def referrers(
+    store: GraphStore,
+    *,
+    digest: str | None = None,
+    ref: str | None = None,
+    depth: int = 3,
+) -> dict[str, Any]:
+    """Referrer artifacts of a subject occurrence.
+
+    Returns ``{nodes, edges}`` where each ``REFERS_TO`` edge carries the
+    ``artifactType``. Follows referrers-of-referrers up to *depth* levels (a
+    signature on an SBOM, etc.); ``depth=0`` returns just the subject, matching
+    :func:`traverse`.
+    """
+
+    seeds = resolve_seed(store, digest=digest, ref=ref)
+    nodes: dict[str, dict[str, Any]] = {}
+    edges: list[dict[str, Any]] = []
+    # Keyed like the indexer's REFERS_TO merge so distinct observations and
+    # artifact types between the same pair are all kept, not collapsed.
+    seen_edges: set[tuple[str, str, str | None, str | None]] = set()
+    for seed in seeds:
+        occ = get_occurrence(store, seed)
+        if occ:
+            nodes[seed] = occ
+
+    visited: set[str] = set()
+    frontier = list(dict.fromkeys(seeds))
+    for _ in range(depth):
+        nxt: list[str] = []
+        for key in frontier:
+            if key in visited:
+                continue
+            visited.add(key)
+            rows = store.query(
+                "MATCH (r:Occurrence)-[e:REFERS_TO]->(s:Occurrence {key: $k}) "
+                "RETURN r.key AS key, r.registry AS registry, r.repository AS repository, "
+                "r.digest AS digest, r.ref AS ref, r.deletedAt AS deletedAt, "
+                "r.deleteReason AS deleteReason, e.artifactType AS artifactType, "
+                "e.observedAt AS observedAt ORDER BY e.artifactType, r.key",
+                {"k": key},
+            )
+            for row in rows:
+                _record_node(nodes, row)
+                atype = row.get("artifactType")
+                observed = row.get("observedAt")
+                ekey = (row["key"], key, atype, observed)
+                if ekey not in seen_edges:
+                    seen_edges.add(ekey)
+                    edges.append(
+                        {
+                            "type": "REFERS_TO",
+                            "from": row["key"],
+                            "to": key,
+                            "artifactType": atype,
+                            "observedAt": observed,
+                        }
+                    )
+                nxt.append(row["key"])
+        frontier = [k for k in nxt if k not in visited]
+        if not frontier:
+            break
+
+    return {"nodes": list(nodes.values()), "edges": edges}
 
 
 def tag_history(store: GraphStore, ref: str, tag: str) -> list[dict[str, Any]]:
@@ -238,6 +308,8 @@ def show(store: GraphStore, ref: str) -> dict[str, Any] | None:
         "artifact": artifact[0] if artifact else None,
         "annotations": annotations,
         "tags": tags,
+        "referrers": referrers(store, ref=key)["edges"],
+        "deleted": bool(occ.get("deletedAt")),
         "path": traverse(store, [key], PATH_RELS, direction="both", max_depth=2),
     }
 
@@ -245,10 +317,22 @@ def show(store: GraphStore, ref: str) -> dict[str, Any] | None:
 # -- export -------------------------------------------------------------------
 
 
+def _node_label(node: dict[str, Any]) -> str:
+    """A label that disambiguates occurrences of the same repository by digest."""
+    ref = node.get("ref") or node["key"]
+    digest = node.get("digest") or ""
+    short = digest[7:19] if digest.startswith("sha256:") else digest[:12]
+    label = f"{ref}@{short}" if short else str(ref)
+    if node.get("deletedAt"):
+        label += " (deleted)"
+    return label
+
+
 def to_cytoscape(subgraph: dict[str, Any]) -> dict[str, Any]:
-    elements = [{"data": {"id": n["key"], "label": n.get("ref", n["key"]), **n}} for n in subgraph["nodes"]]
+    elements = [{"data": {"id": n["key"], "label": _node_label(n), **n}} for n in subgraph["nodes"]]
     for i, e in enumerate(subgraph["edges"]):
-        elements.append({"data": {"id": f"e{i}", "source": e["from"], "target": e["to"], "label": e["type"], **e}})
+        label = e.get("artifactType") or e["type"]
+        elements.append({"data": {"id": f"e{i}", "source": e["from"], "target": e["to"], "label": label, **e}})
     return {"elements": elements}
 
 
@@ -261,10 +345,11 @@ def to_mermaid(subgraph: dict[str, Any]) -> str:
     lines = ["flowchart LR"]
     ids = {n["key"]: f"n{i}" for i, n in enumerate(subgraph["nodes"])}
     for n in subgraph["nodes"]:
-        label = _mermaid_label(n.get("ref", n["key"]))
+        label = _mermaid_label(_node_label(n))
         lines.append(f'    {ids[n["key"]]}["{label}"]')
     for e in subgraph["edges"]:
         frm, to = ids.get(e["from"]), ids.get(e["to"])
         if frm and to:
-            lines.append(f'    {frm} -->|{e["type"]}| {to}')
+            rel = _mermaid_label(e.get("artifactType") or e["type"])
+            lines.append(f'    {frm} -->|{rel}| {to}')
     return "\n".join(lines)

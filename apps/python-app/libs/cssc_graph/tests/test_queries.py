@@ -94,3 +94,54 @@ def test_traverse_includes_seed_at_depth_zero(store):
 
 def test_mermaid_label_escaping():
     assert queries._mermaid_label('a"b\nc') == "a#quot;b c"
+
+
+DIGEST3 = "sha256:" + "3" * 64
+QUAR_REF = "ghcr.io/toddysm/quarantine/python"
+
+
+def test_referrers_returns_edge_with_artifact_type(store):
+    sub = queries.referrers(store, ref=f"{GOLDEN_REF}@{DIGEST2}")
+    assert "REFERS_TO" in {e["type"] for e in sub["edges"]}
+    assert "application/vnd.in-toto+json" in {e.get("artifactType") for e in sub["edges"]}
+
+
+def test_referrers_depth_zero_returns_only_subject(store):
+    sub = queries.referrers(store, ref=f"{GOLDEN_REF}@{DIGEST2}", depth=0)
+    assert sub["edges"] == []
+    assert {n["key"] for n in sub["nodes"]} == {f"{GOLDEN_REF}@{DIGEST2}"}
+
+
+def test_show_includes_referrers(store):
+    data = queries.show(store, f"{GOLDEN_REF}@{DIGEST2}")
+    assert data is not None
+    assert data["deleted"] is False
+    assert any(r.get("artifactType") == "application/vnd.in-toto+json" for r in data["referrers"])
+
+
+def test_show_marks_deleted_occurrence(store):
+    data = queries.show(store, f"{QUAR_REF}@{DIGEST3}")
+    assert data is not None
+    assert data["deleted"] is True
+    assert data["occurrence"]["deleteReason"] == "promoted"
+
+
+def test_node_label_disambiguates_by_digest_and_marks_deleted():
+    assert queries._node_label({"ref": GOLDEN_REF, "digest": DIGEST2}) == f"{GOLDEN_REF}@222222222222"
+    lbl = queries._node_label({"ref": QUAR_REF, "digest": DIGEST3, "deletedAt": "2026-08-09T13:10:10Z"})
+    assert lbl.endswith("(deleted)")
+
+
+def test_cli_referrers(tmp_path: Path):
+    from click.testing import CliRunner
+
+    from cssc_graph.cli import cli
+
+    db = tmp_path / "db"
+    with GraphStore(db) as gs:
+        gs.init_schema()
+        index_data(gs, EXAMPLES, SCHEMA_DIR)
+    result = CliRunner().invoke(cli, ["referrers", "-d", str(db), "--ref", f"{GOLDEN_REF}@{DIGEST2}"])
+    assert result.exit_code == 0, result.output
+    assert "REFERS_TO" in result.output
+    assert "application/vnd.in-toto+json" in result.output
