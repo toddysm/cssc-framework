@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cssc.toddysm.com/schema/image-index-observed.schema.json",
+  "title": "ImageIndexObserved",
+  "description": "Append-only observation that a multi-arch image index (manifest list) contains a set of per-platform child manifests at a repository occurrence.",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "recordedAt", "source", "occurrence", "index", "platforms", "observedAt"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "ImageIndexObserved" },
+    "id": { "$ref": "envelope.schema.json#/$defs/contentHash" },
+    "recordedAt": { "type": "string", "format": "date-time" },
+    "source": { "$ref": "envelope.schema.json#/$defs/source" },
+    "occurrence": {
+      "type": "object",
+      "description": "The registry + repository the index and its children live in.",
+      "required": ["registry", "repository"],
+      "additionalProperties": false,
+      "properties": {
+        "registry": { "$ref": "envelope.schema.json#/$defs/registry" },
+        "repository": { "$ref": "envelope.schema.json#/$defs/repository" }
+      }
+    },
+    "index": {
+      "type": "object",
+      "description": "The multi-arch image index (manifest list).",
+      "required": ["digest"],
+      "additionalProperties": false,
+      "properties": {
+        "digest": { "$ref": "envelope.schema.json#/$defs/digest" },
+        "tag": { "type": "string", "minLength": 1 }
+      }
+    },
+    "platforms": {
+      "type": "array",
+      "description": "The per-platform child manifests the index contains.",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["digest", "os", "architecture"],
+        "additionalProperties": false,
+        "properties": {
+          "digest": { "$ref": "envelope.schema.json#/$defs/digest" },
+          "os": { "type": "string", "minLength": 1 },
+          "architecture": { "type": "string", "minLength": 1 },
+          "variant": { "type": "string" }
+        }
+      }
+    },
+    "observedAt": { "type": "string", "format": "date-time" }
+  }
+}

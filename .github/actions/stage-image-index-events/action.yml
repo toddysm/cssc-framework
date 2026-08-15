@@ -1,0 +1,120 @@
+# Composite action: stage-image-index-events
+#
+# Stage one `ImageIndexObserved` supply-chain-graph event that records the
+# multi-arch relationship between an image index (manifest list) and its
+# per-platform child manifests, for the record-graph-events collector to commit.
+#
+# Reads the index manifest with `crane manifest <ref>@<digest>` and captures the
+# child digest + platform (os/architecture/variant) for every real platform
+# entry, skipping attestation/attachment manifests (os "unknown" or empty). When
+# the digest is not an index (a single-platform image), nothing is staged.
+#
+# Requires crane to be logged in to the registry (callers already are for the
+# copy). Best-effort: when nothing is discovered it stages nothing. The content
+# id / filename match build-graph-event (cssc_graph.identity.content_id).
+#
+# Terminology and the action catalogue: see docs/reference/workflow-actions.md.
+name: stage-image-index-events
+description: Stage an ImageIndexObserved event linking a multi-arch index to its per-platform child manifests.
+
+inputs:
+  ref:
+    description: "Fully-qualified index repository without tag (registry/repository)."
+    required: true
+  digest:
+    description: "Image index digest (sha256:...)."
+    required: true
+  tag:
+    description: "Index tag (recorded on the index only)."
+    required: false
+    default: ""
+  output-dir:
+    description: "Staging directory to write the event file into."
+    required: true
+  workflow:
+    description: "Producing workflow name (source.workflow)."
+    required: true
+  run-url:
+    description: "URL of the producing run (source.runUrl)."
+    required: true
+  run-id:
+    description: "Producing run id (source.runId)."
+    required: true
+  run-attempt:
+    description: "Producing run attempt (source.runAttempt)."
+    required: true
+
+outputs:
+  staged:
+    description: "Number of ImageIndexObserved events staged (0 or 1)."
+    value: ${{ steps.stage.outputs.staged }}
+
+runs:
+  using: composite
+  steps:
+    - name: Stage image index event for ${{ inputs.ref }}
+      id: stage
+      shell: bash
+      env:
+        REF: "${{ inputs.ref }}"
+        DIGEST: "${{ inputs.digest }}"
+        TAG: "${{ inputs.tag }}"
+        OUTPUT_DIR: "${{ inputs.output-dir }}"
+        WORKFLOW: "${{ inputs.workflow }}"
+        RUN_URL: "${{ inputs.run-url }}"
+        RUN_ID: "${{ inputs.run-id }}"
+        RUN_ATTEMPT: "${{ inputs.run-attempt }}"
+      run: |
+        set -euo pipefail
+
+        if ! command -v crane >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+          echo "::notice::stage-image-index-events: crane/jq not available; nothing staged."
+          echo "staged=0" >> "${GITHUB_OUTPUT}"
+          exit 0
+        fi
+
+        # Read the index manifest. A single-platform image has no .manifests[].
+        manifest="$(crane manifest "${REF}@${DIGEST}" 2>/dev/null || true)"
+        if [ -z "${manifest}" ]; then
+          echo "::notice::stage-image-index-events: could not read manifest for ${REF}@${DIGEST}; nothing staged."
+          echo "staged=0" >> "${GITHUB_OUTPUT}"
+          exit 0
+        fi
+
+        # Keep only real platform children (skip attestation/attachment manifests
+        # that report os "unknown" or empty and carry no architecture).
+        platforms="$(printf '%s' "${manifest}" | jq -c '
+          [ (.manifests // [])[]
+            | select((.platform.os // "") != "" and .platform.os != "unknown")
+            | select((.platform.architecture // "") != "" and .platform.architecture != "unknown")
+            | { digest,
+                os: .platform.os,
+                architecture: .platform.architecture,
+                variant: (.platform.variant // "") } ]')"
+
+        if [ "${platforms}" = "[]" ] || [ -z "${platforms}" ]; then
+          echo "::notice::stage-image-index-events: ${REF}@${DIGEST} is not a multi-arch index; nothing staged."
+          echo "staged=0" >> "${GITHUB_OUTPUT}"
+          exit 0
+        fi
+
+        echo "PLATFORMS_JSON<<__EOF__" >> "${GITHUB_ENV}"
+        printf '%s\n' "${platforms}" >> "${GITHUB_ENV}"
+        echo "__EOF__" >> "${GITHUB_ENV}"
+
+        echo "staged=1" >> "${GITHUB_OUTPUT}"
+
+    - name: Build ImageIndexObserved event
+      if: ${{ steps.stage.outputs.staged == '1' }}
+      uses: ./.github/actions/build-graph-event
+      with:
+        kind: ImageIndexObserved
+        dest-ref: ${{ inputs.ref }}
+        dest-digest: ${{ inputs.digest }}
+        tag: ${{ inputs.tag }}
+        platforms: ${{ env.PLATFORMS_JSON }}
+        output-dir: ${{ inputs.output-dir }}
+        workflow: ${{ inputs.workflow }}
+        run-url: ${{ inputs.run-url }}
+        run-id: ${{ inputs.run-id }}
+        run-attempt: ${{ inputs.run-attempt }}

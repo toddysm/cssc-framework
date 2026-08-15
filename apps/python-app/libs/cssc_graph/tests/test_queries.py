@@ -119,6 +119,22 @@ def test_show_includes_referrers(store):
     assert any(r.get("artifactType") == "application/vnd.in-toto+json" for r in data["referrers"])
 
 
+DIGEST4 = "sha256:" + "4" * 64
+DIGEST5 = "sha256:" + "5" * 64
+
+
+def test_platforms_returns_child_manifests(store):
+    rows = queries.platforms(store, ref=f"{GOLDEN_REF}@{DIGEST2}")
+    pairs = {(r["os"], r["architecture"]) for r in rows}
+    assert pairs == {("linux", "amd64"), ("linux", "arm64")}
+    assert {r["digest"] for r in rows} == {DIGEST4, DIGEST5}
+
+
+def test_index_of_maps_child_to_index(store):
+    assert queries.index_of(store, f"{GOLDEN_REF}@{DIGEST4}") == f"{GOLDEN_REF}@{DIGEST2}"
+    assert queries.index_of(store, f"{GOLDEN_REF}@{DIGEST2}") is None
+
+
 def test_show_marks_deleted_occurrence(store):
     data = queries.show(store, f"{QUAR_REF}@{DIGEST3}")
     assert data is not None

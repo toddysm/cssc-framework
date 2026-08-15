@@ -45,6 +45,9 @@ SCHEMA_DDL: tuple[str, ...] = (
     "CREATE REL TABLE IF NOT EXISTS REFERS_TO("
     "FROM Occurrence TO Occurrence, artifactType STRING, observedAt STRING, "
     "runUrl STRING)",
+    "CREATE REL TABLE IF NOT EXISTS HAS_PLATFORM("
+    "FROM Occurrence TO Occurrence, os STRING, architecture STRING, "
+    "variant STRING, observedAt STRING)",
 )
 
 

@@ -18,11 +18,11 @@
 #
 # Design: docs/architecture/observability/supply-chain-graph.md.
 name: build-graph-event
-description: Stage a supply-chain-graph event record (ArtifactMirrored / ArtifactPromoted / ArtifactBuilt / ArtifactDeployed / TagObserved / ReferrerObserved / ArtifactDeleted) as JSON.
+description: Stage a supply-chain-graph event record (ArtifactMirrored / ArtifactPromoted / ArtifactBuilt / ArtifactDeployed / TagObserved / ReferrerObserved / ArtifactDeleted / ImageIndexObserved) as JSON.
 
 inputs:
   kind:
-    description: "Record kind: ArtifactMirrored, ArtifactPromoted, ArtifactBuilt, ArtifactDeployed, TagObserved, ReferrerObserved, or ArtifactDeleted."
+    description: "Record kind: ArtifactMirrored, ArtifactPromoted, ArtifactBuilt, ArtifactDeployed, TagObserved, ReferrerObserved, ArtifactDeleted, or ImageIndexObserved."
     required: true
   source-ref:
     description: "Fully-qualified source name registry/repository (from occurrence). Required for ArtifactMirrored/ArtifactPromoted."
@@ -98,6 +98,10 @@ inputs:
     description: "Why the artifact was deleted: promoted, denied-cleanup, or manual. Required for ArtifactDeleted."
     required: false
     default: ""
+  platforms:
+    description: "JSON array of per-platform child manifests [{digest, os, architecture, variant?}]. Required for ImageIndexObserved."
+    required: false
+    default: ""
   output-dir:
     description: "Staging directory to write the event file into."
     required: false
@@ -141,6 +145,7 @@ runs:
         REFERRER_DIGEST: "${{ inputs.referrer-digest }}"
         ARTIFACT_TYPE: "${{ inputs.artifact-type }}"
         REASON: "${{ inputs.reason }}"
+        PLATFORMS: "${{ inputs.platforms }}"
         OUTPUT_DIR: "${{ inputs.output-dir }}"
         WORKFLOW: "${{ inputs.workflow }}"
         RUN_URL: "${{ inputs.run-url }}"
@@ -266,6 +271,22 @@ runs:
                 digest:$dig, reason:$reason, deletedAt:$now}
                + (if $atype == "" then {} else {artifactType:$atype} end)
                + (if $tag == "" then {} else {tag:$tag} end)')"
+            ;;
+          ImageIndexObserved)
+            [ -n "${DEST_DIGEST}" ] && [ -n "${PLATFORMS}" ] && [ "${PLATFORMS}" != "[]" ] || {
+              echo "::error::build-graph-event: ImageIndexObserved requires dest-ref, dest-digest and a non-empty platforms array."; exit 1; }
+            split_ref "${DEST_REF}"; d_reg="${REG}"; d_repo="${REPO}"
+            record="$(jq -nc \
+              --argjson src "${source_json}" --arg now "${now}" \
+              --arg dreg "${d_reg}" --arg drepo "${d_repo}" \
+              --arg dig "${DEST_DIGEST}" --arg tag "${TAG}" \
+              --argjson platforms "${PLATFORMS}" \
+              '{schemaVersion:1, kind:"ImageIndexObserved", recordedAt:$now, source:$src,
+                occurrence:{registry:$dreg, repository:$drepo},
+                index:({digest:$dig} + (if $tag == "" then {} else {tag:$tag} end)),
+                platforms:[$platforms[] | {digest, os, architecture}
+                  + (if (.variant // "") == "" then {} else {variant:.variant} end)],
+                observedAt:$now}')"
             ;;
           *)
             echo "::error::build-graph-event: unknown kind '${KIND}'."

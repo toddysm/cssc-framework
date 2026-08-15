@@ -232,6 +232,19 @@ jobs:
           run-id: ${{ github.run_id }}
           run-attempt: ${{ github.run_attempt }}
 
+      - name: Stage image index graph event
+        if: ${{ steps.mirror.outputs.digest != '' }}
+        uses: ./.github/actions/stage-image-index-events
+        with:
+          ref: ${{ inputs.dest_image }}
+          digest: ${{ steps.mirror.outputs.digest }}
+          tag: ${{ inputs.dest_tag }}
+          output-dir: ${{ runner.temp }}/graph-events
+          workflow: ${{ github.workflow }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          run-id: ${{ github.run_id }}
+          run-attempt: ${{ github.run_attempt }}
+
       - name: Upload graph events
         if: ${{ steps.mirror.outputs.digest != '' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
