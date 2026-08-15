@@ -67,8 +67,8 @@ runs:
       run: |
         set -euo pipefail
 
-        if ! command -v crane >/dev/null 2>&1; then
-          echo "::notice::stage-image-index-events: crane not available; nothing staged."
+        if ! command -v crane >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+          echo "::notice::stage-image-index-events: crane/jq not available; nothing staged."
           echo "staged=0" >> "${GITHUB_OUTPUT}"
           exit 0
         fi

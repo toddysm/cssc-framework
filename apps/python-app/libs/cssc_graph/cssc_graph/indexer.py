@@ -262,7 +262,7 @@ class Indexer:
         occ = record["occurrence"]
         registry, repository = occ["registry"], occ["repository"]
         index_key = self._merge_occurrence(registry, repository, record["index"]["digest"])
-        observed_at = record.get("observedAt", "")
+        observed_at = record["observedAt"]
         for platform in record["platforms"]:
             child_key = self._merge_occurrence(registry, repository, platform["digest"])
             self._store.execute(

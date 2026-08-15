@@ -259,7 +259,8 @@ def index_of(store: GraphStore, child_key: str) -> str | None:
     """The index occurrence key that a per-platform child belongs to, if any."""
 
     rows = store.query(
-        "MATCH (i:Occurrence)-[:HAS_PLATFORM]->(c:Occurrence {key: $k}) RETURN i.key AS key LIMIT 1",
+        "MATCH (i:Occurrence)-[e:HAS_PLATFORM]->(c:Occurrence {key: $k}) "
+        "RETURN i.key AS key ORDER BY e.observedAt DESC LIMIT 1",
         {"k": child_key},
     )
     return rows[0]["key"] if rows else None
