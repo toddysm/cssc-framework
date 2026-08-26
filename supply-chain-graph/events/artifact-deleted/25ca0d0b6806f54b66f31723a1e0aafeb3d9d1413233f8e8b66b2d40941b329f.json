@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "kind": "ArtifactDeleted",
+  "recordedAt": "2026-08-26T07:37:34Z",
+  "source": {
+    "type": "github-actions",
+    "workflow": "promote from quarantine / quarantine/python",
+    "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/32943620203",
+    "runId": "32943620203",
+    "runAttempt": "1"
+  },
+  "occurrence": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/quarantine/python"
+  },
+  "digest": "sha256:11edba29dd86e3946bae154c78de15203d230e7ff6b81c915c25f176294542cc",
+  "reason": "promoted",
+  "deletedAt": "2026-08-26T07:37:34Z",
+  "tag": "sha256-145ee7a57727c5ec47a1ef5e9e78b774c3873f845f2f5d61d0658e0f38234b40",
+  "id": "sha256:25ca0d0b6806f54b66f31723a1e0aafeb3d9d1413233f8e8b66b2d40941b329f"
+}
