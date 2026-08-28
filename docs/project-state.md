@@ -77,7 +77,6 @@ around: **Acquire, Build, Catalog, Deploy, Run**, and the cross-cutting
 | Gap | Notes |
 | --- | --- |
 | No PRD/EDD documents on record for pre-agent capabilities | Most Implemented rows predate agent-managed planning; `PRD doc` column is `—`. New features should author a PRD+EDD in the repo (My Feature Engineer creates the requirements folder lazily on the first plan). |
-| Vuln-attestation wiring issues open despite merged code | [#147](https://github.com/toddysm/cssc-framework/issues/147)–[#151](https://github.com/toddysm/cssc-framework/issues/151) remain **open**, but PR [#152](https://github.com/toddysm/cssc-framework/pull/152) (merged 2026-07-10) appears to have implemented the end-to-end wiring (scan actions emit cosign-vuln predicates; both reusable promote workflows pass `attestation-path` to `attach-scan-report`). Verify and close the stale sub-issues. |
 | Project board does not track this repo | The only Project ("CNSR Roadmap Project" #3) tracks a separate ACR roadmap; this repo runs issues-only. Consider a dedicated Project if board-driven Status is wanted. |
 | Open promotion-pending gate | [#222](https://github.com/toddysm/cssc-framework/issues/222) (ghcr.io/toddysm/quarantine/python:3.14-slim) is an open human-in-the-loop promotion gate, not a feature — awaiting reviewer action. |
 | Bootstrap inference | This inventory was generated from issue/PR history and a code scan; treat capability groupings as a starting point pending a human read. |
