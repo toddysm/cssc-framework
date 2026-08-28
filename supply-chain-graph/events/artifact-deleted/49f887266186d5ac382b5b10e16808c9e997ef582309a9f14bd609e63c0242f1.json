@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "kind": "ArtifactDeleted",
+  "recordedAt": "2026-08-28T03:40:17Z",
+  "source": {
+    "type": "github-actions",
+    "workflow": "promote override",
+    "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/33139531930",
+    "runId": "33139531930",
+    "runAttempt": "1"
+  },
+  "occurrence": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/quarantine/python"
+  },
+  "digest": "sha256:83ff1d245a3d57d04152252d3ef9cb361494d0b3395abd65a5ebe91c401c8e83",
+  "reason": "promoted",
+  "deletedAt": "2026-08-28T03:40:17Z",
+  "tag": "3.14-slim",
+  "id": "sha256:49f887266186d5ac382b5b10e16808c9e997ef582309a9f14bd609e63c0242f1"
+}

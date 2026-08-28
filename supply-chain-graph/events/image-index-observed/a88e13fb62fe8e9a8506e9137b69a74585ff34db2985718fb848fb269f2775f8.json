@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "kind": "ImageIndexObserved",
+  "recordedAt": "2026-08-28T03:40:06Z",
+  "source": {
+    "type": "github-actions",
+    "workflow": "promote override",
+    "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/33139531930",
+    "runId": "33139531930",
+    "runAttempt": "1"
+  },
+  "occurrence": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/golden/python"
+  },
+  "index": {
+    "digest": "sha256:83ff1d245a3d57d04152252d3ef9cb361494d0b3395abd65a5ebe91c401c8e83",
+    "tag": "3.14-slim"
+  },
+  "platforms": [
+    {
+      "digest": "sha256:5b945726c4d7ffe6595dc7498ad17fd0397e373c5181c24819a7028e8b1276dc",
+      "os": "linux",
+      "architecture": "amd64"
+    },
+    {
+      "digest": "sha256:0bc57aa68594b3608d9812186d2689ce06fdec91de15ac754cfcc59a6dd6fdaf",
+      "os": "linux",
+      "architecture": "arm",
+      "variant": "v5"
+    },
+    {
+      "digest": "sha256:935cfb353b2dfe02ebafd79674d305a7325e6e2e6d6b889a14b3bbe9526f7c9a",
+      "os": "linux",
+      "architecture": "arm",
+      "variant": "v7"
+    },
+    {
+      "digest": "sha256:de1d3e88b8ab340de928906e98846611ea7cece9ed335fdeba5309bfcd89117b",
+      "os": "linux",
+      "architecture": "arm64",
+      "variant": "v8"
+    },
+    {
+      "digest": "sha256:145ee7a57727c5ec47a1ef5e9e78b774c3873f845f2f5d61d0658e0f38234b40",
+      "os": "linux",
+      "architecture": "386"
+    },
+    {
+      "digest": "sha256:a9694ca03ac15b7fcced81e48600f2d81f9d18f6b70619f2fa89906e40f75977",
+      "os": "linux",
+      "architecture": "ppc64le"
+    },
+    {
+      "digest": "sha256:e598e43242a96ae026892715bd2b3f71fa5f57404ca44177897bd1e66d6535c8",
+      "os": "linux",
+      "architecture": "riscv64"
+    },
+    {
+      "digest": "sha256:988c4caa8b2069735b7b992674dbcd801f720e3800b5d7a81cc68c4e640e4912",
+      "os": "linux",
+      "architecture": "s390x"
+    }
+  ],
+  "observedAt": "2026-08-28T03:40:06Z",
+  "id": "sha256:a88e13fb62fe8e9a8506e9137b69a74585ff34db2985718fb848fb269f2775f8"
+}
