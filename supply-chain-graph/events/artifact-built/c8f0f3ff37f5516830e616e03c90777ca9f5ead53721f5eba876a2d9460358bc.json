@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "kind": "ArtifactBuilt",
+  "recordedAt": "2026-08-28T03:54:45Z",
+  "source": {
+    "type": "github-actions",
+    "workflow": "build / cssc-dashboard",
+    "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/33140084817",
+    "runId": "33140084817",
+    "runAttempt": "1"
+  },
+  "image": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/apps/cssc-dashboard/graph-service",
+    "digest": "sha256:af7c94a9e759a3343d7a6dc46c13f5f9fe195586b6d9bc95cc9bd4cb157570f4"
+  },
+  "base": {
+    "name": "ghcr.io/toddysm/golden/python",
+    "digest": "sha256:83ff1d245a3d57d04152252d3ef9cb361494d0b3395abd65a5ebe91c401c8e83",
+    "tag": "3.14-slim"
+  },
+  "buildVersion": "0.1.2-108122e",
+  "sourceCommit": "108122e10d25491b2067d2c4a215f249bb04f9c3",
+  "id": "sha256:c8f0f3ff37f5516830e616e03c90777ca9f5ead53721f5eba876a2d9460358bc"
+}
