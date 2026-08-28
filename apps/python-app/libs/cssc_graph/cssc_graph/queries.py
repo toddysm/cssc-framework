@@ -178,6 +178,7 @@ def referrers(
     digest: str | None = None,
     ref: str | None = None,
     depth: int = 3,
+    rollup: bool = True,
 ) -> dict[str, Any]:
     """Referrer artifacts of a subject occurrence.
 
@@ -185,6 +186,12 @@ def referrers(
     ``artifactType``. Follows referrers-of-referrers up to *depth* levels (a
     signature on an SBOM, etc.); ``depth=0`` returns just the subject, matching
     :func:`traverse`.
+
+    When *rollup* is true (the default) and a seed is a multi-arch index, the
+    referrers attached to its per-platform child manifests (e.g. per-platform
+    attestations) are rolled up onto the index: their ``REFERS_TO`` edges point
+    at the index and carry a ``platform`` label, so every attestation attaches
+    to the pipeline image instead of dangling off an isolated child manifest.
     """
 
     seeds = resolve_seed(store, digest=digest, ref=ref)
@@ -198,14 +205,30 @@ def referrers(
         if occ:
             nodes[seed] = occ
 
-    visited: set[str] = set()
+    # Roll each index seed's per-platform children into the frontier: a child's
+    # referrers attach to the parent index and are tagged with the platform. The
+    # child itself is not added as a node — only the rolled-up edge is kept.
+    attach_to: dict[str, str] = {}
+    platform_of: dict[str, str] = {}
     frontier = list(dict.fromkeys(seeds))
+    if rollup:
+        for seed in list(frontier):
+            for child in _platform_children(store, seed):
+                child_key = child["key"]
+                attach_to[child_key] = seed
+                platform_of[child_key] = _platform_label(child)
+                if child_key not in frontier:
+                    frontier.append(child_key)
+
+    visited: set[str] = set()
     for _ in range(depth):
         nxt: list[str] = []
         for key in frontier:
             if key in visited:
                 continue
             visited.add(key)
+            target = attach_to.get(key, key)
+            platform = platform_of.get(key)
             rows = store.query(
                 "MATCH (r:Occurrence)-[e:REFERS_TO]->(s:Occurrence {key: $k}) "
                 "RETURN r.key AS key, r.registry AS registry, r.repository AS repository, "
@@ -218,18 +241,19 @@ def referrers(
                 _record_node(nodes, row)
                 atype = row.get("artifactType")
                 observed = row.get("observedAt")
-                ekey = (row["key"], key, atype, observed)
+                ekey = (row["key"], target, atype, observed)
                 if ekey not in seen_edges:
                     seen_edges.add(ekey)
-                    edges.append(
-                        {
-                            "type": "REFERS_TO",
-                            "from": row["key"],
-                            "to": key,
-                            "artifactType": atype,
-                            "observedAt": observed,
-                        }
-                    )
+                    edge = {
+                        "type": "REFERS_TO",
+                        "from": row["key"],
+                        "to": target,
+                        "artifactType": atype,
+                        "observedAt": observed,
+                    }
+                    if platform:
+                        edge["platform"] = platform
+                    edges.append(edge)
                 nxt.append(row["key"])
         frontier = [k for k in nxt if k not in visited]
         if not frontier:
@@ -244,15 +268,29 @@ def platforms(store: GraphStore, *, digest: str | None = None, ref: str | None =
     seeds = resolve_seed(store, digest=digest, ref=ref)
     out: list[dict[str, Any]] = []
     for key in seeds:
-        for row in store.query(
-            "MATCH (i:Occurrence {key: $k})-[e:HAS_PLATFORM]->(c:Occurrence) "
-            "RETURN c.key AS key, c.digest AS digest, e.os AS os, "
-            "e.architecture AS architecture, e.variant AS variant "
-            "ORDER BY e.os, e.architecture, e.variant",
-            {"k": key},
-        ):
-            out.append(row)
+        out.extend(_platform_children(store, key))
     return out
+
+
+def _platform_children(store: GraphStore, index_key: str) -> list[dict[str, Any]]:
+    """Direct per-platform child occurrences of an index occurrence key."""
+
+    return store.query(
+        "MATCH (i:Occurrence {key: $k})-[e:HAS_PLATFORM]->(c:Occurrence) "
+        "RETURN c.key AS key, c.digest AS digest, e.os AS os, "
+        "e.architecture AS architecture, e.variant AS variant "
+        "ORDER BY e.os, e.architecture, e.variant",
+        {"k": index_key},
+    )
+
+
+def _platform_label(child: dict[str, Any]) -> str:
+    """A compact ``os/architecture[/variant]`` label for a platform child."""
+
+    parts = [child.get("os") or "", child.get("architecture") or ""]
+    variant = child.get("variant") or ""
+    label = "/".join(p for p in parts if p)
+    return f"{label}/{variant}" if variant else label
 
 
 def index_of(store: GraphStore, child_key: str) -> str | None:
@@ -359,9 +397,15 @@ def _node_label(node: dict[str, Any]) -> str:
 def to_cytoscape(subgraph: dict[str, Any]) -> dict[str, Any]:
     elements = [{"data": {"id": n["key"], "label": _node_label(n), **n}} for n in subgraph["nodes"]]
     for i, e in enumerate(subgraph["edges"]):
-        label = e.get("artifactType") or e["type"]
+        label = _edge_label(e)
         elements.append({"data": {"id": f"e{i}", "source": e["from"], "target": e["to"], "label": label, **e}})
     return {"elements": elements}
+
+
+def _edge_label(edge: dict[str, Any]) -> str:
+    label = edge.get("artifactType") or edge["type"]
+    platform = edge.get("platform")
+    return f"{label} ({platform})" if platform else label
 
 
 def _mermaid_label(text: str) -> str:
@@ -378,6 +422,6 @@ def to_mermaid(subgraph: dict[str, Any]) -> str:
     for e in subgraph["edges"]:
         frm, to = ids.get(e["from"]), ids.get(e["to"])
         if frm and to:
-            rel = _mermaid_label(e.get("artifactType") or e["type"])
+            rel = _mermaid_label(_edge_label(e))
             lines.append(f'    {frm} -->|{rel}| {to}')
     return "\n".join(lines)

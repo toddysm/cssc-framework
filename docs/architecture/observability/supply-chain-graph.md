@@ -53,20 +53,20 @@ database that is **always rebuildable** from that data plus the registry.
 **Goals**
 
 - Producers (the acquire/catalog/build/deploy workflows) and humans write small
-  files; nothing needs the graph service to be running to record data.
+   files; nothing needs the graph service to be running to record data.
 - The graph database is derived state — deleting it and re-indexing reproduces
-  it exactly.
+   it exactly.
 - Every edge carries evidence (a run URL, an issue URL, a referrer digest) so
-  the graph can explain *why* a relationship exists.
+   the graph can explain *why* a relationship exists.
 - The same data indexes identically on a laptop (CLI) and in a Kubernetes pod.
 
 **Non-goals (initially)**
 
 - An always-on ingestion API (added only if batch proves insufficient — flow
-  step 5).
+   step 5).
 - Treating the graph database as the source of truth.
 - Guaranteeing exact layer/CVE-introduction attribution when the scanner cannot
-  prove it (the graph records confidence, not fiction).
+   prove it (the graph records confidence, not fiction).
 
 ## End-to-end data flow
 
@@ -103,11 +103,11 @@ flowchart LR
 Two inputs feed the indexer:
 
 - **Repo data files** — the durable, reviewable ledger of supply-chain *events*
-  (small: identifiers, digests, timestamps, evidence links).
+   (small: identifiers, digests, timestamps, evidence links).
 - **Remote authoritative sources** — heavy payloads (SBOM, provenance, vuln
-  reports, live deployment state) are *referenced* from events and fetched at
-  index time rather than duplicated into Git. `sources.yaml` lists the roots the
-  indexer may crawl.
+   reports, live deployment state) are *referenced* from events and fetched at
+   index time rather than duplicated into Git. `sources.yaml` lists the roots the
+   indexer may crawl.
 
 ## Writing data from GitHub Actions
 
@@ -124,9 +124,9 @@ single rule gives us:
 
 - **No merge conflicts** — two concurrent runs write two different files.
 - **Idempotency at indexing time** — each record also carries a content `id` (a
-  hash of its semantic payload), and the indexer upserts by that `id`, so a
-  re-recorded fact is deduplicated even though its filename (which includes a
-  timestamp) differs.
+   hash of its semantic payload), and the indexer upserts by that `id`, so a
+   re-recorded fact is deduplicated even though its filename (which includes a
+   timestamp) differs.
 - **A complete audit trail** — history is the set of event files, never mutated.
 
 Mutable, human-curated records (`sources.yaml`, manual corrections) are edited
@@ -158,35 +158,35 @@ Two write paths satisfy this:
 1. **Direct commit to the data branch (default).** Each run adds its event
    file(s) and pushes to `supply-chain-graph-data` with rebase-retry. Simple, and
    the branch stays plain, reviewable files.
-2. **Serialized collector.** Runs upload event files as workflow artifacts; a
+2. __Serialized collector.__ Runs upload event files as workflow artifacts; a
    single scheduled/`workflow_run` collector commits them. One writer → no ref
    races. Use this if direct commits contend too often.
 
-An **OCI artifact ledger** — pushing events under a reserved tag exactly like the
+An __OCI artifact ledger__ — pushing events under a reserved tag exactly like the
 existing [`mirror-history`](../../../.github/actions/mirror-history/action.yml)
 action and reading them back with
 [`OciRegistryClient`](../../../apps/python-app/libs/cssc_common/cssc_common/registry.py)
 — stays available as an alternative if we ever want zero repo commits, but it is
-**not** the default: the source repository is the system of record.
+__not__ the default: the source repository is the system of record.
 
 ### Considerations for the workflow authors
 
 - **Permissions.** Committing event files needs `contents: write`, scoped to
-  the `supply-chain-graph-data` branch where possible.
+   the `supply-chain-graph-data` branch where possible.
 - **No secrets, ever.** Events contain only digests, refs, tags, timestamps, and
-  public run/issue URLs. Never write tokens or signing material (repo push
-  protection will also block them).
+   public run/issue URLs. Never write tokens or signing material (repo push
+   protection will also block them).
 - **Pin by digest.** Record immutable `repo@sha256:...`; tags are recorded
-  separately as `TagObserved` observations with a timestamp.
+   separately as `TagObserved` observations with a timestamp.
 - **Evidence is mandatory.** Every event carries `source.runUrl` (and issue URL
-  or referrer digest where relevant) so the edge is explainable and auditable.
+   or referrer digest where relevant) so the edge is explainable and auditable.
 - **Ordering is by observation time, not file arrival.** The indexer sorts by
-  `recordedAt`; late-arriving events still land in the right place in history.
+   `recordedAt`; late-arriving events still land in the right place in history.
 - **Size.** Keep events small; reference heavy payloads (SBOM/scan) by referrer
-  digest. Ingesting those payloads is **deferred** (see Phased delivery), so
-  events stay tiny for now.
+   digest. Ingesting those payloads is **deferred** (see Phased delivery), so
+   events stay tiny for now.
 - **Trust.** Only first-party workflows and reviewed PRs can write data; the
-  indexer treats event `source` as provenance, not as proof of correctness.
+   indexer treats event `source` as provenance, not as proof of correctness.
 
 ## Folder structure of the data files
 
@@ -222,15 +222,15 @@ supply-chain-graph/
 Design intent of the layout:
 
 - **`events/` is the heart** and the only thing workflows write. Date-partitioned
-  so directories stay small and diffs are local; filenames are
-  `<ts>-<stage>-<kind>-<hash>` so they are unique, sortable, and idempotent.
+   so directories stay small and diffs are local; filenames are
+   `<ts>-<stage>-<kind>-<hash>` so they are unique, sortable, and idempotent.
 - **`sources.yaml`** is the only file humans routinely edit; it declares GHCR
-  repos, the mirror-history ledger, GitHub issue queries, and (optionally) a
-  kube context to crawl.
+   repos, the mirror-history ledger, GitHub issue queries, and (optionally) a
+   kube context to crawl.
 - **`artifacts/`** holds only curated corrections/annotations you cannot derive
-  from events or the registry; most artifact facts are indexed from the registry.
+   from events or the registry; most artifact facts are indexed from the registry.
 - **`inventory/`** is **deferred**: it will cache SBOM/scan payloads for offline
-  rebuilds once inventory ingestion lands; the initial phases do not use it.
+   rebuilds once inventory ingestion lands; the initial phases do not use it.
 
 ## Data schema (file content)
 
@@ -245,15 +245,20 @@ Records never point at each other by file path — they converge by *identity* w
 the indexer folds them in.
 
 - **Envelope** (every record). The shared wrapper — `schemaVersion`, `kind`, `id`,
-  `recordedAt`, `source`. It is not a node: `kind` selects the handler, `id` (a
-  hash of the semantic payload) makes a fact idempotent, and `source` attaches
-  evidence to that record. Both artifact records and event records are enveloped.
+   `recordedAt`, `source`. It is not a node: `kind` selects the handler, `id` (a
+   hash of the semantic payload) makes a fact idempotent, and `source` attaches
+   evidence to that record. Both artifact records and event records are enveloped.
 - **Artifact / occurrence** (nouns → nodes). An *artifact* is an immutable digest;
-  an *occurrence* is that digest at a fully-qualified location
-  (`registry + repository + digest`). Occurrences are the endpoints events connect.
-- **Event** (verbs → edges). Each event names two occurrences by their key and
-  produces one relationship (`MIRRORED_FROM`, `PROMOTED_FROM`, `BUILT_FROM`,
-  `POINTED_TO`, `RUNS`), carrying the timestamp and evidence.
+   an *occurrence* is that digest at a fully-qualified location
+   (`registry + repository + digest`). Occurrences are the endpoints events connect.
+- __Event__ (verbs → edges). Each event names two occurrences by their key and
+   produces one relationship (`MIRRORED_FROM`, `PROMOTED_FROM`, `BUILT_FROM`,
+   `POINTED_TO`, `RUNS`, `REFERS_TO`, `HAS_PLATFORM`), carrying the timestamp and
+   evidence. `HAS_PLATFORM` links a multi-arch **index** occurrence to each of its
+   per-platform **child** occurrences (from `ImageIndexObserved`); referrer
+   queries use it to **roll a child's referrers up onto the index** (tagged with
+   the platform) so per-platform attestations attach to the pipeline image
+   instead of dangling off an isolated child manifest.
 
 Because endpoints are named by key (not by a pointer to an `ArtifactObserved`
 file), an event and an `ArtifactObserved` for the same occurrence resolve to the
@@ -328,11 +333,11 @@ appearing at a specific **fully-qualified location** — the registry login serv
 `registry + repository + digest`, and every reference in the data is written
 fully qualified as `registry/repository@sha256:…` (never a bare `repository`).
 
-This is what keeps cross-registry chains intact. The *same* digest promoted
+This is what keeps cross-registry chains intact. The _same_ digest promoted
 `docker.io/library/python@sha256:…` →
 `first.registry.io/quarantine/python@sha256:…` →
-`second.registry.io/quarantine/python@sha256:…` is **one artifact and three
-distinct occurrences**, linked by `MIRRORED_FROM` / `PROMOTED_FROM` edges. Because
+`second.registry.io/quarantine/python@sha256:…` is __one artifact and three
+distinct occurrences__, linked by `MIRRORED_FROM` / `PROMOTED_FROM` edges. Because
 the registry login server is part of the key, the two `quarantine/python`
 occurrences on different registries never collapse into one node and no hop is
 lost. (Within a single registry, `ghcr.io/…/quarantine/python` and
@@ -443,11 +448,11 @@ to. The indexer normalizes them into nodes:
 - `File` (path, digest, size, mode, originating layer, whiteout status).
 - `Layer` (ordered, associated with the platform manifest that was scanned).
 - `Vulnerability` (CVE id, severity, fixed/affected versions, scanner, scan time,
-  status) linked `Package -[AFFECTED_BY]-> Vulnerability`.
+   status) linked `Package -[AFFECTED_BY]-> Vulnerability`.
 
 Introduction attribution (`Vulnerability -[INTRODUCED_IN]-> Layer|Artifact`) is
 computed by comparing package/layer evidence across an image and its ancestors,
-and is tagged with a **confidence** (`evidence` vs `inferred` vs `unknown`) — the
+and is tagged with a __confidence__ (`evidence` vs `inferred` vs `unknown`) — the
 graph never asserts an exact introducing layer the data cannot prove.
 
 ### Validation
@@ -462,13 +467,13 @@ silently producing a partial graph.
 - **Load** all repo event files + `sources.yaml`.
 - **Validate** against schema; collect diagnostics.
 - **Resolve** remote references (registry manifests/referrers, GitHub issues,
-  optional kube state) named by events and `sources.yaml`.
+   optional kube state) named by events and `sources.yaml`.
 - **Upsert** nodes and edges into LadybugDB using deterministic keys
-  (`registry+repository+digest` for occurrences, `id` for events), so re-indexing
-  is idempotent — a full rebuild and an incremental pass converge to the same
-  graph.
+   (`registry+repository+digest` for occurrences, `id` for events), so re-indexing
+   is idempotent — a full rebuild and an incremental pass converge to the same
+   graph.
 - **Tombstones**: a `kind: Retraction` record (human, via PR) can supersede an
-  earlier event without deleting history; the indexer marks the target inactive.
+   earlier event without deleting history; the indexer marks the target inactive.
 
 LadybugDB is embedded and single-writer: exactly **one** process owns the
 read-write database; it may open many connections for concurrent reads.
@@ -476,7 +481,7 @@ read-write database; it may open many connections for concurrent reads.
 ## Local CLI experience
 
 A single `cssc-graph` CLI does everything without the web server (flow step 4).
-It is implemented in **Python with [Click](https://click.palletsprojects.com/)**:
+It is implemented in __Python with [Click](https://click.palletsprojects.com/)__:
 a top-level `click.Group` named `cssc-graph` with one subcommand per verb, wired
 as a console-script entry point (`cssc-graph = cssc_graph.cli:main`) in the owning
 package's `pyproject.toml`. Click gives composable subcommands, typed and
@@ -549,23 +554,30 @@ flowchart LR
 ```
 
 - **Getting the data into the pod** (mirrors the write-back choice):
-  - *git-sync sidecar / init container* (default) clones the repo — or the
-    `supply-chain-graph-data` branch — to a shared volume, consistent with the
-    durability decision that the source repository is the system of record; or
-  - *optionally*, the service pulls the OCI event ledger with `OciRegistryClient`
-    (no repo clone) as an alternative when we want to avoid a checkout.
+
+   - *git-sync sidecar / init container* (default) clones the repo — or the
+      `supply-chain-graph-data` branch — to a shared volume, consistent with the
+      durability decision that the source repository is the system of record; or
+   - *optionally*, the service pulls the OCI event ledger with `OciRegistryClient`
+      (no repo clone) as an alternative when we want to avoid a checkout.
+
 - **Indexing on startup.** An init container (or the app's startup hook) runs
-  `cssc-graph index` into the database directory, then marks readiness only after
-  the index succeeds. A **reindex** is triggered by `POST /index/rebuild` or a
-  Kubernetes `Job`/`CronJob`, not by editing files in place.
+   `cssc-graph index` into the database directory, then marks readiness only after
+   the index succeeds. A **reindex** is triggered by `POST /index/rebuild` or a
+   Kubernetes `Job`/`CronJob`, not by editing files in place.
+
 - **Persistence.** Two supported modes:
-  - *Rebuildable/ephemeral* (default for the demo): `emptyDir`, rebuilt from files
-    + registry on every start — cleanest, no state to manage.
-  - *PVC-backed*: keep the database on a `PersistentVolumeClaim` for faster
-    restarts; still fully rebuildable on demand.
+
+   - *Rebuildable/ephemeral* (default for the demo): `emptyDir`, rebuilt from files
+      + registry on every start — cleanest, no state to manage.
+
+   - *PVC-backed*: keep the database on a `PersistentVolumeClaim` for faster
+      restarts; still fully rebuildable on demand.
+
 - **Single writer.** One replica owns the read-write database. If read scale is
-  ever needed, run one indexer/writer and expose read-only replicas from copies
-  of the database directory — do **not** point multiple writers at one database.
+   ever needed, run one indexer/writer and expose read-only replicas from copies
+   of the database directory — do **not** point multiple writers at one database.
+
 - **HTTP API** (curated, mirrors the CLI):
 
   ```text
@@ -574,6 +586,7 @@ flowchart LR
   GET  /artifacts/resolve?ref=<repo@digest|repo:tag>
   GET  /repositories/{repo}/tags/{tag}/history
   GET  /artifacts/{digest}/bases        GET /artifacts/{digest}/derived
+  GET  /artifacts/referrers?ref=<repo@digest|repo:tag>&depth=3&rollup=true   # rollup=false keeps per-manifest referrers
   GET  /search?annotation=…&package=…&file=…&type=…&signer=…
   GET  /vulnerabilities/{cve}/impact
   GET  /vulnerabilities/{cve}/introduced?ref=…
@@ -581,9 +594,9 @@ flowchart LR
   ```
 
 - **Health/limits.** `/healthz` (process up) and `/readyz` (index loaded);
-  bounded neighborhood responses and depth caps so a query can't return the whole
-  graph; anonymous in-cluster reads like the other demo services, with only
-  outbound GHCR/GitHub calls authenticated.
+   bounded neighborhood responses and depth caps so a query can't return the whole
+   graph; anonymous in-cluster reads like the other demo services, with only
+   outbound GHCR/GitHub calls authenticated.
 
 ## Design decisions and alternatives
 
@@ -621,18 +634,18 @@ flowchart LR
 - **Producers are first-party only**; human records land through reviewed PRs.
 - **The graph reports evidence and confidence**, never fabricated attribution.
 - **Outbound-only auth** in the service (GHCR/GitHub); reads are anonymous
-  in-cluster like the other demo services.
+   in-cluster like the other demo services.
 - **Bounded responses** prevent a single query from dumping the whole graph.
 
 ## Decisions (resolved 2026-08-09)
 
 - **Data root:** a new top-level `supply-chain-graph/` folder in this repository.
 - **Durability:** the data lives in the source repository as committed files; when
-  concurrent runs contend, they commit to a dedicated `supply-chain-graph-data`
-  branch (with a serialized collector as the fallback). The OCI ledger is kept
-  only as an alternative, not the default.
+   concurrent runs contend, they commit to a dedicated `supply-chain-graph-data`
+   branch (with a serialized collector as the fallback). The OCI ledger is kept
+   only as an alternative, not the default.
 - **SBOM/scan payloads:** **deferred** — the first phases deliver provenance, tag
-  history, and base lineage; packages/files/CVEs come later.
+   history, and base lineage; packages/files/CVEs come later.
 - **Engine:** **LadybugDB**, confirmed (supersedes #145's archived Kùzu choice).
 - **CLI:** implemented in **Python with Click**.
 

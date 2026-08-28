@@ -135,6 +135,30 @@ def test_index_of_maps_child_to_index(store):
     assert queries.index_of(store, f"{GOLDEN_REF}@{DIGEST2}") is None
 
 
+DIGEST6 = "sha256:" + "6" * 64
+
+
+def test_referrers_roll_child_attestation_up_to_index(store):
+    # The example attaches an attestation (digest 6…) to the amd64 child (digest
+    # 4…). Querying the index rolls that referrer up onto the index, tagged with
+    # the platform, so no attestation dangles off the child manifest.
+    sub = queries.referrers(store, ref=f"{GOLDEN_REF}@{DIGEST2}")
+    rolled = [
+        e
+        for e in sub["edges"]
+        if e["from"] == f"{GOLDEN_REF}@{DIGEST6}" and e["to"] == f"{GOLDEN_REF}@{DIGEST2}"
+    ]
+    assert len(rolled) == 1
+    assert rolled[0]["platform"] == "linux/amd64"
+    # The child manifest itself is not introduced as a node by the roll-up.
+    assert f"{GOLDEN_REF}@{DIGEST4}" not in {n["key"] for n in sub["nodes"]}
+
+
+def test_referrers_no_rollup_keeps_child_referrers_off_index(store):
+    sub = queries.referrers(store, ref=f"{GOLDEN_REF}@{DIGEST2}", rollup=False)
+    assert not any(e["from"] == f"{GOLDEN_REF}@{DIGEST6}" for e in sub["edges"])
+
+
 def test_show_marks_deleted_occurrence(store):
     data = queries.show(store, f"{QUAR_REF}@{DIGEST3}")
     assert data is not None
@@ -161,3 +185,22 @@ def test_cli_referrers(tmp_path: Path):
     assert result.exit_code == 0, result.output
     assert "REFERS_TO" in result.output
     assert "application/vnd.in-toto+json" in result.output
+    # The default rolls the per-platform child attestation up onto the index.
+    assert "{linux/amd64}" in result.output
+
+
+def test_cli_referrers_no_rollup(tmp_path: Path):
+    from click.testing import CliRunner
+
+    from cssc_graph.cli import cli
+
+    db = tmp_path / "db"
+    with GraphStore(db) as gs:
+        gs.init_schema()
+        index_data(gs, EXAMPLES, SCHEMA_DIR)
+    result = CliRunner().invoke(
+        cli, ["referrers", "-d", str(db), "--ref", f"{GOLDEN_REF}@{DIGEST2}", "--no-rollup"]
+    )
+    assert result.exit_code == 0, result.output
+    # --no-rollup keeps child referrers off the index, so no platform-tagged edge.
+    assert "{linux/amd64}" not in result.output

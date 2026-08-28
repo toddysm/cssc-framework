@@ -1,0 +1,16 @@
+schemaVersion: 1
+kind: ReferrerObserved
+recordedAt: 2026-08-09T13:10:06Z
+source:
+  type: github-actions
+  workflow: promote-from-quarantine-python
+  runUrl: https://github.com/toddysm/cssc-framework/actions/runs/123450002
+occurrence:
+  registry: ghcr.io
+  repository: toddysm/golden/python
+subject:
+  digest: sha256:4444444444444444444444444444444444444444444444444444444444444444
+referrer:
+  digest: sha256:6666666666666666666666666666666666666666666666666666666666666666
+  artifactType: application/vnd.in-toto+json
+observedAt: 2026-08-09T13:10:06Z
