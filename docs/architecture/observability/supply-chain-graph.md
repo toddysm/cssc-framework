@@ -580,17 +580,18 @@ flowchart LR
 
 - **HTTP API** (curated, mirrors the CLI):
 
-```text
-POST /index/rebuild
-GET  /artifacts/{digest}/path
-GET  /artifacts/resolve?ref=<repo@digest|repo:tag>
-GET  /repositories/{repo}/tags/{tag}/history
-GET  /artifacts/{digest}/bases        GET /artifacts/{digest}/derived
-GET  /search?annotation=…&package=…&file=…&type=…&signer=…
-GET  /vulnerabilities/{cve}/impact
-GET  /vulnerabilities/{cve}/introduced?ref=…
-GET  /graph/neighborhood?ref=…&depth=3   # bounded, for dashboard-web viz
-```
+  ```text
+  POST /index/rebuild
+  GET  /artifacts/{digest}/path
+  GET  /artifacts/resolve?ref=<repo@digest|repo:tag>
+  GET  /repositories/{repo}/tags/{tag}/history
+  GET  /artifacts/{digest}/bases        GET /artifacts/{digest}/derived
+  GET  /artifacts/referrers?ref=<repo@digest|repo:tag>&depth=3&rollup=true   # rollup=false keeps per-manifest referrers
+  GET  /search?annotation=…&package=…&file=…&type=…&signer=…
+  GET  /vulnerabilities/{cve}/impact
+  GET  /vulnerabilities/{cve}/introduced?ref=…
+  GET  /graph/neighborhood?ref=…&depth=3   # bounded, for dashboard-web viz
+  ```
 
 - **Health/limits.** `/healthz` (process up) and `/readyz` (index loaded);
    bounded neighborhood responses and depth caps so a query can't return the whole

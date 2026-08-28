@@ -219,6 +219,17 @@ def test_referrers_requires_selector(client: TestClient) -> None:
     assert client.get("/artifacts/referrers").status_code == 400
 
 
+def test_referrers_endpoint_accepts_no_rollup(client: TestClient) -> None:
+    body = client.get(
+        "/artifacts/referrers",
+        params={"ref": f"{APP_REF}@{DIGEST_APP}", "rollup": "false"},
+    ).json()
+    assert any(
+        e["type"] == "REFERS_TO" and e.get("artifactType") == "application/vnd.in-toto+json"
+        for e in body["edges"]
+    )
+
+
 def test_depth_is_capped(client: TestClient, tmp_path: Path) -> None:
     # A max_depth of 1 must stop bases traversal at the first hop.
     root = _write_data_root(tmp_path / "capped", RECORDS)

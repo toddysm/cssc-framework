@@ -185,3 +185,22 @@ def test_cli_referrers(tmp_path: Path):
     assert result.exit_code == 0, result.output
     assert "REFERS_TO" in result.output
     assert "application/vnd.in-toto+json" in result.output
+    # The default rolls the per-platform child attestation up onto the index.
+    assert "{linux/amd64}" in result.output
+
+
+def test_cli_referrers_no_rollup(tmp_path: Path):
+    from click.testing import CliRunner
+
+    from cssc_graph.cli import cli
+
+    db = tmp_path / "db"
+    with GraphStore(db) as gs:
+        gs.init_schema()
+        index_data(gs, EXAMPLES, SCHEMA_DIR)
+    result = CliRunner().invoke(
+        cli, ["referrers", "-d", str(db), "--ref", f"{GOLDEN_REF}@{DIGEST2}", "--no-rollup"]
+    )
+    assert result.exit_code == 0, result.output
+    # --no-rollup keeps child referrers off the index, so no platform-tagged edge.
+    assert "{linux/amd64}" not in result.output

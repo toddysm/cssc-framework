@@ -116,13 +116,14 @@ def create_app(settings: GraphSettings | None = None, index: GraphIndex | None =
         ref: str | None = Query(None),
         digest: str | None = Query(None),
         depth: int = Query(3, ge=0),
+        rollup: bool = Query(True),
         format: str = Query("json", pattern="^(json|cytoscape|mermaid)$"),
     ) -> Any:
         if not ref and not digest:
             raise HTTPException(status_code=400, detail="provide ref or digest")
         with reading() as store:
             subgraph = queries.referrers(
-                store, digest=digest, ref=ref, depth=min(depth, settings.max_depth)
+                store, digest=digest, ref=ref, depth=min(depth, settings.max_depth), rollup=rollup
             )
         if format == "cytoscape":
             return queries.to_cytoscape(subgraph)
