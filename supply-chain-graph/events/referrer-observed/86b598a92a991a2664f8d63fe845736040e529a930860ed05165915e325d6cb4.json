@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "kind": "ReferrerObserved",
+  "recordedAt": "2026-08-28T19:08:49Z",
+  "source": {
+    "type": "github-actions",
+    "workflow": "promote from quarantine / quarantine/python",
+    "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/33202504799",
+    "runId": "33202504799",
+    "runAttempt": "1"
+  },
+  "occurrence": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/golden/python"
+  },
+  "subject": {
+    "digest": "sha256:203589260f9454a6924b277735c91df90b027a35d48fd8b8757d23991bbf2b26",
+    "tag": "sha256-0bc57aa68594b3608d9812186d2689ce06fdec91de15ac754cfcc59a6dd6fdaf"
+  },
+  "referrer": {
+    "digest": "sha256:d5ca7e84cf362b1bb6de547d40e6b406844f8df9bc76325d4b95d2167bd2771c",
+    "artifactType": "application/vnd.in-toto+json"
+  },
+  "observedAt": "2026-08-28T19:08:49Z",
+  "id": "sha256:86b598a92a991a2664f8d63fe845736040e529a930860ed05165915e325d6cb4"
+}
