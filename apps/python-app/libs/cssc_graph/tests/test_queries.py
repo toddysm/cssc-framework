@@ -204,3 +204,39 @@ def test_cli_referrers_no_rollup(tmp_path: Path):
     assert result.exit_code == 0, result.output
     # --no-rollup keeps child referrers off the index, so no platform-tagged edge.
     assert "{linux/amd64}" not in result.output
+
+
+def test_provenance_family_has_typed_nodes_and_dated_edges(store):
+    sub = queries.provenance(store, "python")
+    node_types = {n["nodeType"] for n in sub["nodes"]}
+    assert {"tag-root", "image", "referrer"} <= node_types
+    edge_kinds = {e["type"] for e in sub["edges"]}
+    assert {"imported", "promoted", "built", "attests"} <= edge_kinds
+    # every edge is dated
+    assert all("date" in e for e in sub["edges"])
+
+
+def test_provenance_states_and_upstream_tag_root(store):
+    sub = queries.provenance(store, "python")
+    by_state: dict[str, list[dict]] = {}
+    for n in sub["nodes"]:
+        by_state.setdefault(n["state"], []).append(n)
+    assert by_state.get("present-quarantine"), "expected a quarantine image node"
+    assert by_state.get("present-golden"), "expected a golden image node"
+    # The upstream source is folded into a synthetic tag-root, not an image node.
+    roots = [n for n in sub["nodes"] if n["nodeType"] == "tag-root"]
+    assert any(r["ref"] == "docker.io/library/python" for r in roots)
+    image_refs = {n["ref"] for n in sub["nodes"] if n["nodeType"] == "image"}
+    assert "docker.io/library/python" not in image_refs
+
+
+def test_provenance_referrer_labelled_by_artifact_type(store):
+    sub = queries.provenance(store, "python")
+    attests = [e for e in sub["edges"] if e["type"] == "attests"]
+    assert any(e.get("artifactType") == "application/vnd.in-toto+json" for e in attests)
+
+
+def test_provenance_unknown_family_is_empty(store):
+    sub = queries.provenance(store, "does-not-exist")
+    assert sub == {"nodes": [], "edges": []}
+

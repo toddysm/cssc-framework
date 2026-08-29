@@ -380,6 +380,178 @@ def show(store: GraphStore, ref: str) -> dict[str, Any] | None:
     }
 
 
+# -- provenance timeline ------------------------------------------------------
+
+_OCC_ROW = (
+    "{n}.key AS key, {n}.registry AS registry, {n}.repository AS repository, "
+    "{n}.digest AS digest, {n}.ref AS ref, {n}.deletedAt AS deletedAt, "
+    "{n}.deleteReason AS deleteReason"
+)
+
+
+def _family_basename(repository: str) -> str:
+    """The trailing image name of a repository (``.../golden/python`` -> ``python``)."""
+
+    return repository.rsplit("/", 1)[-1]
+
+
+def _provenance_state(repository: str, deleted_at: Any) -> str:
+    if deleted_at:
+        return "deleted"
+    if "quarantine/" in repository or repository.endswith("/quarantine"):
+        return "present-quarantine"
+    if "golden/" in repository or repository.endswith("/golden"):
+        return "present-golden"
+    return "present"
+
+
+def _image_node(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "key": row["key"],
+        "registry": row["registry"],
+        "repository": row["repository"],
+        "digest": row["digest"],
+        "ref": row["ref"],
+        "deletedAt": row.get("deletedAt"),
+        "deleteReason": row.get("deleteReason"),
+        "nodeType": "image",
+        "state": _provenance_state(row["repository"], row.get("deletedAt")),
+    }
+
+
+def provenance(store: GraphStore, family: str) -> dict[str, Any]:
+    """Per-family provenance timeline: typed nodes and dated edges.
+
+    Scopes to one repository *family* — the trailing image name, e.g. ``python``
+    for both ``.../quarantine/python`` and ``.../golden/python``. Returns
+    ``{nodes, edges}`` where each node carries a ``nodeType`` (``tag-root`` |
+    ``image`` | ``referrer``) and a ``state`` (``upstream`` |
+    ``present-quarantine`` | ``present-golden`` | ``present`` | ``deleted``), and
+    each edge a ``type`` (``imported`` | ``promoted`` | ``built`` | ``attests``)
+    with a ``date``.
+
+    The upstream tag root is synthesised from ``ArtifactMirrored`` (the mirror
+    source), ``sha256-*`` fallback tags are skipped, and referrers are labelled
+    by their raw ``artifactType``.
+    """
+
+    all_occ = store.query(
+        "MATCH (o:Occurrence) RETURN " + _OCC_ROW.format(n="o")
+    )
+    family_occ = [o for o in all_occ if _family_basename(o["repository"]) == family]
+
+    nodes: dict[str, dict[str, Any]] = {}
+    edges: list[dict[str, Any]] = []
+    seen_edges: set[tuple[Any, ...]] = set()
+
+    def add_edge(kind: str, frm: str, to: str, date: Any, **extra: Any) -> None:
+        ekey = (kind, frm, to, date, extra.get("artifactType"), extra.get("platform"))
+        if ekey in seen_edges:
+            return
+        seen_edges.add(ekey)
+        edge = {"type": kind, "from": frm, "to": to, "date": date}
+        edge.update({k: v for k, v in extra.items() if v})
+        edges.append(edge)
+
+    # 1. imported: synthesise the upstream tag root from each mirror source.
+    upstream_keys: set[str] = set()
+    for occ in family_occ:
+        for r in store.query(
+            "MATCH (q:Occurrence {key: $k})-[e:MIRRORED_FROM]->(up:Occurrence) "
+            "RETURN up.key AS key, up.ref AS ref, up.digest AS digest, "
+            "e.tag AS tag, e.recordedAt AS recordedAt",
+            {"k": occ["key"]},
+        ):
+            upstream_keys.add(r["key"])
+            tag = r.get("tag") or ""
+            if tag.startswith("sha256-"):  # skip OCI referrer fallback tags
+                continue
+            root_key = f"{r['ref']}:{tag}" if tag else r["ref"]
+            nodes.setdefault(
+                root_key,
+                {
+                    "key": root_key,
+                    "ref": r["ref"],
+                    "digest": r.get("digest"),
+                    "tag": tag,
+                    "nodeType": "tag-root",
+                    "state": "upstream",
+                },
+            )
+            add_edge("imported", root_key, occ["key"], r.get("recordedAt"), tag=tag)
+
+    # 2. image nodes, excluding pure upstream sources folded into tag roots.
+    for occ in family_occ:
+        if occ["key"] in upstream_keys:
+            continue
+        nodes.setdefault(occ["key"], _image_node(occ))
+    image_keys = [k for k, n in nodes.items() if n["nodeType"] == "image"]
+
+    # 3. promoted: quarantine -> golden (the edge is stored golden -> quarantine).
+    for key in image_keys:
+        for r in store.query(
+            "MATCH (g:Occurrence {key: $k})-[e:PROMOTED_FROM]->(q:Occurrence) "
+            "RETURN " + _OCC_ROW.format(n="q") + ", e.tag AS tag, e.recordedAt AS recordedAt",
+            {"k": key},
+        ):
+            nodes.setdefault(r["key"], _image_node(r))
+            add_edge("promoted", r["key"], key, r.get("recordedAt"), tag=r.get("tag"))
+
+    # 4. built: always base -> image, whether the family occ is the image or the base.
+    for key in image_keys:
+        for r in store.query(
+            "MATCH (i:Occurrence {key: $k})-[e:BUILT_FROM]->(b:Occurrence) "
+            "RETURN " + _OCC_ROW.format(n="b") + ", e.tag AS tag, e.recordedAt AS recordedAt",
+            {"k": key},
+        ):
+            nodes.setdefault(r["key"], _image_node(r))
+            add_edge("built", r["key"], key, r.get("recordedAt"), tag=r.get("tag"))
+        for r in store.query(
+            "MATCH (i:Occurrence)-[e:BUILT_FROM]->(b:Occurrence {key: $k}) "
+            "RETURN " + _OCC_ROW.format(n="i") + ", e.tag AS tag, e.recordedAt AS recordedAt",
+            {"k": key},
+        ):
+            nodes.setdefault(r["key"], _image_node(r))
+            add_edge("built", key, r["key"], r.get("recordedAt"), tag=r.get("tag"))
+
+    # 5. attests: referrers -> image, directly and rolled up from platform children.
+    for key in image_keys:
+        subjects = [(key, None)] + [
+            (child["key"], _platform_label(child)) for child in _platform_children(store, key)
+        ]
+        for subj_key, platform in subjects:
+            for r in store.query(
+                "MATCH (ref:Occurrence)-[e:REFERS_TO]->(s:Occurrence {key: $k}) "
+                "RETURN " + _OCC_ROW.format(n="ref") + ", e.artifactType AS artifactType, "
+                "e.observedAt AS observedAt ORDER BY e.artifactType, ref.key",
+                {"k": subj_key},
+            ):
+                # The source of a REFERS_TO is always a referrer artifact, even
+                # when it shares the family repository, so type it as such.
+                nodes[r["key"]] = {
+                    "key": r["key"],
+                    "registry": r["registry"],
+                    "repository": r["repository"],
+                    "digest": r["digest"],
+                    "ref": r["ref"],
+                    "deletedAt": r.get("deletedAt"),
+                    "deleteReason": r.get("deleteReason"),
+                    "nodeType": "referrer",
+                    "state": "deleted" if r.get("deletedAt") else "present",
+                    "artifactType": r.get("artifactType"),
+                }
+                add_edge(
+                    "attests",
+                    r["key"],
+                    key,
+                    r.get("observedAt"),
+                    artifactType=r.get("artifactType"),
+                    platform=platform,
+                )
+
+    return {"nodes": list(nodes.values()), "edges": edges}
+
+
 # -- export -------------------------------------------------------------------
 
 
