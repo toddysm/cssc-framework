@@ -65,6 +65,9 @@ jobs:
       - name: Set up ORAS
         uses: oras-project/setup-oras@38de303aac69abb66f3e6255b7198bff35f323e3 # v2.0.0
 
+      - name: Set up crane
+        uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
+
       - name: Log in to GHCR
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -294,6 +297,21 @@ jobs:
           base-tag: ${{ steps.build.outputs.base-tag }}
           build-version: ${{ steps.build.outputs.tag-build }}
           source-commit: ${{ github.sha }}
+          output-dir: ${{ runner.temp }}/graph-events
+          workflow: ${{ github.workflow }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          run-id: ${{ github.run_id }}
+          run-attempt: ${{ github.run_attempt }}
+
+      - name: Stage image index graph event
+        # Multi-arch builds: link the pushed index to its per-platform children
+        # (single-arch builds stage nothing, matching mirror/promote).
+        if: ${{ steps.build.outputs.image-digest != '' }}
+        uses: ./.github/actions/stage-image-index-events
+        with:
+          ref: ghcr.io/toddysm/apps/cssc-dashboard/${{ matrix.service }}
+          digest: ${{ steps.build.outputs.image-digest }}
+          tag: ${{ steps.build.outputs.tag-build }}
           output-dir: ${{ runner.temp }}/graph-events
           workflow: ${{ github.workflow }}
           run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
