@@ -554,9 +554,40 @@ def provenance(store: GraphStore, family: str) -> dict[str, Any]:
 
 # -- export -------------------------------------------------------------------
 
+# Typed provenance edge kinds (see :func:`provenance`); their labels carry a date.
+_PROVENANCE_KINDS = ("imported", "promoted", "built", "attests")
+
+# Mermaid class per provenance node state; deleted nodes override to `deleted`.
+_MERMAID_STATE_CLASS = {
+    "upstream": "tagroot",
+    "present-quarantine": "quarantine",
+    "present-golden": "golden",
+    "present": "present",
+    "deleted": "deleted",
+}
+
+_MERMAID_CLASSDEFS = (
+    "    classDef tagroot fill:#f5f5f5,stroke:#999999,stroke-dasharray:5 5;",
+    "    classDef quarantine fill:#fff3cd,stroke:#b8860b;",
+    "    classDef golden fill:#d4edda,stroke:#28a745;",
+    "    classDef present fill:#e2e3ff,stroke:#6f42c1;",
+    "    classDef referrer fill:#cce5ff,stroke:#007bff;",
+    "    classDef deleted fill:#eeeeee,stroke:#999999,stroke-dasharray:3 3,color:#888888;",
+)
+
 
 def _node_label(node: dict[str, Any]) -> str:
     """A label that disambiguates occurrences of the same repository by digest."""
+    node_type = node.get("nodeType")
+    if node_type == "tag-root":
+        ref = node.get("ref") or node["key"]
+        tag = node.get("tag")
+        return f"{ref}:{tag}" if tag else str(ref)
+    if node_type == "referrer":
+        label = node.get("artifactType") or "referrer"
+        if node.get("deletedAt"):
+            label += " (deleted)"
+        return label
     ref = node.get("ref") or node["key"]
     digest = node.get("digest") or ""
     short = digest[7:19] if digest.startswith("sha256:") else digest[:12]
@@ -566,18 +597,44 @@ def _node_label(node: dict[str, Any]) -> str:
     return label
 
 
-def to_cytoscape(subgraph: dict[str, Any]) -> dict[str, Any]:
-    elements = [{"data": {"id": n["key"], "label": _node_label(n), **n}} for n in subgraph["nodes"]]
-    for i, e in enumerate(subgraph["edges"]):
-        label = _edge_label(e)
-        elements.append({"data": {"id": f"e{i}", "source": e["from"], "target": e["to"], "label": label, **e}})
-    return {"elements": elements}
-
-
 def _edge_label(edge: dict[str, Any]) -> str:
+    kind = edge.get("type")
+    if kind in _PROVENANCE_KINDS:
+        # Timeline edges are labelled with their kind and the (date-only) date.
+        date = str(edge.get("date") or "")[:10]
+        label = f"{kind} {date}".strip()
+        platform = edge.get("platform")
+        return f"{label} ({platform})" if platform else label
     label = edge.get("artifactType") or edge["type"]
     platform = edge.get("platform")
     return f"{label} ({platform})" if platform else label
+
+
+def _node_class(node: dict[str, Any]) -> str:
+    """The provenance style class for a node (empty for non-provenance nodes)."""
+    if node.get("deletedAt") or node.get("state") == "deleted":
+        return "deleted"
+    if node.get("nodeType") == "referrer":
+        return "referrer"
+    return _MERMAID_STATE_CLASS.get(node.get("state", ""), "")
+
+
+def to_cytoscape(subgraph: dict[str, Any]) -> dict[str, Any]:
+    elements: list[dict[str, Any]] = []
+    for n in subgraph["nodes"]:
+        element: dict[str, Any] = {"data": {"id": n["key"], "label": _node_label(n), **n}}
+        classes = " ".join(c for c in (n.get("nodeType"), _node_class(n)) if c)
+        if classes:
+            element["classes"] = classes
+        elements.append(element)
+    for i, e in enumerate(subgraph["edges"]):
+        element = {
+            "data": {"id": f"e{i}", "source": e["from"], "target": e["to"], "label": _edge_label(e), **e}
+        }
+        if e.get("type") in _PROVENANCE_KINDS:
+            element["classes"] = e["type"]
+        elements.append(element)
+    return {"elements": elements}
 
 
 def _mermaid_label(text: str) -> str:
@@ -585,15 +642,31 @@ def _mermaid_label(text: str) -> str:
     return str(text).replace('"', "#quot;").replace("\n", " ").replace("\r", " ")
 
 
+def _mermaid_node_line(nid: str, node: dict[str, Any]) -> str:
+    label = _mermaid_label(_node_label(node))
+    node_type = node.get("nodeType")
+    if node_type == "tag-root":  # dashed rounded via shape + classDef
+        return f'    {nid}("{label}")'
+    if node_type == "referrer":
+        return f'    {nid}{{{{"{label}"}}}}'
+    return f'    {nid}["{label}"]'
+
+
 def to_mermaid(subgraph: dict[str, Any]) -> str:
     lines = ["flowchart LR"]
     ids = {n["key"]: f"n{i}" for i, n in enumerate(subgraph["nodes"])}
+    styled = any(n.get("nodeType") for n in subgraph["nodes"])
     for n in subgraph["nodes"]:
-        label = _mermaid_label(_node_label(n))
-        lines.append(f'    {ids[n["key"]]}["{label}"]')
+        lines.append(_mermaid_node_line(ids[n["key"]], n))
     for e in subgraph["edges"]:
         frm, to = ids.get(e["from"]), ids.get(e["to"])
         if frm and to:
             rel = _mermaid_label(_edge_label(e))
             lines.append(f'    {frm} -->|{rel}| {to}')
+    if styled:
+        for n in subgraph["nodes"]:
+            cls = _node_class(n)
+            if cls:
+                lines.append(f'    class {ids[n["key"]]} {cls};')
+        lines.extend(_MERMAID_CLASSDEFS)
     return "\n".join(lines)

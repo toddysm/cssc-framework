@@ -240,3 +240,51 @@ def test_provenance_unknown_family_is_empty(store):
     sub = queries.provenance(store, "does-not-exist")
     assert sub == {"nodes": [], "edges": []}
 
+
+def test_provenance_mermaid_styles_nodes_and_dates(store):
+    m = queries.to_mermaid(queries.provenance(store, "python"))
+    assert m.startswith("flowchart")
+    # style classes are emitted for a provenance subgraph
+    assert "classDef tagroot" in m
+    assert "classDef golden" in m
+    # tag-root uses a rounded shape; referrers use a hexagon shape
+    assert '("' in m
+    assert "{{" in m
+    # timeline edges carry kind + date-only
+    assert "imported 2026-08-09" in m
+
+
+def test_provenance_cytoscape_tags_classes(store):
+    cy = queries.to_cytoscape(queries.provenance(store, "python"))
+    node_classes = {el.get("classes") for el in cy["elements"] if "source" not in el["data"]}
+    assert any(c and "tag-root" in c for c in node_classes)
+    assert any(c and "golden" in c for c in node_classes)
+    edge_classes = {el.get("classes") for el in cy["elements"] if "source" in el["data"]}
+    assert "imported" in edge_classes
+
+
+def test_render_marks_deleted_node():
+    sub = {
+        "nodes": [
+            {
+                "key": "r/x@sha256:1111",
+                "ref": "r/x",
+                "digest": "sha256:" + "1" * 64,
+                "nodeType": "image",
+                "state": "deleted",
+                "deletedAt": "2026-01-01T00:00:00Z",
+            }
+        ],
+        "edges": [],
+    }
+    m = queries.to_mermaid(sub)
+    assert "class n0 deleted;" in m
+    assert "classDef deleted" in m
+
+
+def test_non_provenance_subgraph_renders_without_classdefs(store):
+    m = queries.to_mermaid(queries.path(store, digest=DIGEST2))
+    assert m.startswith("flowchart")
+    assert "classDef" not in m
+
+
