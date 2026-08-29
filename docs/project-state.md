@@ -63,7 +63,13 @@ around: **Acquire, Build, Catalog, Deploy, Run**, and the cross-cutting
 
 | Capability | Feature slug | Tracking issue |
 | --- | --- | --- |
-| Observability: define file-backed artifact discovery and lineage requirements | graph-discovery-reqs | [#168](https://github.com/toddysm/cssc-framework/issues/168) |
+| Observability: graph inventory — model image layers, packages, and files (final-filesystem semantics) | graph-inventory | [#228](https://github.com/toddysm/cssc-framework/issues/228) |
+
+| Observability: graph discovery — index normalized properties and extend `find` | graph-discovery-properties | [#229](https://github.com/toddysm/cssc-framework/issues/229) || Observability: privacy & size controls for large/sensitive file inventories | graph-privacy-size | [#234](https://github.com/toddysm/cssc-framework/issues/234) |
+
+| Observability: graph evidence — typed SBOM/provenance/vuln/signature relationships + verification state | graph-typed-evidence | [#230](https://github.com/toddysm/cssc-framework/issues/230) || Observability: indexing lifecycle — incremental indexing + schema migration | graph-index-lifecycle | [#233](https://github.com/toddysm/cssc-framework/issues/233) |
+
+| Observability: base-image attribution confidence/unknown state on `BUILT_FROM` | graph-base-confidence | [#231](https://github.com/toddysm/cssc-framework/issues/231) || Observability: graph data-model integrity — unresolved-reference diagnostics, deployment history, tag validity intervals | graph-integrity | [#232](https://github.com/toddysm/cssc-framework/issues/232) |
 
 ## Deferred / Won't do
 
@@ -78,5 +84,5 @@ around: **Acquire, Build, Catalog, Deploy, Run**, and the cross-cutting
 | --- | --- |
 | No PRD/EDD documents on record for pre-agent capabilities | Most Implemented rows predate agent-managed planning; `PRD doc` column is `—`. New features should author a PRD+EDD in the repo (My Feature Engineer creates the requirements folder lazily on the first plan). |
 | Project board does not track this repo | The only Project ("CNSR Roadmap Project" #3) tracks a separate ACR roadmap; this repo runs issues-only. Consider a dedicated Project if board-driven Status is wanted. |
-| Open promotion-pending gate | [#222](https://github.com/toddysm/cssc-framework/issues/222) (ghcr.io/toddysm/quarantine/python:3.14-slim) is an open human-in-the-loop promotion gate, not a feature — awaiting reviewer action. |
+| Open promotion-pending gates | [#226](https://github.com/toddysm/cssc-framework/issues/226) (python:3.14-slim) and [#227](https://github.com/toddysm/cssc-framework/issues/227) (node:26-alpine) are open human-in-the-loop promotion gates, not features — awaiting reviewer action. |
 | Bootstrap inference | This inventory was generated from issue/PR history and a code scan; treat capability groupings as a starting point pending a human read. |
