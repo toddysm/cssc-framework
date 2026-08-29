@@ -363,6 +363,61 @@ def show(database: Path, ref: str, output_format: str) -> None:
         click.echo(f"  referrer: {r.get('artifactType') or '-'} ({r['from']}){plat}")
 
 
+def _format_provenance_text(subgraph: dict, family: str) -> str:
+    from . import queries
+
+    lines = [f"family: {family}", f"{len(subgraph['nodes'])} node(s), {len(subgraph['edges'])} edge(s)"]
+    labels: dict[str, str] = {}
+    for n in subgraph["nodes"]:
+        label = queries._node_label(n)
+        labels[n["key"]] = label
+        lines.append(f"  [{n.get('nodeType', '?')}] {label} ({n.get('state', '')})")
+    for e in subgraph["edges"]:
+        date = str(e.get("date") or "")[:10]
+        frm = labels.get(e["from"], e["from"])
+        to = labels.get(e["to"], e["to"])
+        lines.append(f"  {e['type']:<9} {frm} -> {to}  {date}".rstrip())
+    return "\n".join(lines)
+
+
+@cli.command()
+@_database_option
+@click.option("--family", required=True, help="Repository family (trailing image name, e.g. python).")
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["text", "json", "mermaid", "cytoscape"]),
+    default="text",
+    show_default=True,
+)
+@click.option("--output", "-o", type=click.Path(path_type=Path), default=None, help="Write to a file.")
+def provenance(database: Path, family: str, output_format: str, output: Path | None) -> None:
+    """Show a per-family provenance timeline (imported -> promoted -> built, with referrers)."""
+
+    from . import queries
+
+    store = _open_store(database)
+    try:
+        subgraph = queries.provenance(store, family)
+    finally:
+        store.close()
+
+    if output_format == "json":
+        text = json.dumps(subgraph, indent=2)
+    elif output_format == "mermaid":
+        text = queries.to_mermaid(subgraph)
+    elif output_format == "cytoscape":
+        text = json.dumps(queries.to_cytoscape(subgraph), indent=2)
+    else:
+        text = _format_provenance_text(subgraph, family)
+
+    if output is not None:
+        output.write_text(text + "\n", encoding="utf-8")
+        click.echo(f"Wrote {output_format} provenance to {output}.")
+    else:
+        click.echo(text)
+
+
 @cli.command()
 @_database_option
 @click.option("--digest", help="Seed by artifact digest.")
