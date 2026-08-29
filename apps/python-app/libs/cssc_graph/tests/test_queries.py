@@ -288,3 +288,55 @@ def test_non_provenance_subgraph_renders_without_classdefs(store):
     assert "classDef" not in m
 
 
+def _index_db(tmp_path: Path) -> Path:
+    db = tmp_path / "db"
+    with GraphStore(db) as gs:
+        gs.init_schema()
+        index_data(gs, EXAMPLES, SCHEMA_DIR)
+    return db
+
+
+def test_cli_provenance_text(tmp_path: Path):
+    from click.testing import CliRunner
+
+    from cssc_graph.cli import cli
+
+    db = _index_db(tmp_path)
+    result = CliRunner().invoke(cli, ["provenance", "-d", str(db), "--family", "python"])
+    assert result.exit_code == 0, result.output
+    assert "family: python" in result.output
+    assert "[tag-root]" in result.output
+    assert "imported" in result.output
+
+
+def test_cli_provenance_mermaid(tmp_path: Path):
+    from click.testing import CliRunner
+
+    from cssc_graph.cli import cli
+
+    db = _index_db(tmp_path)
+    result = CliRunner().invoke(
+        cli, ["provenance", "-d", str(db), "--family", "python", "--format", "mermaid"]
+    )
+    assert result.exit_code == 0, result.output
+    assert result.output.strip().startswith("flowchart")
+    assert "classDef" in result.output
+
+
+def test_cli_provenance_json(tmp_path: Path):
+    import json
+
+    from click.testing import CliRunner
+
+    from cssc_graph.cli import cli
+
+    db = _index_db(tmp_path)
+    result = CliRunner().invoke(
+        cli, ["provenance", "-d", str(db), "--family", "python", "--format", "json"]
+    )
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["nodes"] and data["edges"]
+
+
+
