@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "kind": "ImageIndexObserved",
+  "recordedAt": "2026-08-29T17:32:06Z",
+  "source": {
+    "type": "github-actions",
+    "workflow": "build / cssc-dashboard",
+    "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/33265746513",
+    "runId": "33265746513",
+    "runAttempt": "1"
+  },
+  "occurrence": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/apps/cssc-dashboard/graph-service"
+  },
+  "index": {
+    "digest": "sha256:9e53931a089cb6218bc13c34721476bed596061391de6b03f15a0f18b5e00390",
+    "tag": "0.1.2-f4812e2"
+  },
+  "platforms": [
+    {
+      "digest": "sha256:bde2e35d37790810f2101f2324feb20d33a553fb2718449b752564c220835fed",
+      "os": "linux",
+      "architecture": "amd64"
+    },
+    {
+      "digest": "sha256:43bc9e0be23298d98743b24bd8bcf165d0cddb10493253cf48867f99d954bb6c",
+      "os": "linux",
+      "architecture": "arm64"
+    }
+  ],
+  "observedAt": "2026-08-29T17:32:06Z",
+  "id": "sha256:67a15b66e5c762c72a1c004749f24f71c4064cae65ec2b8d23c09293df8fd756"
+}
