@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "kind": "TagObserved",
+  "recordedAt": "2026-08-29T03:37:06Z",
+  "source": {
+    "type": "github-actions",
+    "workflow": "promote override",
+    "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/33231835821",
+    "runId": "33231835821",
+    "runAttempt": "1"
+  },
+  "occurrence": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/base/node"
+  },
+  "tag": "26-alpine",
+  "digest": "sha256:2d984a15c9b54fd0aeb608b8e0d0d83529eb34d2966db27a1fb4f1edc3d298a3",
+  "observedAt": "2026-08-29T03:37:06Z",
+  "id": "sha256:9412a6ec0a6fcbd034592567291a2c426248deed4966debb21c45d3c1d26f1b6"
+}
