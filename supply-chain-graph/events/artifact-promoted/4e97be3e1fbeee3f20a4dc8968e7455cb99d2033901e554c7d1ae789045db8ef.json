@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "kind": "ArtifactPromoted",
+  "recordedAt": "2026-08-29T03:37:07Z",
+  "source": {
+    "type": "github-actions",
+    "workflow": "promote override",
+    "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/33231826000",
+    "runId": "33231826000",
+    "runAttempt": "1"
+  },
+  "from": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/quarantine/python",
+    "digest": "sha256:cae66f2ef0ec51a9891263eeee7f987dacf0a9879e8aa9353d5606e0530619a5"
+  },
+  "to": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/golden/python",
+    "digest": "sha256:cae66f2ef0ec51a9891263eeee7f987dacf0a9879e8aa9353d5606e0530619a5"
+  },
+  "tag": "3.14-slim",
+  "evidence": {
+    "issueUrl": "https://github.com/toddysm/cssc-framework/issues/226"
+  },
+  "id": "sha256:4e97be3e1fbeee3f20a4dc8968e7455cb99d2033901e554c7d1ae789045db8ef"
+}
