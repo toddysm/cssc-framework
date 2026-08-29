@@ -43,6 +43,7 @@ around: **Acquire, Build, Catalog, Deploy, Run**, and the cross-cutting
 | Observability: model multi-arch index ↔ per-architecture child manifest relationship | multiarch-index-platform | [#216](https://github.com/toddysm/cssc-framework/issues/216) | — | — | 2026-08 |
 | Observability: roll per-platform child referrers/attestations up to the index in graph queries/views (CLI `--no-rollup` + graph-service `rollup` toggle) | rollup-platform-referrers | [#217](https://github.com/toddysm/cssc-framework/issues/217) (PR [#221](https://github.com/toddysm/cssc-framework/pull/221)) | — | [observability/supply-chain-graph.md](https://github.com/toddysm/cssc-framework/blob/main/docs/architecture/observability/supply-chain-graph.md) | 2026-08 |
 | Observability: provenance timeline view (per-family, typed, dated) — `queries.provenance`, mermaid/cytoscape rendering, `cssc-graph provenance` CLI, `GET /artifacts/provenance` endpoint | provenance-timeline | [#210](https://github.com/toddysm/cssc-framework/issues/210) ([#211](https://github.com/toddysm/cssc-framework/issues/211)–[#215](https://github.com/toddysm/cssc-framework/issues/215)) | — | [querying-the-supply-chain-graph.md](https://github.com/toddysm/cssc-framework/blob/main/docs/guides/observability/querying-the-supply-chain-graph.md) | 2026-08 |
+| Observability: stage ImageIndexObserved events (index ↔ per-platform children) from build/app-image workflows | image-index-observed | [#220](https://github.com/toddysm/cssc-framework/issues/220) | — | — | 2026-08 |
 | Catalog: promotion + quarantine cleanup includes all referrers (OCI 1.0 + 1.1) | promote-referrers | [#198](https://github.com/toddysm/cssc-framework/issues/198) | — | — | 2026-08 |
 | Early CI supply-chain tasks (Trivy scan, sign, SBOM, provenance, lifecycle, signature/vuln/lifecycle verification, Copa patching) | ci-tasks | [#2](https://github.com/toddysm/cssc-framework/issues/2)–[#14](https://github.com/toddysm/cssc-framework/issues/14), [#22](https://github.com/toddysm/cssc-framework/issues/22) | — | — | 2023 |
 
@@ -54,7 +55,6 @@ around: **Acquire, Build, Catalog, Deploy, Run**, and the cross-cutting
 
 | Capability | Feature slug | Tracking issue | PRD doc | Docs |
 | --- | --- | --- | --- | --- |
-| Observability: stage ImageIndexObserved events from build/app-image workflows | image-index-observed | [#220](https://github.com/toddysm/cssc-framework/issues/220) | — | — |
 | Acquire: mirror-history end-to-end validation + persist to skip re-sync | mirror-history-validation | [#157](https://github.com/toddysm/cssc-framework/issues/157), [#163](https://github.com/toddysm/cssc-framework/issues/163) | — | — |
 
 ## Planned
