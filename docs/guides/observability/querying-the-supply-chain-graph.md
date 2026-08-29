@@ -254,6 +254,48 @@ interpret Cypher's `()` and `[]`:
 cssc-graph cypher -d "$DB" 'MATCH (o:Occurrence) RETURN count(o) AS n'
 ```
 
+#### 10. The provenance timeline for a repository family
+
+`provenance --family <name>` renders one repository **family** — the trailing
+image name, so `python` covers both `.../quarantine/python` and
+`.../golden/python` — as a dated timeline. It answers *"how did this image get
+here?"* in a single view:
+
+- **Typed nodes** (`nodeType`): a synthetic **`tag-root`** for the upstream tag
+  the image was mirrored from (synthesised from `ArtifactMirrored`, so it is not
+  a real occurrence), the **`image`** occurrences, and their **`referrer`**
+  artifacts (attestations/SBOMs/signatures), labelled by their raw
+  `artifactType`. OCI `sha256-*` fallback tags are skipped.
+- **Per-node `state`**: `upstream`, `present-quarantine`, `present-golden`,
+  `present`, or `deleted` (from the repository stage and the deletion tombstone).
+- **Dated typed edges** (`type` + `date`): `imported` (mirror), `promoted`,
+  `built` (always base → image), and `attests` (referrer → image).
+
+```bash
+cssc-graph provenance --family python -d "$DB"
+```
+
+```text
+family: python
+7 node(s), 6 edge(s)
+  [tag-root] docker.io/library/python:3.14-slim (upstream)
+  [image] ghcr.io/toddysm/quarantine/python@2222…2222 (present-quarantine)
+  [image] ghcr.io/toddysm/golden/python@2222…2222 (present-golden)
+  [referrer] application/vnd.in-toto+json (present)
+  imported   docker.io/library/python:3.14-slim -> ghcr.io/toddysm/quarantine/python@2222…2222  2026-08-09
+  promoted   ghcr.io/toddysm/quarantine/python@2222…2222 -> ghcr.io/toddysm/golden/python@2222…2222  2026-08-09
+  attests    application/vnd.in-toto+json -> ghcr.io/toddysm/golden/python@2222…2222  2026-08-09
+```
+
+Add `--format mermaid` (or `cytoscape`/`json`) to render it as a diagram: the
+tag-root is a dashed rounded node, images are coloured by stage, referrers are
+hexagons labelled by `artifactType`, deleted nodes are greyed and dashed, and
+every edge carries its kind and date.
+
+```bash
+cssc-graph provenance --family python --format mermaid -o python-provenance.mmd -d "$DB"
+```
+
 ---
 
 ## Experience 2 — the `graph-service` HTTP API
@@ -308,6 +350,7 @@ parameters. `depth` is clamped to the service's `MAX_DEPTH`.
 | Find by annotation/type/repo | `find` | `GET /search?annotation=…` / `?type=…` / `?ref=…` |
 | Inspect one artifact | `show` | `GET /artifacts/show?ref=…` |
 | Bounded subgraph for viz | `export` | `GET /graph/neighborhood?ref=…&format=json\|cytoscape\|mermaid` |
+| Provenance timeline for a family | `provenance --family` | `GET /artifacts/provenance?family=…&format=json\|cytoscape\|mermaid` |
 | Health / readiness | — | `GET /healthz`, `GET /readyz` |
 | Rebuild the index | `index --rebuild` | `POST /index/rebuild` |
 
@@ -331,6 +374,10 @@ curl -s "localhost:8004/artifacts/derived?base=ghcr.io/toddysm/golden/python" | 
 # 5. Find; 8. neighborhood for visualization
 curl -s "localhost:8004/search?annotation=com.toddysm.image.base.tag=3.14-slim" | jq
 curl -s "localhost:8004/graph/neighborhood?ref=ghcr.io/toddysm/quarantine/python&format=mermaid"
+
+# 10. Provenance timeline for a repository family (typed, dated)
+curl -s "localhost:8004/artifacts/provenance?family=python" | jq
+curl -s "localhost:8004/artifacts/provenance?family=python&format=mermaid"
 ```
 
 > Endpoints for CVE impact / introduction points and package/file lookups are
