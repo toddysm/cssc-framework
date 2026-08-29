@@ -230,6 +230,25 @@ def test_referrers_endpoint_accepts_no_rollup(client: TestClient) -> None:
     )
 
 
+def test_provenance_endpoint_json(client: TestClient) -> None:
+    body = client.get("/artifacts/provenance", params={"family": "python"}).json()
+    assert body["nodes"] and body["edges"]
+    assert any(n.get("state") == "present-golden" for n in body["nodes"])
+    assert "built" in {e["type"] for e in body["edges"]}
+
+
+def test_provenance_endpoint_mermaid(client: TestClient) -> None:
+    resp = client.get("/artifacts/provenance", params={"family": "python", "format": "mermaid"})
+    assert resp.status_code == 200
+    assert resp.text.strip().startswith("flowchart")
+
+
+def test_provenance_endpoint_unknown_family_is_empty(client: TestClient) -> None:
+    body = client.get("/artifacts/provenance", params={"family": "does-not-exist"}).json()
+    assert body == {"nodes": [], "edges": []}
+
+
+
 def test_depth_is_capped(client: TestClient, tmp_path: Path) -> None:
     # A max_depth of 1 must stop bases traversal at the first hop.
     root = _write_data_root(tmp_path / "capped", RECORDS)

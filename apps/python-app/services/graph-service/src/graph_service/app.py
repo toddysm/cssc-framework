@@ -131,6 +131,19 @@ def create_app(settings: GraphSettings | None = None, index: GraphIndex | None =
             return Response(content=queries.to_mermaid(subgraph), media_type="text/plain")
         return subgraph
 
+    @app.get("/artifacts/provenance")
+    def artifact_provenance(
+        family: str = Query(..., description="Repository family (trailing image name, e.g. python)."),
+        format: str = Query("json", pattern="^(json|cytoscape|mermaid)$"),
+    ) -> Any:
+        with reading() as store:
+            subgraph = queries.provenance(store, family)
+        if format == "cytoscape":
+            return queries.to_cytoscape(subgraph)
+        if format == "mermaid":
+            return Response(content=queries.to_mermaid(subgraph), media_type="text/plain")
+        return subgraph
+
     @app.get("/repositories/tags/history")
     def tag_history(ref: str = Query(...), tag: str = Query(...)) -> dict[str, Any]:
         with reading() as store:
