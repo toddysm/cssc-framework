@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "kind": "TagObserved",
+  "recordedAt": "2026-09-01T10:34:35Z",
+  "source": {
+    "type": "github-actions",
+    "workflow": "mirror / quarantine/python",
+    "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/33498033863",
+    "runId": "33498033863",
+    "runAttempt": "1"
+  },
+  "occurrence": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/quarantine/python"
+  },
+  "tag": "3.14-slim",
+  "digest": "sha256:656d12e70054d5fda18a045e2494c96701e9792dd1445f95b3d038df954f57e9",
+  "observedAt": "2026-09-01T10:34:35Z",
+  "id": "sha256:e57d6ab4da035cdae92f1fe6232061d1a6f0e5557863296b2430b91c0e3e3cd5"
+}
