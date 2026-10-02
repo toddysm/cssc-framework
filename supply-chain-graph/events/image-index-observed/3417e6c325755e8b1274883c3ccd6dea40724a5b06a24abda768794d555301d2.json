@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "kind": "ImageIndexObserved",
+  "recordedAt": "2026-10-02T11:25:14Z",
+  "source": {
+    "type": "github-actions",
+    "workflow": "mirror / quarantine/python",
+    "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/37000839281",
+    "runId": "37000839281",
+    "runAttempt": "1"
+  },
+  "occurrence": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/quarantine/python"
+  },
+  "index": {
+    "digest": "sha256:0741d101873c12ab927e6f8653feb8862b9bd58771177acb1b885b95141f91b4",
+    "tag": "3.14-slim"
+  },
+  "platforms": [
+    {
+      "digest": "sha256:65a94bb37b630c482dfd31e5fb9b449cb26c31eab1b7a125cd6bd624acfe3b30",
+      "os": "linux",
+      "architecture": "amd64"
+    },
+    {
+      "digest": "sha256:560f178dd36d052f98c43c85fb7e9164288fa8bde9ebb65448d4b1b6ee42d08d",
+      "os": "linux",
+      "architecture": "arm",
+      "variant": "v5"
+    },
+    {
+      "digest": "sha256:391c61b97d53894975bd5d029699461610db2221e14b6df8f398a51336f37e0e",
+      "os": "linux",
+      "architecture": "arm",
+      "variant": "v7"
+    },
+    {
+      "digest": "sha256:4c1cafad883c6aba1b2a119d284f4594ced893e726ef009f36ec2907bccc8912",
+      "os": "linux",
+      "architecture": "arm64",
+      "variant": "v8"
+    },
+    {
+      "digest": "sha256:198cb605c88949738eafbb897978309ec7a2ea3b864da8f30d027ff48a6f28b6",
+      "os": "linux",
+      "architecture": "386"
+    },
+    {
+      "digest": "sha256:c057ccc796ba67da623241eefac320946d59f71c43bd2887b7838c4e6d2d2e86",
+      "os": "linux",
+      "architecture": "ppc64le"
+    },
+    {
+      "digest": "sha256:472eef1b4d3e7d9d431fa92c329a0038b37d6d3d90a67f6f3c03a43fc4176c69",
+      "os": "linux",
+      "architecture": "riscv64"
+    },
+    {
+      "digest": "sha256:ede6d0288223edd857756e4cf070b85b0fb6953e5a3db66e9c0dafcf8cc0c2b3",
+      "os": "linux",
+      "architecture": "s390x"
+    }
+  ],
+  "observedAt": "2026-10-02T11:25:14Z",
+  "id": "sha256:3417e6c325755e8b1274883c3ccd6dea40724a5b06a24abda768794d555301d2"
+}
