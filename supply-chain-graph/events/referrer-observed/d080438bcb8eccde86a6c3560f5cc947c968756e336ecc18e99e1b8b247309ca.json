@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "kind": "ReferrerObserved",
+  "recordedAt": "2026-10-09T13:01:02Z",
+  "source": {
+    "type": "github-actions",
+    "workflow": "mirror / quarantine/node",
+    "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/37933824616",
+    "runId": "37933824616",
+    "runAttempt": "1"
+  },
+  "occurrence": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/quarantine/node"
+  },
+  "subject": {
+    "digest": "sha256:143494b1da2945f061539253adc65e4f1569ddf07da2d384c022c791a9d90a4a",
+    "tag": "26-alpine"
+  },
+  "referrer": {
+    "digest": "sha256:8794a97847eeba73e839125a64e493a62cb2ef6cb5e6891dd574886ee6c9fb0c",
+    "artifactType": "application/vnd.in-toto+json"
+  },
+  "observedAt": "2026-10-09T13:01:02Z",
+  "id": "sha256:d080438bcb8eccde86a6c3560f5cc947c968756e336ecc18e99e1b8b247309ca"
+}
