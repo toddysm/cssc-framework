@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "kind": "ImageIndexObserved",
+  "recordedAt": "2026-10-22T10:42:42Z",
+  "source": {
+    "type": "github-actions",
+    "workflow": "mirror / quarantine/python",
+    "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/39765048198",
+    "runId": "39765048198",
+    "runAttempt": "1"
+  },
+  "occurrence": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/quarantine/python"
+  },
+  "index": {
+    "digest": "sha256:0514bc76712d64f8bb48adcb95b1ab0d88c69fee95d62fe4c18ee948bee9b1e1",
+    "tag": "3.14-slim"
+  },
+  "platforms": [
+    {
+      "digest": "sha256:0214bda9af2652a418f2bf34373a4d3ca00a5f4784081e040049433ac9cc79d5",
+      "os": "linux",
+      "architecture": "amd64"
+    },
+    {
+      "digest": "sha256:098f04982f007df4d06640bfb03de834fcae197f3ee3bc5677e75b65fd9afc86",
+      "os": "linux",
+      "architecture": "arm",
+      "variant": "v5"
+    },
+    {
+      "digest": "sha256:923f8de011512397746017c9225e841bade72d073aa2659ddffcf504f1b4d4a0",
+      "os": "linux",
+      "architecture": "arm",
+      "variant": "v7"
+    },
+    {
+      "digest": "sha256:9c91bb40b4da9deb3ca7bd28bb593a5be44bc279fe4ccf59a50a564a679b04fb",
+      "os": "linux",
+      "architecture": "arm64",
+      "variant": "v8"
+    },
+    {
+      "digest": "sha256:51c9fa85c2365195887ccd8f47bef771cf98a67fdffd2153901a232f86a42fdd",
+      "os": "linux",
+      "architecture": "386"
+    },
+    {
+      "digest": "sha256:9d1b6d0f8e213b5a7f5d55d92bd3ae1509fd09ff6068a556d77d01122d087787",
+      "os": "linux",
+      "architecture": "ppc64le"
+    },
+    {
+      "digest": "sha256:b8047657f7d962381a03b84b04e3bc31cffc4ba8eab65a935a6cff66a39a9da2",
+      "os": "linux",
+      "architecture": "riscv64"
+    },
+    {
+      "digest": "sha256:7bd6faafee51d90903c3add7339913519fa7e77ac20373c69e27733023f8f6c6",
+      "os": "linux",
+      "architecture": "s390x"
+    }
+  ],
+  "observedAt": "2026-10-22T10:42:42Z",
+  "id": "sha256:3ac0770ced02c646c9a768cbec474d0a0a9491c14c6fb2c78a5fa9903cf06520"
+}
