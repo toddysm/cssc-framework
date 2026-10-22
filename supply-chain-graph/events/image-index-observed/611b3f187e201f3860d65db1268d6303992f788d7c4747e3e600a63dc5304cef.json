@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "kind": "ImageIndexObserved",
+  "recordedAt": "2026-10-22T11:34:54Z",
+  "source": {
+    "type": "github-actions",
+    "workflow": "mirror / quarantine/node",
+    "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/39771613962",
+    "runId": "39771613962",
+    "runAttempt": "1"
+  },
+  "occurrence": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/quarantine/node"
+  },
+  "index": {
+    "digest": "sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797",
+    "tag": "26-alpine"
+  },
+  "platforms": [
+    {
+      "digest": "sha256:65fb44a19eb983bc475aebef8ca3416da172e5b7b0e52418cca100997959ca6e",
+      "os": "linux",
+      "architecture": "amd64"
+    },
+    {
+      "digest": "sha256:fd33a7843535150ca8a82dcb26dece521dfedf020f532d4726d2705e067c9068",
+      "os": "linux",
+      "architecture": "arm64",
+      "variant": "v8"
+    }
+  ],
+  "observedAt": "2026-10-22T11:34:54Z",
+  "id": "sha256:611b3f187e201f3860d65db1268d6303992f788d7c4747e3e600a63dc5304cef"
+}
