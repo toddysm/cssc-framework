@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "kind": "ArtifactMirrored",
+  "recordedAt": "2026-10-24T09:52:38Z",
+  "source": {
+    "type": "github-actions",
+    "workflow": "mirror / quarantine/python",
+    "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/40083648221",
+    "runId": "40083648221",
+    "runAttempt": "1"
+  },
+  "from": {
+    "registry": "docker.io",
+    "repository": "library/python",
+    "digest": "sha256:35caba83af2fe6da9a5d922f9b0156f21d1246a48278c58a08bd253303ba42e8"
+  },
+  "to": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/quarantine/python",
+    "digest": "sha256:35caba83af2fe6da9a5d922f9b0156f21d1246a48278c58a08bd253303ba42e8"
+  },
+  "tag": "3.14-slim",
+  "id": "sha256:4d67bb88d4afa39830b07c8fbbd2bd1173656e145d7b8c3e6d4138a0374e3c65"
+}

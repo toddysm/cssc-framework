@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "kind": "ImageIndexObserved",
+  "recordedAt": "2026-10-24T09:52:49Z",
+  "source": {
+    "type": "github-actions",
+    "workflow": "mirror / quarantine/python",
+    "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/40083648221",
+    "runId": "40083648221",
+    "runAttempt": "1"
+  },
+  "occurrence": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/quarantine/python"
+  },
+  "index": {
+    "digest": "sha256:35caba83af2fe6da9a5d922f9b0156f21d1246a48278c58a08bd253303ba42e8",
+    "tag": "3.14-slim"
+  },
+  "platforms": [
+    {
+      "digest": "sha256:0214bda9af2652a418f2bf34373a4d3ca00a5f4784081e040049433ac9cc79d5",
+      "os": "linux",
+      "architecture": "amd64"
+    },
+    {
+      "digest": "sha256:098f04982f007df4d06640bfb03de834fcae197f3ee3bc5677e75b65fd9afc86",
+      "os": "linux",
+      "architecture": "arm",
+      "variant": "v5"
+    },
+    {
+      "digest": "sha256:923f8de011512397746017c9225e841bade72d073aa2659ddffcf504f1b4d4a0",
+      "os": "linux",
+      "architecture": "arm",
+      "variant": "v7"
+    },
+    {
+      "digest": "sha256:9c91bb40b4da9deb3ca7bd28bb593a5be44bc279fe4ccf59a50a564a679b04fb",
+      "os": "linux",
+      "architecture": "arm64",
+      "variant": "v8"
+    },
+    {
+      "digest": "sha256:51c9fa85c2365195887ccd8f47bef771cf98a67fdffd2153901a232f86a42fdd",
+      "os": "linux",
+      "architecture": "386"
+    },
+    {
+      "digest": "sha256:9d1b6d0f8e213b5a7f5d55d92bd3ae1509fd09ff6068a556d77d01122d087787",
+      "os": "linux",
+      "architecture": "ppc64le"
+    },
+    {
+      "digest": "sha256:7600988bfcbeba48518bea1fa6b8b5229c20d8e0f093ba6f871e9144ed79bc78",
+      "os": "linux",
+      "architecture": "riscv64"
+    },
+    {
+      "digest": "sha256:7bd6faafee51d90903c3add7339913519fa7e77ac20373c69e27733023f8f6c6",
+      "os": "linux",
+      "architecture": "s390x"
+    }
+  ],
+  "observedAt": "2026-10-24T09:52:49Z",
+  "id": "sha256:bff70a044cdcaae284a4f777eba24d75b05258f18887ce606ecc5afda58145d4"
+}
