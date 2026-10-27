@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from pathlib import Path
+import os
 import subprocess
 import sys
 from unittest.mock import patch
@@ -9,9 +10,14 @@ import pytest
 import yaml
 
 from cssc_common import MirrorHistoryEntry, Tag
-from mirror_history_e2e import Fixture, cleanup, serve, validate_dashboard, validate_state
+from mirror_history_e2e import (
+    Fixture, cleanup, redact_diagnostics, serve, validate_dashboard, validate_state, wait_for_visibility,
+)
 
 DIGEST = "sha256:" + "a" * 64
+HISTORY_DIGEST = "sha256:" + "b" * 64
+REFERRER_DIGEST = "sha256:" + "c" * 64
+FORCED_HISTORY_DIGEST = "sha256:" + "d" * 64
 FIXTURE = Fixture("toddysm", "123", "1")
 
 
@@ -31,9 +37,9 @@ def entry(force: bool = False) -> MirrorHistoryEntry:
 def initial():
     return validate_state(
         "initial", FIXTURE,
-        [Tag(tag="image", digest=DIGEST), Tag(tag="mirror-history")],
+        [Tag(tag="image", digest=DIGEST), Tag(tag="mirror-history", digest=HISTORY_DIGEST)],
         [Tag(tag="upstream", digest=DIGEST)],
-        [entry()], DIGEST, None, "true", "false",
+        [entry()], DIGEST, None, "true", "false", {DIGEST, HISTORY_DIGEST, REFERRER_DIGEST},
     )
 
 
@@ -53,25 +59,27 @@ def test_complete_lifecycle():
     snapshot = initial()
     for phase in ("promoted", "skipped"):
         validate_state(
-            phase, FIXTURE, [Tag(tag="mirror-history")],
+            phase, FIXTURE, [Tag(tag="mirror-history", digest=HISTORY_DIGEST)],
             [Tag(tag="upstream", digest=DIGEST), Tag(tag="image", digest=DIGEST)],
             snapshot.entries, DIGEST, snapshot,
             "false" if phase == "skipped" else None,
             "true" if phase == "skipped" else None,
+            {HISTORY_DIGEST},
         )
     forced = validate_state(
         "forced", FIXTURE,
-        [Tag(tag="image", digest=DIGEST), Tag(tag="mirror-history")],
+        [Tag(tag="image", digest=DIGEST), Tag(tag="mirror-history", digest=FORCED_HISTORY_DIGEST)],
         [Tag(tag="upstream", digest=DIGEST), Tag(tag="image", digest=DIGEST)],
         [entry(), entry(force=True)], DIGEST, snapshot, "true", "false",
+        {DIGEST, HISTORY_DIGEST, FORCED_HISTORY_DIGEST, REFERRER_DIGEST},
     )
     assert len(forced.entries) == 2
 
 
 @pytest.mark.parametrize("tags,history,copied,skipped", [
-    ([Tag(tag="mirror-history"), Tag(tag="image", digest=DIGEST)], [entry()], "false", "true"),
-    ([Tag(tag="mirror-history")], [entry(), entry()], "false", "true"),
-    ([Tag(tag="mirror-history")], [entry()], "true", "false"),
+    ([Tag(tag="mirror-history", digest=HISTORY_DIGEST), Tag(tag="image", digest=DIGEST)], [entry()], "false", "true"),
+    ([Tag(tag="mirror-history", digest=HISTORY_DIGEST)], [entry(), entry()], "false", "true"),
+    ([Tag(tag="mirror-history", digest=HISTORY_DIGEST)], [entry()], "true", "false"),
     ([], [entry()], "false", "true"),
 ])
 def test_skip_requires_no_copy_no_new_history_and_surviving_package(tags, history, copied, skipped):
@@ -79,7 +87,7 @@ def test_skip_requires_no_copy_no_new_history_and_surviving_package(tags, histor
         validate_state(
             "skipped", FIXTURE, tags,
             [Tag(tag="upstream", digest=DIGEST), Tag(tag="image", digest=DIGEST)],
-            history, DIGEST, initial(), copied, skipped,
+            history, DIGEST, initial(), copied, skipped, {HISTORY_DIGEST},
         )
 
 
@@ -87,10 +95,94 @@ def test_force_cannot_rewrite_history():
     with pytest.raises(AssertionError):
         validate_state(
             "forced", FIXTURE,
-            [Tag(tag="mirror-history"), Tag(tag="image", digest=DIGEST)],
+            [Tag(tag="mirror-history", digest=FORCED_HISTORY_DIGEST), Tag(tag="image", digest=DIGEST)],
             [Tag(tag="upstream", digest=DIGEST), Tag(tag="image", digest=DIGEST)],
             [entry(force=True)], DIGEST, initial(), "true", "false",
+            {DIGEST, HISTORY_DIGEST, FORCED_HISTORY_DIGEST, REFERRER_DIGEST},
         )
+
+
+def test_force_rerun_preserves_creation_identity_and_records_execution_attempt():
+    forced = entry(force=True).model_copy(update={"run_attempt": "2"})
+    snapshot = validate_state(
+        "forced", FIXTURE,
+        [Tag(tag="image", digest=DIGEST), Tag(tag="mirror-history", digest=FORCED_HISTORY_DIGEST)],
+        [Tag(tag="upstream", digest=DIGEST), Tag(tag="image", digest=DIGEST)],
+        [entry(), forced], DIGEST, initial(), "true", "false",
+        {DIGEST, HISTORY_DIGEST, FORCED_HISTORY_DIGEST, REFERRER_DIGEST},
+    )
+    assert snapshot.attempt == "1" and snapshot.entries[-1].run_attempt == "2"
+
+
+def test_explicit_creation_attempt_survives_a_partial_rerun(tmp_path):
+    output = tmp_path / "outputs"
+    subprocess.run(
+        [
+            sys.executable, str(Path(__file__).with_name("mirror_history_e2e.py")),
+            "coordinates", "--owner", "toddysm", "--run-id", "123", "--attempt", "1",
+        ],
+        env={**os.environ, "GITHUB_RUN_ATTEMPT": "2", "GITHUB_OUTPUT": str(output)},
+        check=True,
+    )
+    text = output.read_text()
+    assert "fixture_attempt=1\n" in text
+    assert "mirror-history-e2e-123-1/image" in text
+    assert "mirror-history-e2e-123-2" not in text
+
+
+def test_untagged_referrers_cannot_survive_promotion():
+    with pytest.raises(AssertionError, match="Untagged image/referrer"):
+        validate_state(
+            "promoted", FIXTURE, [Tag(tag="mirror-history", digest=HISTORY_DIGEST)],
+            [Tag(tag="upstream", digest=DIGEST), Tag(tag="image", digest=DIGEST)],
+            [entry()], DIGEST, initial(), None, None, {HISTORY_DIGEST, REFERRER_DIGEST},
+        )
+
+
+@pytest.mark.parametrize("status", [404, 429, 500, 502, 503, 504])
+def test_visibility_poll_retries_transient_http_errors(status):
+    attempts = 0
+
+    def observe():
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            httpx.Response(status, request=httpx.Request("GET", "https://api.github.com/fixture")).raise_for_status()
+        return initial(), "card"
+
+    with patch("mirror_history_e2e.time.sleep"):
+        snapshot, card = wait_for_visibility(observe)
+    assert attempts == 2 and card == "card" and snapshot.digest == DIGEST
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_visibility_poll_does_not_hide_authentication_failure(status):
+    def observe():
+        httpx.Response(status, request=httpx.Request("GET", "https://api.github.com/fixture")).raise_for_status()
+        return initial(), "card"
+
+    with patch("mirror_history_e2e.time.sleep") as sleep, pytest.raises(httpx.HTTPStatusError):
+        wait_for_visibility(observe)
+    sleep.assert_not_called()
+
+
+def test_visibility_poll_has_a_real_deadline():
+    def observe():
+        raise AssertionError("not visible")
+
+    with patch("mirror_history_e2e.time") as clock:
+        clock.monotonic.side_effect = [0, 91]
+        with pytest.raises(AssertionError, match="not visible"):
+            wait_for_visibility(observe)
+        clock.sleep.assert_not_called()
+
+
+def test_diagnostics_remove_signed_download_queries_and_tokens():
+    text = "token=test-only-value redirect='https://cdn.example.test/blob?sig=example-signature&hmac=example-hmac'"
+    redacted = redact_diagnostics(text, {"GITHUB_TOKEN": "test-only-value"})
+    assert "test-only-value" not in redacted
+    assert "example-signature" not in redacted and "example-hmac" not in redacted
+    assert "https://cdn.example.test/blob?[REDACTED]" in redacted
 
 
 def test_dashboard_checks_the_fixture_card_not_another_image():
@@ -160,10 +252,32 @@ def test_cleanup_fails_when_a_deleted_package_remains_visible():
     with httpx.Client(
         base_url="https://api.github.com", transport=httpx.MockTransport(handler)
     ) as client, patch("mirror_history_e2e.time") as clock:
-        clock.monotonic.side_effect = [0, 31]
+        clock.monotonic.side_effect = [0, 31, 31, 62]
         with pytest.raises(RuntimeError, match="still exists after deletion"):
             cleanup(FIXTURE, client)
         clock.sleep.assert_not_called()
+
+
+def test_cleanup_still_deletes_golden_after_quarantine_deletion_fails():
+    attempted = []
+
+    def handler(request):
+        path = request.url.path
+        if path == "/users/toddysm":
+            return httpx.Response(200, json={"type": "User"})
+        if path == "/user":
+            return httpx.Response(200, json={"login": "toddysm"})
+        if request.method == "DELETE":
+            attempted.append(path)
+            return httpx.Response(403 if "/quarantine/" in path else 204)
+        return httpx.Response(404 if path in attempted and "/golden/" in path else 200, json={})
+
+    with httpx.Client(
+        base_url="https://api.github.com", transport=httpx.MockTransport(handler)
+    ) as client, pytest.raises(RuntimeError, match="cleanup incomplete"):
+        cleanup(FIXTURE, client)
+    assert len(attempted) == 2
+    assert "/quarantine/" in attempted[0] and "/golden/" in attempted[1]
 
 
 def test_startup_errors_redact_server_credentials(tmp_path, capsys):
@@ -206,7 +320,7 @@ def test_workflow_observability_preserves_existing_artifact_default():
     )
     call = workflow["on"]["workflow_call"]
     assert call["inputs"]["graph_events_artifact_name"]["default"] == "graph-events"
-    assert set(call["outputs"]) == {"copied", "skipped", "digest"}
+    assert set(call["outputs"]) == {"copied", "skipped", "digest", "run_attempt"}
     live = yaml.load(
         (root / ".github/workflows/validate-mirror-history.yml").read_text(),
         Loader=yaml.BaseLoader,
@@ -214,3 +328,16 @@ def test_workflow_observability_preserves_existing_artifact_default():
     assert live["concurrency"]["cancel-in-progress"] == "false"
     assert live["jobs"]["cleanup"]["if"].startswith("${{ always()")
     assert live["jobs"]["promote"]["with"]["enable_approval"] == "false"
+    assert live["jobs"]["prepare"]["outputs"]["fixture_attempt"] == "${{ steps.paths.outputs.fixture_attempt }}"
+    cleanup_step = live["jobs"]["cleanup"]["steps"][-1]
+    assert cleanup_step["env"]["FIXTURE_ATTEMPT"] == "${{ needs.prepare.outputs.fixture_attempt || github.run_attempt }}"
+    for name in ("verify-initial", "verify-promoted", "verify-skipped", "verify-forced"):
+        steps = live["jobs"][name]["steps"]
+        assertion = next(step for step in steps if "FIXTURE_ATTEMPT" in step.get("env", {}))
+        assert '--attempt "${FIXTURE_ATTEMPT}"' in assertion["run"]
+        for step in steps:
+            if "download-artifact@" in step.get("uses", ""):
+                assert step["with"]["name"] == "${{ needs.verify-initial.outputs.evidence_artifact }}"
+    for name in ("verify-initial", "verify-forced"):
+        assertion = next(step for step in live["jobs"][name]["steps"] if "MIRROR_ATTEMPT" in step.get("env", {}))
+        assert '--execution-attempt "${MIRROR_ATTEMPT}"' in assertion["run"]

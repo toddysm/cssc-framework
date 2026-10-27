@@ -112,8 +112,17 @@ class OciRegistryClient:
         blob_response = self._client.get(
             f"/v2/{repository}/blobs/{layers[0]['digest']}",
             headers=auth,
+            follow_redirects=True,
         )
-        blob_response.raise_for_status()
+        try:
+            blob_response.raise_for_status()
+        except httpx.HTTPStatusError:
+            url = blob_response.request.url.copy_with(query=None)
+            raise httpx.HTTPStatusError(
+                f"Registry blob fetch failed: HTTP {blob_response.status_code} from {url}",
+                request=blob_response.request,
+                response=blob_response,
+            ) from None
         return blob_response.json()
 
     def close(self) -> None:

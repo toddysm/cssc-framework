@@ -72,6 +72,9 @@ on:
       digest:
         description: "Resolved image digest, including history-skipped runs."
         value: ${{ jobs.mirror.outputs.digest }}
+      run_attempt:
+        description: "Execution attempt that produced these mirror results."
+        value: ${{ jobs.mirror.outputs.run_attempt }}
     secrets:
       source_registry_username:
         description: "Username for source_login_registry. Required only when source_login_registry is set."
@@ -87,6 +90,7 @@ jobs:
       copied: ${{ steps.mirror.outputs.copied || 'false' }}
       skipped: ${{ inputs.record_history && steps.mirror.outputs.digest == '' }}
       digest: ${{ steps.mirror.outputs.digest || steps.source.outputs.digest }}
+      run_attempt: ${{ github.run_attempt }}
     permissions:
       contents: read
       packages: write

@@ -43,7 +43,7 @@ The run must pass all these checks:
 | Phase | Required result |
 | --- | --- |
 | Initial mirror | The image digest is preserved, history has exactly one non-forced entry, and the workflow reports copied rather than skipped. |
-| Promote and delete | The image reaches golden, its quarantine tag and referrers are deleted, and the quarantine package survives with only `mirror-history`. |
+| Promote and delete | The image reaches golden; the quarantine package's complete version inventory contains only the unchanged `mirror-history` artifact, with no tagged or untagged image/referrer versions left. |
 | Mirror again | The workflow reports a history skip; the quarantine image remains absent and history is unchanged. |
 | Force | The image is copied again and exactly one forced entry is appended without changing earlier entries. |
 | Dashboard | The fixture card shows the digests, timestamps and run links; a history-only package has zero image tags and is marked not in quarantine. |
@@ -53,16 +53,26 @@ The workflow also runs regression tests, each service's tests, `actionlint`, and
 `shellcheck -S warning` on its shell blocks.
 
 The reusable [mirror workflow](../../../.github/workflows/_mirror-image.yml)
-exposes `copied`, `skipped`, and `digest` outputs for these assertions. Its
+exposes `copied`, `skipped`, `digest`, and `run_attempt` outputs for these assertions. Its
 optional `graph_events_artifact_name` defaults to the existing `graph-events`
 name; callers invoking it repeatedly in one run must choose distinct names.
 
 ## Inspect evidence and failures
 
-Each successful observation phase publishes a `mirror-history-<phase>-<attempt>`
+Each successful observation phase publishes a
+`mirror-history-<phase>-<fixture-attempt>-<execution-attempt>`
 artifact containing `snapshot.json` and the rendered fixture card
 `acquisition.html`. Snapshots include the source digest and complete history,
-but no credentials. These artifacts are retained for 14 days.
+the history artifact digest, and the quarantine version digests, but no
+credentials. These artifacts are retained for 14 days. The initial observation
+requires an actual referrer so deletion coverage cannot pass vacuously.
+
+Visibility checks retry transient 404, 429 and server errors within a 90-second
+deadline; authentication/authorization failures are immediate errors. Diagnostic
+logs redact credentials and download-URL queries, including signed blob links.
+The registry reader follows blob redirects without forwarding registry
+authorization to another host; redirected-fetch errors retain the HTTP status
+but omit signed query strings.
 
 For success, the final `acceptance` job and `cleanup` must both pass. A green
 mirror or promotion job alone is insufficient: deletion can otherwise be
@@ -77,6 +87,13 @@ gh run view <run-id> --log-failed
 The checks before publishing reject missing credentials. Subsequent failures
 still invoke cleanup, including partial setup failures. Runs are not
 automatically cancelled when a newer commit is pushed.
+
+Partial job reruns reuse the fixture-creation attempt emitted by `prepare`,
+rather than accidentally targeting the new execution attempt's package names.
+The initial evidence artifact and each mirror's producing attempt are also
+carried explicitly between jobs. Cleanup attempts both packages independently
+and fails if either cannot be removed. For a fresh acceptance lifecycle,
+dispatch a new run instead of replaying already-completed mutations.
 
 If a runner is forcibly terminated before cleanup, obtain the original run ID
 and attempt from that run, install the declared `cssc_common` dependencies, and
