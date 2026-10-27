@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "kind": "ImageIndexObserved",
+  "recordedAt": "2026-10-27T11:07:02Z",
+  "source": {
+    "type": "github-actions",
+    "workflow": "mirror / quarantine/python",
+    "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/40493619323",
+    "runId": "40493619323",
+    "runAttempt": "1"
+  },
+  "occurrence": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/quarantine/python"
+  },
+  "index": {
+    "digest": "sha256:82abc9f53600280b0757126f83c5a7d47088592d2acb6b4c0b9e97f76865508c",
+    "tag": "3.14-slim"
+  },
+  "platforms": [
+    {
+      "digest": "sha256:4b20ddacd9adac0002725db940785e17c19d0c3ed1843f31e57418988effc58c",
+      "os": "linux",
+      "architecture": "amd64"
+    },
+    {
+      "digest": "sha256:4e4bcd6f2166cd157dd5a2d3cd809524d6db9d5c53ade97b7d45c79f0ba22792",
+      "os": "linux",
+      "architecture": "arm",
+      "variant": "v5"
+    },
+    {
+      "digest": "sha256:c1081fd528bc647c01e20f452a7d8b46800ee8d1af29dd66426a10384d9406f7",
+      "os": "linux",
+      "architecture": "arm",
+      "variant": "v7"
+    },
+    {
+      "digest": "sha256:47476ec7b3797acc726f544a03550996a40850c62c90a08824a1fd5ad227ded9",
+      "os": "linux",
+      "architecture": "arm64",
+      "variant": "v8"
+    },
+    {
+      "digest": "sha256:b5980eba30e3c76c49ec59cffb2fafebb117d2d6d1b6e1e806bd77dafc513dac",
+      "os": "linux",
+      "architecture": "386"
+    },
+    {
+      "digest": "sha256:878b5a11fa985f16b84916a5345a35fbe0c732a3d4ddd6d336313ba7b53a7cb6",
+      "os": "linux",
+      "architecture": "ppc64le"
+    },
+    {
+      "digest": "sha256:7600988bfcbeba48518bea1fa6b8b5229c20d8e0f093ba6f871e9144ed79bc78",
+      "os": "linux",
+      "architecture": "riscv64"
+    },
+    {
+      "digest": "sha256:aadf5c4636d84797e5194f7fa6ad367806b35c3eb3d810a2bb2712fd85f89491",
+      "os": "linux",
+      "architecture": "s390x"
+    }
+  ],
+  "observedAt": "2026-10-27T11:07:02Z",
+  "id": "sha256:1bda20885873a11f003d79146c3f57cb30931511ca8cafb336b8b3191839432f"
+}
