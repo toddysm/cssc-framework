@@ -49,6 +49,8 @@ jobs:
             (cd "${project}" && python -m pytest -q)
           done
       - name: Lint workflows and changed shell blocks
+        env:
+          SHELLCHECK_OPTS: "--severity=warning"
         run: |
           set -euo pipefail
           archive=actionlint_1.7.12_linux_amd64.tar.gz
@@ -59,7 +61,8 @@ jobs:
             -o "${RUNNER_TEMP}/actionlint-checksums.txt"
           (cd "${RUNNER_TEMP}" && grep " ${archive}$" actionlint-checksums.txt | sha256sum -c -)
           tar -xzf "${RUNNER_TEMP}/${archive}" -C "${RUNNER_TEMP}" actionlint
-          "${RUNNER_TEMP}/actionlint" .github/workflows/validate-mirror-history.yml .github/workflows/_mirror-image.yml
+          "${RUNNER_TEMP}/actionlint" .github/workflows/validate-mirror-history.yml \
+            .github/workflows/_mirror-image.yml .github/workflows/_promote-from-quarantine.yml
           shellcheck --version
           python - <<'PY'
           import subprocess

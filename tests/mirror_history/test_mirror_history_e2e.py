@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 import os
 import subprocess
@@ -312,6 +313,37 @@ def test_actual_http_service_becomes_ready_and_stops():
         httpx.get(f"{url}/healthz", timeout=1)
 
 
+@pytest.mark.parametrize("exclude,expected", [
+    ("true", ["image"]),
+    ("false", ["image", "sha256-subject"]),
+])
+def test_tag_enumeration_filters_metadata_without_losing_image_tags(tmp_path, exclude, expected):
+    root = Path(__file__).resolve().parents[2]
+    action = yaml.load(
+        (root / ".github/actions/enumerate-tags/action.yml").read_text(),
+        Loader=yaml.BaseLoader,
+    )
+    crane = tmp_path / "crane"
+    crane.write_text("#!/bin/sh\nprintf '%s\\n' image mirror-history sha256-subject\n")
+    crane.chmod(0o755)
+    output = tmp_path / "outputs"
+    subprocess.run(
+        ["bash", "-c", action["runs"]["steps"][0]["run"]],
+        env={
+            **os.environ,
+            "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
+            "TMPDIR": str(tmp_path),
+            "GITHUB_OUTPUT": str(output),
+            "REPOSITORY": "ghcr.io/toddysm/quarantine/test-fixture",
+            "EXCLUDE_REFERRER_TAGS": exclude,
+        },
+        check=True,
+    )
+    results = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    assert json.loads(results["tags-json"]) == expected
+    assert results["has-tags"] == "true"
+
+
 def test_workflow_observability_preserves_existing_artifact_default():
     root = Path(__file__).resolve().parents[2]
     workflow = yaml.load(
@@ -328,6 +360,15 @@ def test_workflow_observability_preserves_existing_artifact_default():
     assert live["concurrency"]["cancel-in-progress"] == "false"
     assert live["jobs"]["cleanup"]["if"].startswith("${{ always()")
     assert live["jobs"]["promote"]["with"]["enable_approval"] == "false"
+    for name in ("_promote-from-quarantine.yml", "_promote-from-quarantine-sbom.yml"):
+        promotion = yaml.load(
+            (root / ".github/workflows" / name).read_text(), Loader=yaml.BaseLoader,
+        )
+        enumeration = next(
+            step for step in promotion["jobs"]["enumerate"]["steps"]
+            if step.get("uses") == "./.github/actions/enumerate-tags"
+        )
+        assert enumeration["with"]["exclude-referrer-tags"] == "true"
     assert live["jobs"]["prepare"]["outputs"]["fixture_attempt"] == "${{ steps.paths.outputs.fixture_attempt }}"
     cleanup_step = live["jobs"]["cleanup"]["steps"][-1]
     assert cleanup_step["env"]["FIXTURE_ATTEMPT"] == "${{ needs.prepare.outputs.fixture_attempt || github.run_attempt }}"

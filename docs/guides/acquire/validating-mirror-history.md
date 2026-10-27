@@ -26,6 +26,11 @@ changing vulnerability databases making the lifecycle test nondeterministic.
 The normal Trivy scan and HIGH-severity promotion gate still run; neither
 exceptions nor approval overrides are used.
 
+Promotion excludes both `mirror-history` and the `sha256-*` fallback-referrer
+tags from its image matrix. A fallback index must remain available until the
+owning image's cleanup discovers and deletes its referrers; promoting that
+metadata tag concurrently would race with cleanup and leave untagged versions.
+
 ## Run the validation
 
 Changes to relevant actions, workflows, services, or the test harness trigger

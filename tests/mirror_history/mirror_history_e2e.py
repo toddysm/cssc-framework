@@ -189,7 +189,10 @@ def validate_state(
             assert history_digest != expected.history_digest, "Appended history must be persisted as a new artifact"
         else:
             assert set(quarantine) == {HISTORY_TAG}, "Only history may remain after deletion"
-            assert quarantine_versions == {history_digest}, "Untagged image/referrer versions must also be deleted"
+            assert quarantine_versions == {history_digest}, (
+                "Untagged image/referrer versions must also be deleted; remaining: "
+                f"{sorted(quarantine_versions - {history_digest})}"
+            )
             assert history_digest == expected.history_digest
             assert history == expected.entries, "Promotion and history skips must not append entries"
             if phase == "skipped":
