@@ -121,6 +121,7 @@ celerybeat.pid
 
 # Environments
 .env
+local.settings.json
 .venv
 env/
 venv/
@@ -162,12 +163,11 @@ cython_debug/
 # Temp files
 /temp/*
 .$*
-stages/acquire/src/image-sync/.DS_Store
+.DS_Store
 .vscode/settings.json
 
 # Includes source folders under "build" folder
 !build/**/src
-sample/src/.DS_Store
 
 # Local supply-chain graph databases (rebuildable index)
 .graph/
