@@ -15,6 +15,7 @@ both in the file system and in the Actions UI.
 | **Build** | Build an application image on top of a mirrored base | `build-<app>.yml` | `build / <app>` | `build-<app>` |
 | **Promote override** | Act on a maintainer's approve/deny of a blocked image (issue-comment or dispatch) | `promote-override.yml` | `promote override` | `promote-override-<issue>` |
 | **Report** | Watch other workflows and report CI failures as tracking issues | `report-<purpose>.yml` | `report / <purpose>` | `report-<purpose>` |
+| **Validate** | Exercise a capability with tests and disposable registry fixtures | `validate-<feature>.yml` | `validate / <feature>` | `validate-<feature>-<pull-request-or-ref>` |
 | **Reusable** | Shared logic invoked by other workflows; never triggered directly | `_<purpose>.yml` (leading underscore) | `_reusable / <purpose>` | n/a |
 | **Composite action** | A single reusable step shared across workflows | `.github/actions/<verb-noun>/action.yml` | `name: <verb-noun>` | n/a |
 
@@ -22,7 +23,7 @@ both in the file system and in the Actions UI.
 
 1. **Verb prefix.** Every workflow filename starts with a category verb:
    `mirror-`, `promote-from-quarantine-`, `promote-override`, `build-`,
-   `report-`, or a leading underscore
+   `report-`, `validate-`, or a leading underscore
    (`_`) for reusable
    workflows. This groups related workflows together alphabetically and makes
    intent obvious at a glance.
