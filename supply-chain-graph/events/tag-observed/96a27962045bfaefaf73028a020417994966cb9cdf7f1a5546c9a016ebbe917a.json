@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "kind": "TagObserved",
+  "recordedAt": "2026-10-27T12:51:25Z",
+  "source": {
+    "type": "github-actions",
+    "workflow": "promote from quarantine / quarantine/python",
+    "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/40506982967",
+    "runId": "40506982967",
+    "runAttempt": "1"
+  },
+  "occurrence": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/golden/python"
+  },
+  "tag": "sha256-82abc9f53600280b0757126f83c5a7d47088592d2acb6b4c0b9e97f76865508c",
+  "digest": "sha256:a44cd39b265ff843d9129d0cdb2c807b1fb9de6c98c9a548d660a2f59299d42a",
+  "observedAt": "2026-10-27T12:51:25Z",
+  "id": "sha256:96a27962045bfaefaf73028a020417994966cb9cdf7f1a5546c9a016ebbe917a"
+}
