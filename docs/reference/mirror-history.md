@@ -86,3 +86,6 @@ cat out/mirror-history.json | jq .
 
 The CSSC Dashboard's Acquisition view surfaces this history per repository via
 the `packages-service` `GET /packages/{name}/history` endpoint.
+
+For the repeatable mirror, promote, delete, skip, force and dashboard acceptance
+test, see [Validate mirror history end to end](../guides/acquire/validating-mirror-history.md).

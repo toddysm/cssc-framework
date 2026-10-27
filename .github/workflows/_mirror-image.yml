@@ -57,6 +57,24 @@ on:
         required: false
         default: true
         type: boolean
+      graph_events_artifact_name:
+        description: "Graph-event artifact name. Use distinct names when calling this workflow more than once in a run."
+        required: false
+        default: graph-events
+        type: string
+    outputs:
+      copied:
+        description: "Whether the mirror copied the image."
+        value: ${{ jobs.mirror.outputs.copied }}
+      skipped:
+        description: "Whether mirror history skipped the copy."
+        value: ${{ jobs.mirror.outputs.skipped }}
+      digest:
+        description: "Resolved image digest, including history-skipped runs."
+        value: ${{ jobs.mirror.outputs.digest }}
+      run_attempt:
+        description: "Execution attempt that produced these mirror results."
+        value: ${{ jobs.mirror.outputs.run_attempt }}
     secrets:
       source_registry_username:
         description: "Username for source_login_registry. Required only when source_login_registry is set."
@@ -68,6 +86,11 @@ on:
 jobs:
   mirror:
     runs-on: ubuntu-latest
+    outputs:
+      copied: ${{ steps.mirror.outputs.copied || 'false' }}
+      skipped: ${{ inputs.record_history && steps.mirror.outputs.digest == '' }}
+      digest: ${{ steps.mirror.outputs.digest || steps.source.outputs.digest }}
+      run_attempt: ${{ github.run_attempt }}
     permissions:
       contents: read
       packages: write
@@ -249,7 +272,7 @@ jobs:
         if: ${{ steps.mirror.outputs.digest != '' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: graph-events
+          name: ${{ inputs.graph_events_artifact_name }}
           path: ${{ runner.temp }}/graph-events
           if-no-files-found: ignore
           retention-days: 1

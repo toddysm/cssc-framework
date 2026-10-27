@@ -118,6 +118,7 @@ jobs:
         uses: ./.github/actions/enumerate-tags
         with:
           repository: ${{ inputs.source_repo }}
+          exclude-referrer-tags: "true"
 
       - name: Note empty repository
         if: steps.enumerate.outputs.has-tags != 'true'

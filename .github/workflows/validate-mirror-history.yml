@@ -1,0 +1,403 @@
+name: validate / mirror-history
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/validate-mirror-history.yml"
+      - ".github/workflows/_mirror-image.yml"
+      - ".github/workflows/_promote-from-quarantine.yml"
+      - ".github/actions/mirror-history/**"
+      - ".github/actions/mirror-image/**"
+      - ".github/actions/delete-image/**"
+      - ".github/actions/enumerate-tags/**"
+      - "apps/python-app/libs/cssc_common/**"
+      - "apps/python-app/services/packages-service/**"
+      - "apps/python-app/services/dashboard-web/**"
+      - "apps/python-app/services/issues-service/**"
+      - "tests/mirror_history/**"
+  workflow_dispatch:
+
+concurrency:
+  group: validate-mirror-history-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Install declared test dependencies
+        run: |
+          python -m pip install \
+            -e 'apps/python-app/libs/cssc_common[test]' \
+            -e 'apps/python-app/libs/cssc_graph[test]' \
+            -e 'apps/python-app/services/packages-service[test]' \
+            -e 'apps/python-app/services/dashboard-web[test]' \
+            -e 'apps/python-app/services/issues-service[test]' \
+            -e 'apps/python-app/services/graph-service[test]'
+      - name: Run regression and per-service tests
+        run: |
+          set -euo pipefail
+          python -m pytest -q tests/mirror_history
+          for project in apps/python-app/libs/cssc_common apps/python-app/libs/cssc_graph apps/python-app/services/*; do
+            (cd "${project}" && python -m pytest -q)
+          done
+      - name: Lint workflows and changed shell blocks
+        env:
+          SHELLCHECK_OPTS: "--severity=warning"
+        run: |
+          set -euo pipefail
+          archive=actionlint_1.7.12_linux_amd64.tar.gz
+          curl --fail --location --silent --show-error \
+            "https://github.com/rhysd/actionlint/releases/download/v1.7.12/${archive}" -o "${RUNNER_TEMP}/${archive}"
+          curl --fail --location --silent --show-error \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_checksums.txt \
+            -o "${RUNNER_TEMP}/actionlint-checksums.txt"
+          (cd "${RUNNER_TEMP}" && grep " ${archive}$" actionlint-checksums.txt | sha256sum -c -)
+          tar -xzf "${RUNNER_TEMP}/${archive}" -C "${RUNNER_TEMP}" actionlint
+          "${RUNNER_TEMP}/actionlint" .github/workflows/validate-mirror-history.yml \
+            .github/workflows/_mirror-image.yml .github/workflows/_promote-from-quarantine.yml
+          shellcheck --version
+          python - <<'PY'
+          import subprocess
+          import yaml
+          with open(".github/workflows/validate-mirror-history.yml") as source:
+              workflow = yaml.safe_load(source)
+          for job in workflow["jobs"].values():
+              for step in job.get("steps", []):
+                  if "run" in step:
+                      subprocess.run(
+                          ["shellcheck", "-s", "bash", "-S", "warning", "-"],
+                          input=step["run"], text=True, check=True,
+                      )
+          PY
+
+  prepare:
+    needs: checks
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      fixture_attempt: ${{ steps.paths.outputs.fixture_attempt }}
+      namespace: ${{ steps.paths.outputs.namespace }}
+      quarantine_image: ${{ steps.paths.outputs.quarantine_image }}
+      golden_image: ${{ steps.paths.outputs.golden_image }}
+      digest: ${{ steps.fixture.outputs.digest }}
+      owner_type: ${{ steps.identity.outputs.owner_type }}
+      username: ${{ steps.identity.outputs.username }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e apps/python-app/libs/cssc_common
+      - name: Verify the deletion credential before publishing
+        id: identity
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_DELETE_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::error::GHCR_DELETE_TOKEN is required for fixture deletion."
+            exit 1
+          fi
+          username="$(gh api user --jq '.login')"
+          scopes="$(gh api --include user | tr -d '\r' | awk 'tolower($1) == "x-oauth-scopes:" {sub(/^[^:]*:[[:space:]]*/, ""); print}')"
+          if ! printf '%s' "${scopes}" | tr -d ' ' | tr ',' '\n' | grep -qx 'delete:packages'; then
+            echo "::error::GHCR_DELETE_TOKEN requires the delete:packages scope before any fixture is published."
+            exit 1
+          fi
+          if ! printf '%s' "${scopes}" | tr -d ' ' | tr ',' '\n' | grep -qxE '(read|write):packages'; then
+            echo "::error::GHCR_DELETE_TOKEN also requires package read access."
+            exit 1
+          fi
+          owner_type="$(gh api "users/${GITHUB_REPOSITORY_OWNER}" --jq '.type')"
+          case "${owner_type}" in
+            User)
+              if [ "${username,,}" != "${GITHUB_REPOSITORY_OWNER,,}" ]; then
+                echo "::error::The deletion token must belong to the fixture owner."
+                exit 1
+              fi
+              owner_type=user
+              ;;
+            Organization) owner_type=org ;;
+            *) echo "::error::Unsupported owner type."; exit 1 ;;
+          esac
+          printf 'username=%s\nowner_type=%s\n' "${username}" "${owner_type}" >> "${GITHUB_OUTPUT}"
+      - name: Compute guarded fixture coordinates
+        id: paths
+        run: python tests/mirror_history/mirror_history_e2e.py coordinates
+      - uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
+      - uses: ./.github/actions/registry-login
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Publish a minimal scratch-image upstream fixture
+        id: fixture
+        env:
+          GOLDEN_IMAGE: ${{ steps.paths.outputs.golden_image }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/mirror-history-fixture"
+          printf 'Mirror-history acceptance fixture.\n' > "${RUNNER_TEMP}/mirror-history-fixture/fixture.txt"
+          tar -cf "${RUNNER_TEMP}/mirror-history-fixture.tar" -C "${RUNNER_TEMP}/mirror-history-fixture" fixture.txt
+          crane append --new_layer "${RUNNER_TEMP}/mirror-history-fixture.tar" --new_tag "${GOLDEN_IMAGE}:upstream"
+          crane mutate "${GOLDEN_IMAGE}:upstream" --set-platform linux/amd64 --tag "${GOLDEN_IMAGE}:upstream"
+          digest="$(crane digest "${GOLDEN_IMAGE}:upstream")"
+          echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+
+  mirror-initial:
+    needs: prepare
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/_mirror-image.yml
+    with:
+      source_image: ${{ needs.prepare.outputs.golden_image }}
+      source_tag: upstream
+      dest_image: ${{ needs.prepare.outputs.quarantine_image }}
+      dest_tag: image
+      graph_events_artifact_name: graph-events-initial-${{ github.run_attempt }}
+
+  verify-initial:
+    needs: [prepare, mirror-initial]
+    runs-on: ubuntu-latest
+    outputs:
+      evidence_artifact: mirror-history-initial-${{ needs.prepare.outputs.fixture_attempt }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - run: >-
+          python -m pip install -e apps/python-app/libs/cssc_common
+          -e apps/python-app/services/packages-service
+          -e apps/python-app/services/issues-service
+          -e apps/python-app/services/dashboard-web
+      - name: Verify the initial registry state and rendered dashboard
+        env:
+          GITHUB_TOKEN: ${{ secrets.GHCR_DELETE_TOKEN }}
+          GITHUB_OWNER_TYPE: ${{ needs.prepare.outputs.owner_type }}
+          GITHUB_USERNAME: ${{ needs.prepare.outputs.username }}
+          DIGEST: ${{ needs.mirror-initial.outputs.digest }}
+          COPIED: ${{ needs.mirror-initial.outputs.copied }}
+          SKIPPED: ${{ needs.mirror-initial.outputs.skipped }}
+          EXPECTED_DIGEST: ${{ needs.prepare.outputs.digest }}
+          FIXTURE_ATTEMPT: ${{ needs.prepare.outputs.fixture_attempt }}
+          MIRROR_ATTEMPT: ${{ needs.mirror-initial.outputs.run_attempt }}
+        run: |
+          set -euo pipefail
+          test "${DIGEST}" = "${EXPECTED_DIGEST}"
+          python tests/mirror_history/mirror_history_e2e.py initial \
+            --attempt "${FIXTURE_ATTEMPT}" \
+            --execution-attempt "${MIRROR_ATTEMPT}" \
+            --digest "${DIGEST}" --copied "${COPIED}" --skipped "${SKIPPED}" \
+            --output "${RUNNER_TEMP}/evidence"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mirror-history-initial-${{ needs.prepare.outputs.fixture_attempt }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/evidence
+          retention-days: 14
+          if-no-files-found: error
+
+  promote:
+    needs: [prepare, verify-initial]
+    permissions:
+      contents: read
+      packages: write
+      # Required by the reusable workflow even though override notifications are disabled.
+      issues: write
+    uses: ./.github/workflows/_promote-from-quarantine.yml
+    with:
+      source_repo: ${{ needs.prepare.outputs.quarantine_image }}
+      dest_repo: ${{ needs.prepare.outputs.golden_image }}
+      severity_threshold: HIGH
+      delete_source: true
+      enable_approval: false
+    secrets:
+      ghcr_delete_token: ${{ secrets.GHCR_DELETE_TOKEN }}
+
+  verify-promoted:
+    needs: [prepare, verify-initial, promote]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - run: >-
+          python -m pip install -e apps/python-app/libs/cssc_common
+          -e apps/python-app/services/packages-service
+          -e apps/python-app/services/issues-service
+          -e apps/python-app/services/dashboard-web
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ needs.verify-initial.outputs.evidence_artifact }}
+          path: ${{ runner.temp }}/initial
+      - name: Verify promotion, deletion and surviving history
+        env:
+          GITHUB_TOKEN: ${{ secrets.GHCR_DELETE_TOKEN }}
+          GITHUB_OWNER_TYPE: ${{ needs.prepare.outputs.owner_type }}
+          GITHUB_USERNAME: ${{ needs.prepare.outputs.username }}
+          DIGEST: ${{ needs.prepare.outputs.digest }}
+          FIXTURE_ATTEMPT: ${{ needs.prepare.outputs.fixture_attempt }}
+        run: |
+          python tests/mirror_history/mirror_history_e2e.py promoted \
+            --attempt "${FIXTURE_ATTEMPT}" \
+            --digest "${DIGEST}" --expected "${RUNNER_TEMP}/initial/snapshot.json" \
+            --output "${RUNNER_TEMP}/evidence"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mirror-history-promoted-${{ needs.prepare.outputs.fixture_attempt }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/evidence
+          retention-days: 14
+          if-no-files-found: error
+
+  mirror-again:
+    needs: [prepare, verify-promoted]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/_mirror-image.yml
+    with:
+      source_image: ${{ needs.prepare.outputs.golden_image }}
+      source_tag: upstream
+      dest_image: ${{ needs.prepare.outputs.quarantine_image }}
+      dest_tag: image
+      graph_events_artifact_name: graph-events-skipped-${{ github.run_attempt }}
+
+  verify-skipped:
+    needs: [prepare, verify-initial, mirror-again]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - run: >-
+          python -m pip install -e apps/python-app/libs/cssc_common
+          -e apps/python-app/services/packages-service
+          -e apps/python-app/services/issues-service
+          -e apps/python-app/services/dashboard-web
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ needs.verify-initial.outputs.evidence_artifact }}
+          path: ${{ runner.temp }}/initial
+      - name: Verify an actual history skip and unchanged dashboard history
+        env:
+          GITHUB_TOKEN: ${{ secrets.GHCR_DELETE_TOKEN }}
+          GITHUB_OWNER_TYPE: ${{ needs.prepare.outputs.owner_type }}
+          GITHUB_USERNAME: ${{ needs.prepare.outputs.username }}
+          DIGEST: ${{ needs.mirror-again.outputs.digest }}
+          COPIED: ${{ needs.mirror-again.outputs.copied }}
+          SKIPPED: ${{ needs.mirror-again.outputs.skipped }}
+          FIXTURE_ATTEMPT: ${{ needs.prepare.outputs.fixture_attempt }}
+        run: |
+          python tests/mirror_history/mirror_history_e2e.py skipped \
+            --attempt "${FIXTURE_ATTEMPT}" \
+            --digest "${DIGEST}" --copied "${COPIED}" --skipped "${SKIPPED}" \
+            --expected "${RUNNER_TEMP}/initial/snapshot.json" --output "${RUNNER_TEMP}/evidence"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mirror-history-skipped-${{ needs.prepare.outputs.fixture_attempt }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/evidence
+          retention-days: 14
+          if-no-files-found: error
+
+  mirror-force:
+    needs: [prepare, verify-skipped]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/_mirror-image.yml
+    with:
+      source_image: ${{ needs.prepare.outputs.golden_image }}
+      source_tag: upstream
+      dest_image: ${{ needs.prepare.outputs.quarantine_image }}
+      dest_tag: image
+      force: true
+      graph_events_artifact_name: graph-events-forced-${{ github.run_attempt }}
+
+  verify-forced:
+    needs: [prepare, verify-initial, mirror-force]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - run: >-
+          python -m pip install -e apps/python-app/libs/cssc_common
+          -e apps/python-app/services/packages-service
+          -e apps/python-app/services/issues-service
+          -e apps/python-app/services/dashboard-web
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ needs.verify-initial.outputs.evidence_artifact }}
+          path: ${{ runner.temp }}/initial
+      - name: Verify forced copying and append-only history
+        env:
+          GITHUB_TOKEN: ${{ secrets.GHCR_DELETE_TOKEN }}
+          GITHUB_OWNER_TYPE: ${{ needs.prepare.outputs.owner_type }}
+          GITHUB_USERNAME: ${{ needs.prepare.outputs.username }}
+          DIGEST: ${{ needs.mirror-force.outputs.digest }}
+          COPIED: ${{ needs.mirror-force.outputs.copied }}
+          SKIPPED: ${{ needs.mirror-force.outputs.skipped }}
+          FIXTURE_ATTEMPT: ${{ needs.prepare.outputs.fixture_attempt }}
+          MIRROR_ATTEMPT: ${{ needs.mirror-force.outputs.run_attempt }}
+        run: |
+          python tests/mirror_history/mirror_history_e2e.py forced \
+            --attempt "${FIXTURE_ATTEMPT}" \
+            --execution-attempt "${MIRROR_ATTEMPT}" \
+            --digest "${DIGEST}" --copied "${COPIED}" --skipped "${SKIPPED}" \
+            --expected "${RUNNER_TEMP}/initial/snapshot.json" --output "${RUNNER_TEMP}/evidence"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mirror-history-forced-${{ needs.prepare.outputs.fixture_attempt }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/evidence
+          retention-days: 14
+          if-no-files-found: error
+
+  cleanup:
+    needs: [prepare, mirror-initial, verify-initial, promote, verify-promoted, mirror-again, verify-skipped, mirror-force, verify-forced]
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e apps/python-app/libs/cssc_common
+      - name: Delete only this run's disposable packages and verify absence
+        env:
+          GITHUB_TOKEN: ${{ secrets.GHCR_DELETE_TOKEN }}
+          FIXTURE_ATTEMPT: ${{ needs.prepare.outputs.fixture_attempt || github.run_attempt }}
+        run: python tests/mirror_history/mirror_history_e2e.py cleanup --attempt "${FIXTURE_ATTEMPT}"
+
+  acceptance:
+    needs: [checks, prepare, mirror-initial, verify-initial, promote, verify-promoted, mirror-again, verify-skipped, mirror-force, verify-forced, cleanup]
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every lifecycle stage and cleanup to pass
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          results = json.loads(os.environ["RESULTS"])
+          failures = {name: result["result"] for name, result in results.items() if result["result"] != "success"}
+          if failures:
+              raise SystemExit(f"Mirror-history acceptance failed: {failures}")
+          print("PASS: mirror, promote/delete, history skip, force, dashboard, and fixture cleanup.")
+          PY
