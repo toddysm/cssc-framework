@@ -1,8 +1,9 @@
 # Mirror history: skip re-synchronizing already-mirrored digests
 
-- **Status:** implemented on branch `feature/mirror-history` (pending end-to-end validation)
+- **Status:** implemented and end-to-end validated on 2026-10-27 ([#163](https://github.com/toddysm/cssc-framework/issues/163), PR [#248](https://github.com/toddysm/cssc-framework/pull/248))
 - **Tracking issue:** [#157](https://github.com/toddysm/cssc-framework/issues/157)
 - **Stage:** Acquire
+- **Validation:** [repeatable acceptance guide](../../guides/acquire/validating-mirror-history.md)
 
 This document describes the durable **mirror history** that lets the image-mirror workflows
 stop re-synchronizing a digest they have already acquired once — even after that
@@ -10,8 +11,8 @@ digest has been promoted out of quarantine and deleted.
 
 ## Problem
 
-The mirror is **stateless**. The [`mirror-image`](../../reference/workflow-actions.md)
-action decides whether to copy by comparing two live values:
+The underlying [`mirror-image`](../../reference/workflow-actions.md) action is
+**stateless**: it decides whether to copy by comparing two live values:
 
 1. the **source** manifest digest (`crane digest docker.io/library/python:3.14-slim`), and
 2. the **destination** digest (`crane digest ghcr.io/<owner>/quarantine/python:3.14-slim`).
@@ -41,7 +42,7 @@ already synchronized for a given source tag, and skip copying a digest that is
 already recorded — while preserving every existing behaviour (`force`,
 `copy_referrers`, acquisition provenance, multi-arch, concurrency safety).
 
-Non-goals: pruning quarantine, discovering new tags, scanning, or changing the
+Non-goals: pruning quarantine, discovering new tags, scanning, or redesigning the
 promotion workflows.
 
 ## Approach: a `mirror-history` OCI artifact per synchronized repo
@@ -227,7 +228,7 @@ Key points:
 | `copy_referrers` | A recorded digest suppresses the re-copy too (skips); an unrecorded digest copies with `oras` and records. `force` refreshes referrers on demand. |
 | Multi-arch | Unaffected; history keys on the index/source digest. |
 | Concurrency | Per-image group already serializes runs → safe read-modify-write. |
-| Promotion / delete-image | Benefits: the `mirror-history` tag keeps the package alive, avoiding the last-tagged-version delete workaround. No change required in promote workflows. |
+| Promotion / delete-image | The `mirror-history` tag keeps the package alive, avoiding the last-tagged-version delete workaround. Promotion excludes fallback-referrer metadata tags so image-owned cleanup can discover and remove referrers before deleting the image. |
 | Dashboard | Extended: the Acquisition view surfaces a per-repo **synchronized history** read from the `:mirror-history` artifact, and excludes the reserved `mirror-history` tag when deciding whether an image is actually present in quarantine (see [Dashboard integration](#dashboard-integration)). |
 
 ## Dashboard integration
@@ -274,7 +275,7 @@ _All design questions are currently resolved — see below._
 - **O4 — Reserved tag.** Resolved: the reserved tag name `mirror-history` is
   confirmed and will be documented as never a valid upstream tag to mirror.
 
-## Deliverables (once approved)
+## Delivered implementation
 
 1. `mirror-history` composite action (`check` + `record`).
 2. `_mirror-image.yml` wiring (check before copy, record after).
@@ -285,3 +286,29 @@ _All design questions are currently resolved — see below._
    `mirror-history` reference page, acquire index link).
 5. End-to-end validation: mirror → promote → delete → re-run mirror shows
    **skipped (already synchronized)** instead of re-copy.
+
+## Validation evidence (2026-10-27)
+
+[Implementation PR #248](https://github.com/toddysm/cssc-framework/pull/248)
+merged as `28c7e13f6b660012903e8bc002804fd90cb9303e`.
+The [successful hosted acceptance run](https://github.com/toddysm/cssc-framework/actions/runs/40562725339)
+tested source head `364e225446e831788bec30d34dff749469f28a6d`,
+passed 182 library/service/regression tests and the live lifecycle, and verified
+both disposable packages were deleted. CodeQL passed and all review findings
+were addressed.
+
+The persisted snapshots and rendered dashboard cards prove:
+
+| Phase | History entries | Quarantine package versions |
+| --- | --- | --- |
+| Initial mirror | 1, non-forced | 4, including a real acquisition referrer |
+| Promote and delete | 1, unchanged | Only the original history artifact |
+| Mirror again | 1, unchanged; workflow reports skipped | Only the original history artifact |
+| Force | 2; original entry preserved and exactly one forced append | 5, including the new image and updated history |
+
+The validation exposed two real integration defects: the registry reader did
+not follow blob-CDN redirects, and fallback-referrer tags entered the regular
+promotion matrix, racing image-owned referrer cleanup. Both were fixed in the
+implementation PR. The regular and SBOM promotion paths now consistently exclude
+those metadata tags, and the acceptance check inspects untagged versions rather
+than inferring successful cleanup from tags alone.
