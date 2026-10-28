@@ -217,7 +217,9 @@ preserved). `show` resolves the current/indexed target.
 JSON observations retain `observedAt`, `digest`, `occurrence`, and `runUrl`, and
 add `validFrom`, `validUntil`, `ambiguous`, and
 `intervalBasis: "observations"`. Bounds are UTC-normalized and ordered by real
-instants, not timestamp text. Consecutive observations of the same target share
+instants, not timestamp text, preserving fractional precision beyond microseconds
+and accepting lowercase RFC 3339 `t`/`z` and leap-second notation.
+Consecutive observations of the same target share
 one inferred window; a later, different target closes that window. Returning to
 an earlier digest starts a new window.
 

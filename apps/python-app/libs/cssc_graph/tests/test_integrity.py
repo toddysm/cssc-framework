@@ -429,3 +429,58 @@ def test_show_keeps_tag_observations_chronological_across_tag_names(store: Graph
         "z-first",
         "a-second",
     ]
+
+
+def test_schema_valid_lowercase_utc_timestamp_is_supported(store: GraphStore):
+    """RFC 3339 permits lowercase t/z even though datetime rejects lowercase z."""
+    Indexer(store).index_record(tag("2026-10-28t00:00:00z"))
+    assert (
+        queries.tag_history(store, REF, "stable")[0]["validFrom"]
+        == "2026-10-28T00:00:00Z"
+    )
+
+
+def test_schema_valid_leap_second_stays_between_adjacent_seconds(store: GraphStore):
+    """A leap second is neither rejected nor collapsed into the next minute."""
+    Indexer(store).index_records(
+        [
+            tag("2027-01-01T00:00:00Z"),
+            tag("2026-12-31T23:59:60Z", OTHER),
+            tag("2026-12-31T23:59:59.999999999Z"),
+        ]
+    )
+    rows = queries.tag_history(store, REF, "stable")
+    assert [row["digest"] for row in rows] == [DIGEST, OTHER, DIGEST]
+    assert rows[0]["validUntil"] == rows[1]["validFrom"] == "2026-12-31T23:59:60Z"
+    assert rows[1]["validUntil"] == "2027-01-01T00:00:00Z"
+
+
+def test_deployments_preserve_sub_microsecond_order(store: GraphStore):
+    """Deployment ordering follows exact instants rather than truncated event-ID ties."""
+    Indexer(store).index_records(
+        [
+            deployed("2026-10-28T00:00:00.0000002Z", version="later"),
+            deployed("2026-10-28t00:00:00.0000001z", version="earlier"),
+        ]
+    )
+    assert [row["chartVersion"] for row in queries.deployment_history(store, REF)] == [
+        "earlier",
+        "later",
+    ]
+
+
+def test_sub_microsecond_instants_do_not_become_a_false_conflict(store: GraphStore):
+    """Datetime truncation must not collapse two distinct schema-valid observations."""
+    Indexer(store).index_records(
+        [
+            tag("2026-10-28T00:00:00.0000002Z", OTHER),
+            tag("2026-10-28T01:00:00.0000001+01:00"),
+        ]
+    )
+    rows = queries.tag_history(store, REF, "stable")
+    assert not any(row["ambiguous"] for row in rows)
+    assert rows[0]["validFrom"] == "2026-10-28T00:00:00.0000001Z"
+    assert (
+        rows[0]["validUntil"] == rows[1]["validFrom"] == "2026-10-28T00:00:00.0000002Z"
+    )
+    assert queries.resolve_seed(store, ref=f"{REF}:stable") == [f"{REF}@{OTHER}"]
