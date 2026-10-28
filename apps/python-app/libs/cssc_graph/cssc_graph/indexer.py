@@ -191,11 +191,12 @@ class Indexer:
         self._store.execute(
             "MATCH (d:Deployment {key: $dep}), (o:Occurrence {key: $image}) "
             "MERGE (d)-[r:RUNS {eventId: $eventId}]->(o) "
-            "SET r.chart = $chart, r.chartVersion = $chartVersion, "
+            "SET r.sourceJson = $sourceJson, r.chart = $chart, r.chartVersion = $chartVersion, "
             "r.runUrl = $runUrl, r.recordedAt = $recordedAt",
             {
                 "dep": dep_key,
                 "eventId": event_id,
+                "sourceJson": canonical_json(record.get("source", {})),
                 "image": image_key,
                 "chart": chart.get("name", ""),
                 "chartVersion": chart.get("version", ""),

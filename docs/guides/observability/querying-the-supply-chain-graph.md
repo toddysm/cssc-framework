@@ -166,8 +166,9 @@ responses under `diagnostics`. A strict failure leaves liveness healthy but
 readiness returns **503**, queries return **503**, and `POST /index/rebuild`
 returns **422** with the actionable diagnostic list.
 
-Deployment history now uses an additive `RUNS.eventId` property. A database made
-with older code is rejected by `index` with explicit rebuild guidance; no
+Deployment history now uses additive `RUNS.eventId` and `RUNS.sourceJson`
+properties. A database made with older code is rejected by both index and
+query opens with explicit rebuild guidance; no
 automatic migration or silent history deletion is performed. Rebuild the
 **derived** database from committed source records:
 
@@ -247,7 +248,7 @@ occurrence: ghcr.io/toddysm/golden/python@sha256:2222…2222
 #### Deployment observations for an image
 
 `deployments` returns every retained observation with its environment, chart,
-timestamp, run link, and stable `eventId`. `show --format json` includes the same
+timestamp, run link, complete `source` evidence, and stable `eventId`. `show --format json` includes the same
 history in `deployments` and the inferred intervals in `tags`.
 
 ```bash

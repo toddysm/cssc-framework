@@ -315,10 +315,12 @@ def test_http_history_and_show_preserve_deployment_events(tmp_path: Path) -> Non
     second = deepcopy(first)
     second["recordedAt"] = "2026-08-11T00:00:00Z"
     second["chart"]["version"] = "0.1.3"
+    second["source"] = {**SOURCE, "runAttempt": "2", "issueUrl": "https://github.com/example/repo/issues/1"}
     root = _write_data_root(tmp_path, [*RECORDS, ("artifact-deployed", second)])
     with TestClient(create_app(_settings(tmp_path, root))) as client:
         rows = client.get("/artifacts/deployments", params={"ref": APP_REF}).json()["deployments"]
         assert len(rows) == 2 and rows[0]["eventId"] != rows[1]["eventId"]
+        assert rows[1]["source"] == second["source"]
         shown = client.get("/artifacts/show", params={"ref": f"{APP_REF}@{DIGEST_APP}"}).json()
         assert shown["deployments"] == rows
         assert client.post("/index/rebuild").status_code == 200

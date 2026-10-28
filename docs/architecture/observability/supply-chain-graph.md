@@ -470,7 +470,8 @@ not merely a deployment, deletion, base or referrer-subject reference.
 
 `RUNS` relationships are keyed by a full deployment-observation `eventId`,
 including recorded time and source evidence. Distinct deployments do not
-overwrite earlier observations; identical replays stay idempotent. Shared
+overwrite earlier observations; identical replays stay idempotent. The complete
+source payload is retained as `RUNS.sourceJson` and returned as `source`. Shared
 queries, `cssc-graph deployments`, `GET /artifacts/deployments`, and artifact
 details expose the retained evidence. Old derived databases lacking this
 property require an explicit rebuild; source schemas remain unchanged.

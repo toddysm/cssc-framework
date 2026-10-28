@@ -6,6 +6,7 @@ the future graph service share one implementation. Traversals are bounded.
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import UTC, datetime
 from fractions import Fraction
@@ -388,10 +389,12 @@ def deployment_history(store: GraphStore, ref: str) -> list[dict[str, Any]]:
         rows.extend(store.query(
             "MATCH (d:Deployment)-[e:RUNS]->(o:Occurrence {key: $key}) "
             "RETURN d.cluster AS cluster, d.namespace AS namespace, o.key AS occurrence, "
-            "e.eventId AS eventId, e.chart AS chart, e.chartVersion AS chartVersion, "
+            "e.eventId AS eventId, e.sourceJson AS sourceJson, e.chart AS chart, e.chartVersion AS chartVersion, "
             "e.recordedAt AS recordedAt, e.runUrl AS runUrl",
             {"key": key},
         ))
+    for row in rows:
+        row["source"] = json.loads(row.pop("sourceJson"))
     return sorted(rows, key=lambda row: (_instant(row["recordedAt"]), row["eventId"]))
 
 

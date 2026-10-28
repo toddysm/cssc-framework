@@ -151,7 +151,12 @@ def test_deployment_evidence_changes_are_not_overwritten(store: GraphStore):
     second = deepcopy(first)
     second["source"] = {**SOURCE, "workflow": "another observation"}
     Indexer(store).index_records([first, second, first])
-    assert len(queries.deployment_history(store, REF)) == 2
+    history = queries.deployment_history(store, REF)
+    assert len(history) == 2
+    assert {row["source"]["workflow"] for row in history} == {
+        "integrity fixture",
+        "another observation",
+    }
 
 
 def test_intervals_merge_repeated_targets_and_sort_real_instants(store: GraphStore):
@@ -352,6 +357,24 @@ def test_old_schema_is_rejected_with_rebuild_guidance(tmp_path: Path):
             row["name"] == "eventId"
             for row in graph.query("CALL table_info('RUNS') RETURN name")
         )
+
+
+@pytest.mark.parametrize("command", ["show", "deployments"])
+def test_legacy_read_commands_return_rebuild_guidance(tmp_path: Path, command: str):
+    """Read-only CLI commands reject legacy schemas before projecting missing fields."""
+    database = tmp_path / "old"
+    with GraphStore(database) as graph:
+        graph.execute("CREATE NODE TABLE Occurrence(key STRING, PRIMARY KEY(key))")
+        graph.execute("CREATE NODE TABLE Deployment(key STRING, PRIMARY KEY(key))")
+        graph.execute(
+            "CREATE REL TABLE RUNS(FROM Deployment TO Occurrence, recordedAt STRING)"
+        )
+    result = CliRunner().invoke(
+        cli, [command, "--ref", f"{REF}@{DIGEST}", "-d", str(database)]
+    )
+    assert result.exit_code == 1
+    assert "cssc-graph index --rebuild" in result.output
+    assert "Binder exception" not in result.output
 
 
 def test_tag_target_can_revert_and_intervals_stay_separate(store: GraphStore):

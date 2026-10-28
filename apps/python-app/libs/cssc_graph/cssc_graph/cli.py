@@ -185,9 +185,13 @@ def _format_option(func):
 
 
 def _open_store(database: Path):
+    """Open a compatible graph for queries, with actionable legacy-rebuild errors."""
     from .graph import GraphStore
 
-    return GraphStore(database).connect()
+    try:
+        return GraphStore(database).connect()
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 def _emit_subgraph(subgraph: dict, output_format: str) -> None:
