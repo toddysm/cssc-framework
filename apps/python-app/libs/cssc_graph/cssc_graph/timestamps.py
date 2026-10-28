@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from calendar import monthrange
 from datetime import UTC, datetime
 from fractions import Fraction
 
@@ -22,6 +23,12 @@ def _parts(value: str) -> tuple[datetime, bool, str]:
     # Position leap seconds after every fraction of :59, not at the next :00.
     parseable = whole[:-2] + "59" if leap_second else whole
     timestamp = datetime.fromisoformat(parseable.upper() + zone.upper()).astimezone(UTC)
+    if leap_second and (
+        timestamp.hour != 23
+        or timestamp.minute != 59
+        or timestamp.day != monthrange(timestamp.year, timestamp.month)[1]
+    ):
+        raise ValueError("leap-second notation is only valid at the end of a UTC month")
     return timestamp, leap_second, fraction or ""
 
 

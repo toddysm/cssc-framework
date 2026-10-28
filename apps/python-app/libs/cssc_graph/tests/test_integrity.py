@@ -480,6 +480,10 @@ def test_schema_valid_lowercase_utc_timestamp_is_supported(store: GraphStore):
         ("observedAt", "2026-10-28T01:00:00-00:99"),
         ("observedAt", "2026-10-28T01:00:00+23:60"),
         ("observedAt", "2026-10-28T01:00:00+24:00"),
+        ("observedAt", "2016-12-31T12:00:60Z"),
+        ("observedAt", "2016-12-31T23:58:60Z"),
+        ("observedAt", "2016-12-30T23:59:60Z"),
+        ("observedAt", "2016-12-31T23:59:60+01:00"),
     ],
 )
 def test_malformed_timestamps_fail_validation_before_indexing(
@@ -516,7 +520,8 @@ def test_malformed_timestamps_fail_validation_before_indexing(
     [
         "2026-10-28t00:00:00z",
         "2026-10-28T00:00:00.00000000001Z",
-        "2026-12-31T23:59:60Z",
+        "2016-12-31T23:59:60Z",
+        "2017-01-01T00:59:60+01:00",
     ],
 )
 def test_schema_and_query_timestamp_contracts_agree(tmp_path: Path, timestamp: str):
@@ -542,15 +547,15 @@ def test_schema_valid_leap_second_stays_between_adjacent_seconds(store: GraphSto
     """A leap second is neither rejected nor collapsed into the next minute."""
     Indexer(store).index_records(
         [
-            tag("2027-01-01T00:00:00Z"),
-            tag("2026-12-31T23:59:60Z", OTHER),
-            tag("2026-12-31T23:59:59.999999999Z"),
+            tag("2017-01-01T00:00:00Z"),
+            tag("2016-12-31T23:59:60Z", OTHER),
+            tag("2016-12-31T23:59:59.999999999Z"),
         ]
     )
     rows = queries.tag_history(store, REF, "stable")
     assert [row["digest"] for row in rows] == [DIGEST, OTHER, DIGEST]
-    assert rows[0]["validUntil"] == rows[1]["validFrom"] == "2026-12-31T23:59:60Z"
-    assert rows[1]["validUntil"] == "2027-01-01T00:00:00Z"
+    assert rows[0]["validUntil"] == rows[1]["validFrom"] == "2016-12-31T23:59:60Z"
+    assert rows[1]["validUntil"] == "2017-01-01T00:00:00Z"
 
 
 def test_deployments_preserve_sub_microsecond_order(store: GraphStore):

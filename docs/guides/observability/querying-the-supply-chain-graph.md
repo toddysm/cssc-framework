@@ -226,6 +226,9 @@ add `validFrom`, `validUntil`, `ambiguous`, and
 `intervalBasis: "observations"`. Bounds are UTC-normalized and ordered by real
 instants, not timestamp text, preserving fractional precision beyond microseconds
 and accepting lowercase RFC 3339 `t`/`z` and leap-second notation.
+Leap markers must fall at the end of a UTC month after applying the offset.
+This validates timestamp structure, not the truth of a recorded event or an
+external authority's leap-second announcement schedule.
 Consecutive observations of the same target share
 one inferred window; a later, different target closes that window. Returning to
 an earlier digest starts a new window.
