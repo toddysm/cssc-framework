@@ -350,3 +350,15 @@ def test_strict_reference_environment_configuration(monkeypatch) -> None:
     assert graph_settings().strict_references is False
     monkeypatch.setenv("STRICT_REFERENCES", "true")
     assert graph_settings().strict_references is True
+
+
+def test_invalid_timestamp_is_rejected_before_serving_queries(tmp_path: Path) -> None:
+    """Malformed dates fail startup schema checks rather than later read endpoints."""
+    records = deepcopy(RECORDS)
+    records[0][1]["recordedAt"] = "not-a-timestamp"
+    root = _write_data_root(tmp_path, records)
+    with TestClient(create_app(_settings(tmp_path, root))) as client:
+        assert client.get("/readyz").status_code == 503
+        response = client.post("/index/rebuild")
+        assert response.status_code == 422
+        assert any("$.recordedAt" in item and "date-time" in item for item in response.json()["detail"])

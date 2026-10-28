@@ -128,6 +128,10 @@ Indexed 7 record(s) into /tmp/demo-db.
 Schema validation always rejects malformed records. Indexing additionally checks
 references against the **entire input set**, not file order. It never contacts a
 remote registry to fill a missing record.
+Date-time validation uses the same exact RFC 3339 parser as the queries,
+regardless of whether optional `jsonschema` format-checking extras are installed.
+Malformed timestamps fail the build with file/field diagnostics, not later
+queries with a server error.
 
 Direct observations declare occurrences: `ArtifactObserved`, both sides of a
 successful mirror, promotion destinations, built images, tag observations,

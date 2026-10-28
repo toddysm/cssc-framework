@@ -469,6 +469,60 @@ def test_schema_valid_lowercase_utc_timestamp_is_supported(store: GraphStore):
     )
 
 
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("recordedAt", "not-a-timestamp"),
+        ("observedAt", "2026-10-28T00:00:00"),
+        ("observedAt", "2026-02-30T00:00:00Z"),
+        ("observedAt", "2026-10-28T00:00:00+99:00"),
+    ],
+)
+def test_malformed_timestamps_fail_validation_before_indexing(
+    tmp_path: Path, field: str, value: str
+):
+    """Schema checks must not silently skip date-time without optional dependency extras."""
+    from cssc_graph.validate import validate_data
+
+    record = tag("2026-10-28T00:00:00Z")
+    record[field] = value
+    (tmp_path / "tag.json").write_text(json.dumps(record))
+    diagnostics = validate_data(tmp_path, SCHEMAS)
+    assert any(
+        item.location == f"$.{field}" and "date-time" in item.message
+        for item in diagnostics
+    )
+    result = CliRunner().invoke(
+        cli,
+        [
+            "index",
+            str(tmp_path),
+            "--schema-dir",
+            str(SCHEMAS),
+            "-d",
+            str(tmp_path / "db"),
+        ],
+    )
+    assert result.exit_code == 1 and "nothing indexed" in result.output
+    assert not (tmp_path / "db").exists()
+
+
+@pytest.mark.parametrize(
+    "timestamp",
+    [
+        "2026-10-28t00:00:00z",
+        "2026-10-28T00:00:00.00000000001Z",
+        "2026-12-31T23:59:60Z",
+    ],
+)
+def test_schema_and_query_timestamp_contracts_agree(tmp_path: Path, timestamp: str):
+    """The shared format checker accepts every supported exact query timestamp spelling."""
+    from cssc_graph.validate import validate_data
+
+    (tmp_path / "tag.json").write_text(json.dumps(tag(timestamp)))
+    assert validate_data(tmp_path, SCHEMAS) == []
+
+
 def test_schema_valid_leap_second_stays_between_adjacent_seconds(store: GraphStore):
     """A leap second is neither rejected nor collapsed into the next minute."""
     Indexer(store).index_records(
