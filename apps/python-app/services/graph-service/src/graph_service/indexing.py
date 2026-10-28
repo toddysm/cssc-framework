@@ -86,7 +86,10 @@ class GraphIndex:
                 if not diagnostics and settings.strict_references:
                     diagnostics = reference_diagnostics(iter_records(root, schema_dir), strict=True)
                 if diagnostics:
-                    raise IndexingError([d.format(root) for d in diagnostics])
+                    messages = [d.format(root) for d in diagnostics]
+                    for message in messages:
+                        logger.error("%s", message)
+                    raise IndexingError(messages)
             if self._store is not None:
                 self._store.close()
                 self._store = None

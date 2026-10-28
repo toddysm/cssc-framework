@@ -359,9 +359,9 @@ def test_old_schema_is_rejected_with_rebuild_guidance(tmp_path: Path):
         )
 
 
-@pytest.mark.parametrize("command", ["show", "deployments"])
+@pytest.mark.parametrize("command", ["show", "deployments", "index"])
 def test_legacy_read_commands_return_rebuild_guidance(tmp_path: Path, command: str):
-    """Read-only CLI commands reject legacy schemas before projecting missing fields."""
+    """Query and index CLI opens turn legacy-schema rejection into actionable Click errors."""
     database = tmp_path / "old"
     with GraphStore(database) as graph:
         graph.execute("CREATE NODE TABLE Occurrence(key STRING, PRIMARY KEY(key))")
@@ -369,12 +369,18 @@ def test_legacy_read_commands_return_rebuild_guidance(tmp_path: Path, command: s
         graph.execute(
             "CREATE REL TABLE RUNS(FROM Deployment TO Occurrence, recordedAt STRING)"
         )
-    result = CliRunner().invoke(
-        cli, [command, "--ref", f"{REF}@{DIGEST}", "-d", str(database)]
-    )
+    if command == "index":
+        root = tmp_path / "input"
+        root.mkdir()
+        (root / "observed.json").write_text(json.dumps(observed()))
+        args = ["index", str(root), "--schema-dir", str(SCHEMAS), "-d", str(database)]
+    else:
+        args = [command, "--ref", f"{REF}@{DIGEST}", "-d", str(database)]
+    result = CliRunner().invoke(cli, args)
     assert result.exit_code == 1
     assert "cssc-graph index --rebuild" in result.output
     assert "Binder exception" not in result.output
+    assert result.exception is not None and isinstance(result.exception, SystemExit)
 
 
 def test_tag_target_can_revert_and_intervals_stay_separate(store: GraphStore):

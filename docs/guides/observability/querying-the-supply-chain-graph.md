@@ -165,6 +165,8 @@ reference warnings are logged and listed in `/readyz` and `/index/rebuild`
 responses under `diagnostics`. A strict failure leaves liveness healthy but
 readiness returns **503**, queries return **503**, and `POST /index/rebuild`
 returns **422** with the actionable diagnostic list.
+Startup logs also include each file, field, target and remediation diagnostic,
+so operators do not need to request a rebuild to discover the missing evidence.
 
 Deployment history now uses additive `RUNS.eventId` and `RUNS.sourceJson`
 properties. A database made with older code is rejected by both index and

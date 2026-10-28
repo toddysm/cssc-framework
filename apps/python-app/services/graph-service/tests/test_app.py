@@ -283,7 +283,7 @@ def test_unresolved_references_are_visible_in_permissive_readiness(client: TestC
     assert any("unresolved occurrence" in item and "$.base" in item for item in body["diagnostics"])
 
 
-def test_strict_references_fail_readiness_and_rebuild(tmp_path: Path) -> None:
+def test_strict_references_fail_readiness_and_rebuild(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     """Strict service indexing reports missing evidence instead of serving a partial graph."""
     root = _write_data_root(tmp_path, RECORDS)
     settings = replace(_settings(tmp_path, root), strict_references=True)
@@ -293,6 +293,9 @@ def test_strict_references_fail_readiness_and_rebuild(tmp_path: Path) -> None:
         response = strict.post("/index/rebuild")
         assert response.status_code == 422
         assert any("$.base" in diagnostic for diagnostic in response.json()["detail"])
+    assert "events/artifact-built/1.json" in caplog.text
+    assert "$.base" in caplog.text and DIGEST_UP in caplog.text
+    assert "add an observation/acquisition/build record" in caplog.text
 
 
 def test_strict_references_resolve_later_input_evidence(tmp_path: Path) -> None:

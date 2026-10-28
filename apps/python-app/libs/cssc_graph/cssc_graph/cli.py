@@ -147,12 +147,12 @@ def index(root: Path, database: Path, schema_dir: Path | None, rebuild: bool, st
 
     if rebuild:
         GraphStore.destroy(database)
-    with GraphStore(database) as store:
-        try:
+    try:
+        with GraphStore(database) as store:
             store.init_schema()
-        except ValueError as exc:
-            raise click.ClickException(str(exc)) from exc
-        stats = index_data(store, root, resolved_schema_dir)
+            stats = index_data(store, root, resolved_schema_dir)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
 
     for diagnostic in stats.diagnostics:
         click.echo(diagnostic.format(root), err=True)
