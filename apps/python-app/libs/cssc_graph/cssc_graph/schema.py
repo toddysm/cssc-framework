@@ -10,8 +10,19 @@ from typing import Any
 from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry, Resource
 
+from .timestamps import instant
+
 SCHEMA_GLOB = "*.schema.json"
 SOURCES_SCHEMA_TITLE = "Sources"
+FORMAT_CHECKER = FormatChecker()
+
+
+@FORMAT_CHECKER.checks("date-time", raises=(ValueError, OverflowError))
+def _is_date_time(value: object) -> bool:
+    """Enforce the query parser's timestamp contract even without optional format extras."""
+    if isinstance(value, str):
+        instant(value)
+    return True
 
 
 @dataclass(frozen=True)
@@ -23,10 +34,11 @@ class SchemaBundle:
     sources_schema: dict[str, Any] | None
 
     def validator_for(self, schema: dict[str, Any]) -> Draft202012Validator:
+        """Validate references and formats using the same timestamp syntax as graph queries."""
         return Draft202012Validator(
             schema,
             registry=self.registry,
-            format_checker=FormatChecker(),
+            format_checker=FORMAT_CHECKER,
         )
 
 

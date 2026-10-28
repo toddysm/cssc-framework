@@ -20,6 +20,7 @@ class GraphSettings:
     schema_dir: Path | None
     rebuild_on_startup: bool
     max_depth: int
+    strict_references: bool = False
 
 
 def graph_settings() -> GraphSettings:
@@ -34,6 +35,8 @@ def graph_settings() -> GraphSettings:
     * ``REBUILD_ON_STARTUP`` — rebuild the database from files on start (default
       ``true``; the single writer owns an ephemeral graph).
     * ``MAX_DEPTH`` — hard cap applied to every traversal depth (default ``6``).
+    * ``STRICT_REFERENCES`` — reject missing independent occurrence evidence
+      instead of indexing with visible warnings (default ``false``).
     """
 
     schema_env = os.environ.get("SCHEMA_DIR")
@@ -43,4 +46,5 @@ def graph_settings() -> GraphSettings:
         schema_dir=Path(schema_env) if schema_env else None,
         rebuild_on_startup=_flag(os.environ.get("REBUILD_ON_STARTUP", "true")),
         max_depth=int(os.environ.get("MAX_DEPTH", "6")),
+        strict_references=_flag(os.environ.get("STRICT_REFERENCES", "false")),
     )

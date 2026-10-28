@@ -16,6 +16,8 @@ from typing import Any, Iterator
 
 from cssc_graph.graph import GraphStore
 from cssc_graph.indexer import index_data
+from cssc_graph.records import iter_records
+from cssc_graph.references import reference_diagnostics
 from cssc_graph.validate import default_schema_dir, validate_data
 
 from .config import GraphSettings
@@ -37,9 +39,11 @@ class GraphNotReady(RuntimeError):
 
 @dataclass
 class IndexInfo:
+    """Current indexed counts and visible non-fatal reference diagnostics."""
     records: int = 0
     by_kind: dict[str, int] = field(default_factory=dict)
     root: str = ""
+    diagnostics: list[str] = field(default_factory=list)
 
 
 class GraphIndex:
@@ -70,11 +74,22 @@ class GraphIndex:
             yield self._store
 
     def rebuild(self) -> IndexInfo:
-        """(Re)build the database from the data root; single writer via a lock."""
+        """Validate before replacing derived state; strict failures leave it not ready."""
 
         settings = self._settings
         with self._lock:
             self.ready = False
+            root = settings.data_root
+            schema_dir = settings.schema_dir or default_schema_dir(root)
+            if root.exists():
+                diagnostics = validate_data(root, schema_dir)
+                if not diagnostics and settings.strict_references:
+                    diagnostics = reference_diagnostics(iter_records(root, schema_dir), strict=True)
+                if diagnostics:
+                    messages = [d.format(root) for d in diagnostics]
+                    for message in messages:
+                        logger.error("%s", message)
+                    raise IndexingError(messages)
             if self._store is not None:
                 self._store.close()
                 self._store = None
@@ -84,15 +99,15 @@ class GraphIndex:
             store.init_schema()
 
             info = IndexInfo(root=str(settings.data_root))
-            root = settings.data_root
             if root.exists():
-                schema_dir = settings.schema_dir or default_schema_dir(root)
-                diagnostics = validate_data(root, schema_dir)
-                if diagnostics:
-                    store.close()
-                    raise IndexingError([d.format(root) for d in diagnostics])
                 stats = index_data(store, root, schema_dir)
-                info = IndexInfo(records=stats.records, by_kind=dict(stats.by_kind), root=str(root))
+                warnings = [d.format(root) for d in stats.diagnostics]
+                for warning in warnings:
+                    logger.warning("%s", warning)
+                info = IndexInfo(
+                    records=stats.records, by_kind=dict(stats.by_kind), root=str(root),
+                    diagnostics=warnings,
+                )
             else:
                 logger.warning("data root %s does not exist; serving an empty graph", root)
 
@@ -110,4 +125,8 @@ class GraphIndex:
             self.ready = False
 
     def as_dict(self) -> dict[str, Any]:
-        return {"records": self.info.records, "byKind": self.info.by_kind, "root": self.info.root}
+        """Expose counts and reference warnings through readiness and rebuild responses."""
+        return {
+            "records": self.info.records, "byKind": self.info.by_kind, "root": self.info.root,
+            "diagnostics": self.info.diagnostics,
+        }

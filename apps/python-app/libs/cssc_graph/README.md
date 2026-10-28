@@ -25,6 +25,14 @@ cssc-graph id supply-chain-graph/examples/artifact-mirrored.yaml
 
 `validate` exits non-zero on any error, so it fits pre-commit and CI.
 
+For current indexing, query and integrity behavior, see the
+[query guide](../../../../docs/guides/observability/querying-the-supply-chain-graph.md).
+`index` emits unresolved-reference warnings by default;
+`validate --strict-references` and `index --strict-references` reject missing
+independent occurrence evidence. Deployment observations are available through
+`deployments --ref`, and `tag-history --format json` includes explicit
+observation-derived intervals and ambiguity.
+
 ## Concepts
 
 - **Envelope** — the common wrapper on every record (`schemaVersion`, `kind`,

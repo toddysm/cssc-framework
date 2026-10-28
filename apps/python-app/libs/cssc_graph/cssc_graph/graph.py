@@ -40,7 +40,7 @@ SCHEMA_DDL: tuple[str, ...] = (
     "CREATE REL TABLE IF NOT EXISTS POINTED_TO("
     "FROM Tag TO Occurrence, observedAt STRING, digest STRING, runUrl STRING)",
     "CREATE REL TABLE IF NOT EXISTS RUNS("
-    "FROM Deployment TO Occurrence, chart STRING, chartVersion STRING, "
+    "FROM Deployment TO Occurrence, eventId STRING, sourceJson STRING, chart STRING, chartVersion STRING, "
     "runUrl STRING, recordedAt STRING)",
     "CREATE REL TABLE IF NOT EXISTS REFERS_TO("
     "FROM Occurrence TO Occurrence, artifactType STRING, observedAt STRING, "
@@ -62,13 +62,32 @@ class GraphStore:
     # -- lifecycle ----------------------------------------------------------
 
     def connect(self) -> "GraphStore":
+        """Open the database and reject incompatible history schemas without altering them."""
         import ladybug as lb  # lazy: only the graph commands need the native dep
 
         self._db = lb.Database(str(self._path))
         self._conn = lb.Connection(self._db)
+        try:
+            self.check_history_schema()
+        except ValueError:
+            self.close()
+            raise
         return self
 
+    def check_history_schema(self) -> None:
+        """Read-only compatibility guard shared by query opens and schema initialization."""
+        existing = self.query("CALL show_tables() RETURN name")
+        if any(row["name"] == "RUNS" for row in existing):
+            columns = self.query("CALL table_info('RUNS') RETURN name")
+            if not {"eventId", "sourceJson"}.issubset({row["name"] for row in columns}):
+                raise ValueError(
+                    "graph schema predates deployment event history; rebuild this derived "
+                    "database with cssc-graph index --rebuild (source files are unchanged)"
+                )
+
     def init_schema(self) -> None:
+        """Create a fresh schema or reject an old deployment table without data loss."""
+        self.check_history_schema()
         for ddl in SCHEMA_DDL:
             self.execute(ddl)
 

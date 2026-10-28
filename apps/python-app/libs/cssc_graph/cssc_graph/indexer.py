@@ -2,26 +2,31 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
 from .graph import GraphStore
 from .identity import (
+    canonical_json,
     make_occurrence_key,
     make_ref,
     split_ref,
     tag_key,
 )
 from .records import iter_records
+from .references import UnresolvedReferences, reference_diagnostics
+from .validate import Diagnostic
 
 
 @dataclass
 class IndexStats:
-    """Counts produced by an indexing run."""
+    """Indexed record counts and non-fatal reference diagnostics for one input set."""
 
     records: int = 0
     by_kind: dict[str, int] = field(default_factory=dict)
+    diagnostics: list[Diagnostic] = field(default_factory=list)
 
     def bump(self, kind: str) -> None:
         self.records += 1
@@ -175,17 +180,23 @@ class Indexer:
         )
 
     def _index_artifact_deployed(self, record: Mapping[str, Any]) -> None:
+        """Preserve each full deployment observation; replaying it is idempotent."""
         image_key = self._merge_occurrence_from(record["image"])
         env = record.get("environment", {})
         dep_key = self._merge_deployment(env.get("cluster", ""), env.get("namespace", ""))
         chart = record.get("chart", {})
+        event_id = "sha256:" + hashlib.sha256(
+            canonical_json({key: value for key, value in record.items() if key != "id"}).encode("utf-8")
+        ).hexdigest()
         self._store.execute(
             "MATCH (d:Deployment {key: $dep}), (o:Occurrence {key: $image}) "
-            "MERGE (d)-[r:RUNS]->(o) "
-            "SET r.chart = $chart, r.chartVersion = $chartVersion, "
+            "MERGE (d)-[r:RUNS {eventId: $eventId}]->(o) "
+            "SET r.sourceJson = $sourceJson, r.chart = $chart, r.chartVersion = $chartVersion, "
             "r.runUrl = $runUrl, r.recordedAt = $recordedAt",
             {
                 "dep": dep_key,
+                "eventId": event_id,
+                "sourceJson": canonical_json(record.get("source", {})),
                 "image": image_key,
                 "chart": chart.get("name", ""),
                 "chartVersion": chart.get("version", ""),
@@ -300,7 +311,8 @@ def _run_url(record: Mapping[str, Any]) -> str:
 
 
 def _snake(kind: str) -> str:
-    out = []
+    """Map a record kind to its per-kind indexer method suffix."""
+    out: list[str] = []
     for ch in kind:
         if ch.isupper() and out:
             out.append("_")
@@ -308,8 +320,21 @@ def _snake(kind: str) -> str:
     return "".join(out)
 
 
-def index_data(store: GraphStore, root: Path, schema_dir: Path | None = None) -> IndexStats:
-    """Index every record under *root* into *store*."""
+def index_data(
+    store: GraphStore, root: Path, schema_dir: Path | None = None,
+    *, strict_references: bool = False,
+) -> IndexStats:
+    """Index a validated input set, returning reference diagnostics.
 
+    Strict unresolved references raise before any record writes. Declarations
+    anywhere in this input set resolve references regardless of file order.
+    """
+
+    records = list(iter_records(root, schema_dir))
+    diagnostics = reference_diagnostics(records, strict=strict_references)
+    if strict_references and diagnostics:
+        raise UnresolvedReferences(diagnostics)
     indexer = Indexer(store)
-    return indexer.index_records(data for _, data in iter_records(root, schema_dir))
+    stats = indexer.index_records(data for _, data in records)
+    stats.diagnostics = diagnostics
+    return stats

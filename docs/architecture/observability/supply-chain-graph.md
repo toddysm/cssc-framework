@@ -1,6 +1,8 @@
 # Supply-chain graph: file-backed indexing
 
-> **Status:** Proposed (design under review). No code has been implemented yet.
+> **Status:** Core graph Phases 1–6 are implemented. The integrity behavior below
+> covers [#232](https://github.com/toddysm/cssc-framework/issues/232); inventory
+> and other follow-ups remain separately tracked.
 > Requirements: [#168](https://github.com/toddysm/cssc-framework/issues/168).
 > Storage-engine context: [#145](https://github.com/toddysm/cssc-framework/issues/145)
 > (Kùzu is archived; this design uses **LadybugDB** — its maintained successor,
@@ -458,9 +460,29 @@ graph never asserts an exact introducing layer the data cannot prove.
 ### Validation
 
 Every record is validated against a JSON Schema in `schema/` before indexing.
-The indexer rejects unknown `kind`s, malformed identity, and unresolved
-references with actionable diagnostics (which file, which field, why) rather than
-silently producing a partial graph.
+Unknown `kind`s and malformed identity always fail validation. A second,
+file-order-independent pass reports references without independent occurrence
+evidence anywhere in the input set. Default indexing retains permissive
+placeholder behavior with visible warnings; `--strict-references` and service
+`STRICT_REFERENCES=true` reject these cases before indexing. A declaration is a
+direct artifact/tag/platform observation or a successful acquire/build output,
+not merely a deployment, deletion, base or referrer-subject reference.
+
+`RUNS` relationships are keyed by a full deployment-observation `eventId`,
+including recorded time and source evidence. Distinct deployments do not
+overwrite earlier observations; identical replays stay idempotent. The complete
+source payload is retained as `RUNS.sourceJson` and returned as `source`. Shared
+queries, `cssc-graph deployments`, `GET /artifacts/deployments`, and artifact
+details expose the retained evidence. Old derived databases lacking this
+property require an explicit rebuild; source schemas remain unchanged.
+
+Tag-history queries order timezone-aware instants and add UTC `validFrom` and
+`validUntil` observation-derived bounds. Repeated consecutive targets share a
+window. Simultaneous conflicting targets have unknown bounds and an explicit
+ambiguity flag; a latest conflict does not resolve to an arbitrary current
+target. No inferred window asserts continuous registry validity between
+observations. See the [query guide](../../guides/observability/querying-the-supply-chain-graph.md)
+for exact diagnostics, configuration, commands and output semantics.
 
 ## Indexing model
 
