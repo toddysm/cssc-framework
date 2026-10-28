@@ -6,6 +6,8 @@ the future graph service share one implementation. Traversals are bounded.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from itertools import groupby
 from typing import Any
 
 from .graph import GraphStore
@@ -66,12 +68,9 @@ def resolve_seed(store: GraphStore, *, digest: str | None = None, ref: str | Non
 
 
 def _latest_tag_occurrence(store: GraphStore, registry: str, repository: str, tag: str) -> str | None:
-    rows = store.query(
-        "MATCH (t:Tag {key: $tk})-[e:POINTED_TO]->(o:Occurrence) "
-        "RETURN o.key AS key ORDER BY e.observedAt DESC LIMIT 1",
-        {"tk": tag_key(registry, repository, tag)},
-    )
-    return rows[0]["key"] if rows else None
+    """Resolve the latest real instant only when the observed target is unambiguous."""
+    rows = tag_history(store, f"{registry}/{repository}", tag)
+    return rows[-1]["occurrence"] if rows and not rows[-1]["ambiguous"] else None
 
 
 def _neighbors(store: GraphStore, key: str, rel: str, outgoing: bool) -> list[dict[str, Any]]:
@@ -305,13 +304,73 @@ def index_of(store: GraphStore, child_key: str) -> str | None:
 
 
 def tag_history(store: GraphStore, ref: str, tag: str) -> list[dict[str, Any]]:
+    """Return original observations plus inferred, UTC-normalized target windows.
+
+    Consecutive unambiguous observations of one digest share a window. A
+    conflicting observation breaks inference; an unknown end is never "now".
+    Bounds describe observations, not proof of continuous registry validity.
+    """
     registry, repository = split_ref(ref)
-    return store.query(
+    rows = store.query(
         "MATCH (t:Tag {key: $tk})-[e:POINTED_TO]->(o:Occurrence) "
         "RETURN e.observedAt AS observedAt, o.digest AS digest, o.key AS occurrence, "
         "e.runUrl AS runUrl ORDER BY e.observedAt",
         {"tk": tag_key(registry, repository, tag)},
     )
+    rows.sort(key=lambda row: (
+        _instant(row["observedAt"]), row["digest"], row["runUrl"] or "", row["observedAt"],
+    ))
+    groups = [list(group) for _, group in groupby(rows, key=lambda row: _instant(row["observedAt"]))]
+    start = 0
+    while start < len(groups):
+        group = groups[start]
+        digest = group[0]["digest"]
+        if len({row["digest"] for row in group}) > 1:
+            for row in group:
+                row.update(validFrom=None, validUntil=None, ambiguous=True, intervalBasis="observations")
+            start += 1
+            continue
+        end = start + 1
+        while end < len(groups) and {row["digest"] for row in groups[end]} == {digest}:
+            end += 1
+        until = None
+        if end < len(groups) and len({row["digest"] for row in groups[end]}) == 1:
+            until = _utc(groups[end][0]["observedAt"])
+        for window in groups[start:end]:
+            for row in window:
+                row.update(
+                    validFrom=_utc(group[0]["observedAt"]), validUntil=until,
+                    ambiguous=False, intervalBasis="observations",
+                )
+        start = end
+    return rows
+
+
+def _instant(value: str) -> datetime:
+    """Parse an evidence timestamp as an aware instant; reject missing timezone data."""
+    timestamp = datetime.fromisoformat(value)
+    if timestamp.tzinfo is None:
+        raise ValueError(f"observation timestamp requires a timezone: {value!r}")
+    return timestamp.astimezone(UTC)
+
+
+def _utc(value: str) -> str:
+    """Serialize a valid evidence timestamp in UTC for interval bounds."""
+    return _instant(value).isoformat().replace("+00:00", "Z")
+
+
+def deployment_history(store: GraphStore, ref: str) -> list[dict[str, Any]]:
+    """Return every deployment observation for resolved occurrences in real-time order."""
+    rows: list[dict[str, Any]] = []
+    for key in resolve_seed(store, ref=ref):
+        rows.extend(store.query(
+            "MATCH (d:Deployment)-[e:RUNS]->(o:Occurrence {key: $key}) "
+            "RETURN d.cluster AS cluster, d.namespace AS namespace, o.key AS occurrence, "
+            "e.eventId AS eventId, e.chart AS chart, e.chartVersion AS chartVersion, "
+            "e.recordedAt AS recordedAt, e.runUrl AS runUrl",
+            {"key": key},
+        ))
+    return sorted(rows, key=lambda row: (_instant(row["recordedAt"]), row["eventId"]))
 
 
 def find(
@@ -347,6 +406,7 @@ def find(
 
 
 def show(store: GraphStore, ref: str) -> dict[str, Any] | None:
+    """Inspect one occurrence, including tag intervals and immutable deployment observations."""
     seeds = resolve_seed(store, ref=ref)
     if not seeds:
         return None
@@ -364,16 +424,24 @@ def show(store: GraphStore, ref: str) -> dict[str, Any] | None:
         "RETURN art.digest AS digest, art.mediaType AS mediaType, art.artifactType AS artifactType",
         {"k": key},
     )
-    tags = store.query(
+    tag_names = store.query(
         "MATCH (t:Tag)-[e:POINTED_TO]->(o:Occurrence {key: $k}) "
-        "RETURN t.tag AS tag, e.observedAt AS observedAt ORDER BY e.observedAt",
+        "RETURN DISTINCT t.tag AS tag ORDER BY tag",
         {"k": key},
     )
+    tags = [
+        {"tag": row["tag"], **observation}
+        for row in tag_names
+        for observation in tag_history(store, occ["ref"], row["tag"])
+        if observation["occurrence"] == key
+    ]
+    tags.sort(key=lambda row: (_instant(row["observedAt"]), row["tag"], row["digest"]))
     return {
         "occurrence": occ,
         "artifact": artifact[0] if artifact else None,
         "annotations": annotations,
         "tags": tags,
+        "deployments": deployment_history(store, key),
         "referrers": referrers(store, ref=key)["edges"],
         "deleted": bool(occ.get("deletedAt")),
         "path": traverse(store, [key], PATH_RELS, direction="both", max_depth=2),

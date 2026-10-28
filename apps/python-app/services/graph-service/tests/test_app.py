@@ -9,6 +9,8 @@ unavailable.
 from __future__ import annotations
 
 import json
+from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -16,7 +18,6 @@ import pytest
 pytest.importorskip("ladybug")
 
 from fastapi.testclient import TestClient  # noqa: E402
-
 from graph_service.app import create_app  # noqa: E402
 from graph_service.config import GraphSettings  # noqa: E402
 
@@ -274,3 +275,73 @@ def test_not_ready_when_data_invalid(tmp_path: Path) -> None:
         assert broken.get("/healthz").status_code == 200
         assert broken.get("/readyz").status_code == 503
         assert broken.get("/artifacts/path", params={"ref": f"{APP_REF}@{DIGEST_APP}"}).status_code == 503
+
+
+def test_unresolved_references_are_visible_in_permissive_readiness(client: TestClient) -> None:
+    """Default indexing remains ready but exposes missing base-image evidence."""
+    body = client.get("/readyz").json()
+    assert any("unresolved occurrence" in item and "$.base" in item for item in body["diagnostics"])
+
+
+def test_strict_references_fail_readiness_and_rebuild(tmp_path: Path) -> None:
+    """Strict service indexing reports missing evidence instead of serving a partial graph."""
+    root = _write_data_root(tmp_path, RECORDS)
+    settings = replace(_settings(tmp_path, root), strict_references=True)
+    with TestClient(create_app(settings)) as strict:
+        assert strict.get("/healthz").status_code == 200
+        assert strict.get("/readyz").status_code == 503
+        response = strict.post("/index/rebuild")
+        assert response.status_code == 422
+        assert any("$.base" in diagnostic for diagnostic in response.json()["detail"])
+
+
+def test_strict_references_resolve_later_input_evidence(tmp_path: Path) -> None:
+    """A later source observation resolves an earlier base reference in strict mode."""
+    upstream = {
+        "schemaVersion": 1, "kind": "ArtifactObserved", "recordedAt": "2026-08-10T00:00:00Z",
+        "source": SOURCE,
+        "artifact": {"digest": DIGEST_UP},
+        "occurrence": {"registry": "docker.io", "repository": "library/python", "digest": DIGEST_UP},
+    }
+    root = _write_data_root(tmp_path, [*RECORDS, ("artifact-observed", upstream)])
+    with TestClient(create_app(replace(_settings(tmp_path, root), strict_references=True))) as strict:
+        response = strict.get("/readyz")
+        assert response.status_code == 200 and response.json()["diagnostics"] == []
+
+
+def test_http_history_and_show_preserve_deployment_events(tmp_path: Path) -> None:
+    """The HTTP query and artifact details share append-only deployment history."""
+    first = next(record for kind, record in RECORDS if kind == "artifact-deployed")
+    second = deepcopy(first)
+    second["recordedAt"] = "2026-08-11T00:00:00Z"
+    second["chart"]["version"] = "0.1.3"
+    root = _write_data_root(tmp_path, [*RECORDS, ("artifact-deployed", second)])
+    with TestClient(create_app(_settings(tmp_path, root))) as client:
+        rows = client.get("/artifacts/deployments", params={"ref": APP_REF}).json()["deployments"]
+        assert len(rows) == 2 and rows[0]["eventId"] != rows[1]["eventId"]
+        shown = client.get("/artifacts/show", params={"ref": f"{APP_REF}@{DIGEST_APP}"}).json()
+        assert shown["deployments"] == rows
+        assert client.post("/index/rebuild").status_code == 200
+        assert client.get("/artifacts/deployments", params={"ref": APP_REF}).json()["deployments"] == rows
+
+
+def test_http_tag_intervals_and_ambiguous_resolution(tmp_path: Path) -> None:
+    """Conflicting observations return explicit unknown bounds and no arbitrary current target."""
+    first = next(record for kind, record in RECORDS if kind == "tag-observed")
+    second = {**first, "digest": DIGEST_GOLDEN}
+    root = _write_data_root(tmp_path, [*RECORDS, ("tag-observed", second)])
+    with TestClient(create_app(_settings(tmp_path, root))) as client:
+        rows = client.get("/repositories/tags/history", params={"ref": APP_REF, "tag": "0.1.0"}).json()["observations"]
+        assert len(rows) == 2 and all(row["ambiguous"] for row in rows)
+        assert all(row["validFrom"] is None for row in rows)
+        assert client.get("/artifacts/resolve", params={"ref": f"{APP_REF}:0.1.0"}).json()["occurrences"] == []
+
+
+def test_strict_reference_environment_configuration(monkeypatch) -> None:
+    """Operators can opt into strict references without changing default callers."""
+    from graph_service.config import graph_settings
+
+    monkeypatch.delenv("STRICT_REFERENCES", raising=False)
+    assert graph_settings().strict_references is False
+    monkeypatch.setenv("STRICT_REFERENCES", "true")
+    assert graph_settings().strict_references is True

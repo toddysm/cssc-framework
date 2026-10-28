@@ -40,7 +40,7 @@ SCHEMA_DDL: tuple[str, ...] = (
     "CREATE REL TABLE IF NOT EXISTS POINTED_TO("
     "FROM Tag TO Occurrence, observedAt STRING, digest STRING, runUrl STRING)",
     "CREATE REL TABLE IF NOT EXISTS RUNS("
-    "FROM Deployment TO Occurrence, chart STRING, chartVersion STRING, "
+    "FROM Deployment TO Occurrence, eventId STRING, chart STRING, chartVersion STRING, "
     "runUrl STRING, recordedAt STRING)",
     "CREATE REL TABLE IF NOT EXISTS REFERS_TO("
     "FROM Occurrence TO Occurrence, artifactType STRING, observedAt STRING, "
@@ -69,6 +69,15 @@ class GraphStore:
         return self
 
     def init_schema(self) -> None:
+        """Create a fresh schema or reject an old deployment table without data loss."""
+        existing = self.query("CALL show_tables() RETURN name")
+        if any(row["name"] == "RUNS" for row in existing):
+            columns = self.query("CALL table_info('RUNS') RETURN name")
+            if not any(row["name"] == "eventId" for row in columns):
+                raise ValueError(
+                    "graph schema predates deployment event history; rebuild this derived "
+                    "database with cssc-graph index --rebuild (source files are unchanged)"
+                )
         for ddl in SCHEMA_DDL:
             self.execute(ddl)
 

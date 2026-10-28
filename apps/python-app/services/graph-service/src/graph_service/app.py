@@ -149,6 +149,12 @@ def create_app(settings: GraphSettings | None = None, index: GraphIndex | None =
         with reading() as store:
             return {"observations": queries.tag_history(store, ref, tag)}
 
+    @app.get("/artifacts/deployments")
+    def artifact_deployments(ref: str = Query(...)) -> dict[str, Any]:
+        """Return append-only deployment observations for an artifact or repository."""
+        with reading() as store:
+            return {"deployments": queries.deployment_history(store, ref)}
+
     @app.get("/search")
     def search(
         annotation: str | None = Query(None, description="name=value"),

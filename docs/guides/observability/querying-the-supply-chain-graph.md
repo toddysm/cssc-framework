@@ -123,6 +123,62 @@ Indexed 7 record(s) into /tmp/demo-db.
 > git-ignored). The examples use `-d /tmp/demo-db`; set it once as `DB=/tmp/demo-db`
 > to shorten the commands. Every query command accepts `--format text|json`.
 
+### Reference integrity, history, and upgrading an existing database
+
+Schema validation always rejects malformed records. Indexing additionally checks
+references against the **entire input set**, not file order. It never contacts a
+remote registry to fill a missing record.
+
+Direct observations declare occurrences: `ArtifactObserved`, both sides of a
+successful mirror, promotion destinations, built images, tag observations,
+referrer artifacts, and an observed image index plus its discovered platforms.
+References that need independent evidence are promotion sources, build bases,
+deployed images, deleted artifacts, and referrer subjects. A record in another
+repository with the same digest does not resolve a missing occurrence.
+
+The default remains permissive: missing independent evidence produces a visible
+warning while preserving the previous placeholder-node behavior:
+
+```text
+warning: events/deploy.json: $.image: unresolved occurrence ghcr.io/example/app@sha256:...: add an observation/acquisition/build record or include the missing evidence in the data root
+Indexed 1 record(s) into /tmp/demo-db.
+```
+
+For authoring or environments that require a complete local evidence set:
+
+```bash
+cssc-graph validate supply-chain-graph --strict-references --format json
+cssc-graph index supply-chain-graph -d /tmp/demo-db --rebuild --strict-references
+```
+
+Strict failures exit non-zero with file, field, target and remediation
+diagnostics. They occur **before** indexing or deleting an existing database:
+
+```text
+error: events/deploy.json: $.image: unresolved occurrence ghcr.io/example/app@sha256:...: add an observation/acquisition/build record or include the missing evidence in the data root
+Error: 1 validation error(s); nothing indexed.
+```
+
+For `graph-service`, set `STRICT_REFERENCES=true` (Helm:
+`graph-service.config.STRICT_REFERENCES: "true"`). The default is `"false"`;
+reference warnings are logged and listed in `/readyz` and `/index/rebuild`
+responses under `diagnostics`. A strict failure leaves liveness healthy but
+readiness returns **503**, queries return **503**, and `POST /index/rebuild`
+returns **422** with the actionable diagnostic list.
+
+Deployment history now uses an additive `RUNS.eventId` property. A database made
+with older code is rejected by `index` with explicit rebuild guidance; no
+automatic migration or silent history deletion is performed. Rebuild the
+**derived** database from committed source records:
+
+```bash
+cssc-graph index supply-chain-graph -d /tmp/demo-db --rebuild
+```
+
+The service already rebuilds its derived database on startup. The source record
+schemas are unchanged. Historical observations already lost from the source
+files cannot be reconstructed by this change.
+
 ### Answering the common questions
 
 Each question below is one of the required query outcomes from the requirements.
@@ -158,6 +214,21 @@ cssc-graph cypher -d "$DB" 'MATCH (o:Occurrence) WHERE o.digest = "'"$D"'" RETUR
 are stored as append-only observations, never a mutable edge, so history is
 preserved). `show` resolves the current/indexed target.
 
+JSON observations retain `observedAt`, `digest`, `occurrence`, and `runUrl`, and
+add `validFrom`, `validUntil`, `ambiguous`, and
+`intervalBasis: "observations"`. Bounds are UTC-normalized and ordered by real
+instants, not timestamp text. Consecutive observations of the same target share
+one inferred window; a later, different target closes that window. Returning to
+an earlier digest starts a new window.
+
+These are **observation-derived windows**, not proof of continuous tag validity
+or the exact moment a registry tag changed. The last window's end is `null`,
+not the current time. Conflicting digests at the same instant have
+`ambiguous: true` and both bounds `null`; they also leave the preceding upper
+bound unknown. A latest conflicting observation resolves to no current target,
+rather than arbitrarily selecting a digest. Original observations and their
+evidence remain inspectable.
+
 ```bash
 cssc-graph tag-history --repo ghcr.io/toddysm/golden/python --tag 3.14-slim -d "$DB"
 cssc-graph show --ref ghcr.io/toddysm/golden/python:3.14-slim -d "$DB"
@@ -170,6 +241,23 @@ cssc-graph show --ref ghcr.io/toddysm/golden/python:3.14-slim -d "$DB"
 occurrence: ghcr.io/toddysm/golden/python@sha256:2222…2222
   tag: 3.14-slim @ 2026-08-09T13:10:05Z
 ```
+
+#### Deployment observations for an image
+
+`deployments` returns every retained observation with its environment, chart,
+timestamp, run link, and stable `eventId`. `show --format json` includes the same
+history in `deployments` and the inferred intervals in `tags`.
+
+```bash
+cssc-graph deployments \
+  --ref ghcr.io/toddysm/apps/cssc-dashboard/packages-service -d "$DB" --format json
+```
+
+Two observations of the same image in the same environment remain distinct when
+their timestamps, chart or source evidence differ. Replaying an identical
+record does not duplicate it. The deployment `eventId` hashes the complete record
+except its optional `id`, including time and source evidence; it is deliberately
+different from the semantic content ID used for persisted source facts.
 
 #### 3. Given a built image — direct and transitive base images
 
@@ -345,6 +433,7 @@ parameters. `depth` is clamped to the service's `MAX_DEPTH`.
 | Full supply-chain path | `path` | `GET /artifacts/path?ref=…` (or `?digest=…`) |
 | Current tag target | `show --ref repo:tag` | `GET /artifacts/show?ref=repo:tag` |
 | Tag history | `tag-history` | `GET /repositories/tags/history?ref=…&tag=…` |
+| Deployment observations | `deployments --ref` | `GET /artifacts/deployments?ref=…` |
 | Direct + transitive bases | `bases` | `GET /artifacts/bases?ref=…` |
 | Downstream derived images | `derived` | `GET /artifacts/derived?base=…` |
 | Find by annotation/type/repo | `find` | `GET /search?annotation=…` / `?type=…` / `?ref=…` |

@@ -57,13 +57,19 @@ def cli() -> None:
     default="text",
     help="Output format.",
 )
-def validate(root: Path, schema_dir: Path | None, output_format: str) -> None:
-    """Validate every record under ROOT against the JSON Schemas."""
+@click.option("--strict-references", is_flag=True, help="Also reject references without independent input evidence.")
+def validate(root: Path, schema_dir: Path | None, output_format: str, strict_references: bool) -> None:
+    """Validate schemas, optionally requiring all occurrence references to resolve."""
 
     resolved_schema_dir = schema_dir or default_schema_dir(root)
     try:
         files = discover_record_files(root, resolved_schema_dir)
         diagnostics = validate_data(root, resolved_schema_dir)
+        if strict_references and not diagnostics:
+            from .records import iter_records
+            from .references import reference_diagnostics
+
+            diagnostics = reference_diagnostics(iter_records(root, resolved_schema_dir), strict=True)
     except (FileNotFoundError, ValueError) as exc:
         raise click.ClickException(str(exc))
 
@@ -116,12 +122,18 @@ def validate(root: Path, schema_dir: Path | None, output_format: str) -> None:
     is_flag=True,
     help="Delete any existing database first for a clean rebuild.",
 )
-def index(root: Path, database: Path, schema_dir: Path | None, rebuild: bool) -> None:
-    """Validate ROOT, then index its records into a LadybugDB graph."""
+@click.option("--strict-references", is_flag=True, help="Reject unresolved references before changing the database.")
+def index(root: Path, database: Path, schema_dir: Path | None, rebuild: bool, strict_references: bool) -> None:
+    """Validate and index ROOT; default reference warnings preserve permissive behavior."""
 
     resolved_schema_dir = schema_dir or default_schema_dir(root)
     try:
         diagnostics = validate_data(root, resolved_schema_dir)
+        if strict_references and not diagnostics:
+            from .records import iter_records
+            from .references import reference_diagnostics
+
+            diagnostics = reference_diagnostics(iter_records(root, resolved_schema_dir), strict=True)
     except (FileNotFoundError, ValueError) as exc:
         raise click.ClickException(str(exc))
     if diagnostics:
@@ -136,9 +148,14 @@ def index(root: Path, database: Path, schema_dir: Path | None, rebuild: bool) ->
     if rebuild:
         GraphStore.destroy(database)
     with GraphStore(database) as store:
-        store.init_schema()
+        try:
+            store.init_schema()
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
         stats = index_data(store, root, resolved_schema_dir)
 
+    for diagnostic in stats.diagnostics:
+        click.echo(diagnostic.format(root), err=True)
     click.echo(f"Indexed {stats.records} record(s) into {database}.")
     for kind, count in sorted(stats.by_kind.items()):
         click.echo(f"  {kind}: {count}")
@@ -215,7 +232,7 @@ def path(database: Path, digest: str | None, ref: str | None, depth: int, output
 @click.option("--tag", required=True)
 @_format_option
 def tag_history(database: Path, repo: str, tag: str, output_format: str) -> None:
-    """List every digest a tag pointed to over time, chronologically."""
+    """List tag observations and evidence-derived intervals, with ambiguity explicit."""
 
     from . import queries
 
@@ -229,7 +246,36 @@ def tag_history(database: Path, repo: str, tag: str, output_format: str) -> None
         return
     for entry in history:
         click.echo(f"  {entry['observedAt']}  {entry['digest']}  {entry.get('runUrl', '')}".rstrip())
+        click.echo(
+            f"    observed interval: [{entry['validFrom'] or 'unknown'}, "
+            f"{entry['validUntil'] or 'unknown'}); ambiguous={entry['ambiguous']}"
+        )
     click.echo(f"{len(history)} observation(s).")
+
+
+@cli.command(name="deployments")
+@_database_option
+@click.option("--ref", required=True, help="The deployed registry/repository[@digest|:tag].")
+@_format_option
+def deployments(database: Path, ref: str, output_format: str) -> None:
+    """List distinct deployment observations in chronological order."""
+    from . import queries
+
+    store = _open_store(database)
+    try:
+        history = queries.deployment_history(store, ref)
+    finally:
+        store.close()
+    if output_format == "json":
+        click.echo(json.dumps(history, indent=2))
+    else:
+        for entry in history:
+            click.echo(
+                f"{entry['recordedAt']}  {entry['cluster']}/{entry['namespace']}  "
+                f"{entry['occurrence']}  chart={entry['chart']}:{entry['chartVersion']}  "
+                f"event={entry['eventId']}"
+            )
+        click.echo(f"{len(history)} deployment observation(s).")
 
 
 @cli.command()
