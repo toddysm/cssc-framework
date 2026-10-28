@@ -54,7 +54,9 @@ around: **Acquire, Build, Catalog, Deploy, Run**, and the cross-cutting
 
 ## In progress
 
-None currently.
+| Capability | Feature slug | Tracking issue | PRD doc | Docs |
+| --- | --- | --- | --- | --- |
+| Observability: graph data-model integrity — unresolved-reference diagnostics, deployment history, tag validity intervals | graph-integrity | [#232](https://github.com/toddysm/cssc-framework/issues/232), [#250](https://github.com/toddysm/cssc-framework/issues/250) | — | Architecture: [graph design](architecture/observability/supply-chain-graph.md); User: [query guide](guides/observability/querying-the-supply-chain-graph.md) |
 
 ## Planned
 
@@ -66,7 +68,7 @@ None currently.
 
 | Observability: graph evidence — typed SBOM/provenance/vuln/signature relationships + verification state | graph-typed-evidence | [#230](https://github.com/toddysm/cssc-framework/issues/230) || Observability: indexing lifecycle — incremental indexing + schema migration | graph-index-lifecycle | [#233](https://github.com/toddysm/cssc-framework/issues/233) |
 
-| Observability: base-image attribution confidence/unknown state on `BUILT_FROM` | graph-base-confidence | [#231](https://github.com/toddysm/cssc-framework/issues/231) || Observability: graph data-model integrity — unresolved-reference diagnostics, deployment history, tag validity intervals | graph-integrity | [#232](https://github.com/toddysm/cssc-framework/issues/232) |
+| Observability: base-image attribution confidence/unknown state on `BUILT_FROM` | graph-base-confidence | [#231](https://github.com/toddysm/cssc-framework/issues/231) |
 
 ## Deferred / Won't do
 
