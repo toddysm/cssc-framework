@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "kind": "TagObserved",
+  "recordedAt": "2026-10-28T19:05:32Z",
+  "source": {
+    "type": "github-actions",
+    "workflow": "build / cssc-dashboard",
+    "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/40750502702",
+    "runId": "40750502702",
+    "runAttempt": "1"
+  },
+  "occurrence": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/apps/cssc-dashboard/issues-service"
+  },
+  "tag": "0",
+  "digest": "sha256:25c8cb8733215c86949192b9c7f843dd9c60d64cc26ab9abf0d4658ec5dc7ae0",
+  "observedAt": "2026-10-28T19:05:32Z",
+  "id": "sha256:287ab6fc690202a5b1d035dca0ed0547e68025589345a4aa9db08be71f530c11"
+}
