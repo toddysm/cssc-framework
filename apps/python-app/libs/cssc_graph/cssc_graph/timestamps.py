@@ -10,7 +10,7 @@ from fractions import Fraction
 def _parts(value: str) -> tuple[datetime, bool, str]:
     """Parse RFC 3339, retaining leap-second and exact fractional evidence."""
     match = re.fullmatch(
-        r"(\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2})(?:\.(\d+))?([Zz]|[+-]\d{2}:\d{2})",
+        r"(\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2})(?:\.(\d+))?([Zz]|[+-](?:[01]\d|2[0-3]):[0-5]\d)",
         value,
     )
     if match is None:

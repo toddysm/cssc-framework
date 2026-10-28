@@ -476,6 +476,10 @@ def test_schema_valid_lowercase_utc_timestamp_is_supported(store: GraphStore):
         ("observedAt", "2026-10-28T00:00:00"),
         ("observedAt", "2026-02-30T00:00:00Z"),
         ("observedAt", "2026-10-28T00:00:00+99:00"),
+        ("observedAt", "2026-10-28T01:00:00+00:60"),
+        ("observedAt", "2026-10-28T01:00:00-00:99"),
+        ("observedAt", "2026-10-28T01:00:00+23:60"),
+        ("observedAt", "2026-10-28T01:00:00+24:00"),
     ],
 )
 def test_malformed_timestamps_fail_validation_before_indexing(
@@ -521,6 +525,17 @@ def test_schema_and_query_timestamp_contracts_agree(tmp_path: Path, timestamp: s
 
     (tmp_path / "tag.json").write_text(json.dumps(tag(timestamp)))
     assert validate_data(tmp_path, SCHEMAS) == []
+
+
+@pytest.mark.parametrize("offset", ["+00:00", "-00:00", "+23:59", "-23:59"])
+def test_valid_offset_boundaries_remain_accepted(offset: str):
+    """Reject malformed minutes/hours without narrowing the valid RFC 3339 offset range."""
+    from cssc_graph.schema import FORMAT_CHECKER
+    from cssc_graph.timestamps import utc
+
+    timestamp = f"2026-10-28T12:00:00{offset}"
+    assert FORMAT_CHECKER.conforms(timestamp, "date-time")
+    assert utc(timestamp).endswith("Z")
 
 
 def test_schema_valid_leap_second_stays_between_adjacent_seconds(store: GraphStore):
