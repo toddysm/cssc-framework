@@ -270,6 +270,10 @@ their timestamps, chart or source evidence differ. Replaying an identical
 record does not duplicate it. The deployment `eventId` hashes the complete record
 except its optional `id`, including time and source evidence; it is deliberately
 different from the semantic content ID used for persisted source facts.
+Repository history is fetched in one graph projection after seed resolution,
+not one database call per occurrence. Queries retain the service's read guard
+to protect against concurrent rebuilds; cost still scales with returned history,
+and this endpoint is not a paginated or streaming inventory API.
 
 #### 3. Given a built image — direct and transitive base images
 

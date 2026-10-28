@@ -349,16 +349,17 @@ def tag_history(store: GraphStore, ref: str, tag: str) -> list[dict[str, Any]]:
 
 
 def deployment_history(store: GraphStore, ref: str) -> list[dict[str, Any]]:
-    """Return every deployment observation for resolved occurrences in real-time order."""
-    rows: list[dict[str, Any]] = []
-    for key in resolve_seed(store, ref=ref):
-        rows.extend(store.query(
-            "MATCH (d:Deployment)-[e:RUNS]->(o:Occurrence {key: $key}) "
-            "RETURN d.cluster AS cluster, d.namespace AS namespace, o.key AS occurrence, "
-            "e.eventId AS eventId, e.sourceJson AS sourceJson, e.chart AS chart, e.chartVersion AS chartVersion, "
-            "e.recordedAt AS recordedAt, e.runUrl AS runUrl",
-            {"key": key},
-        ))
+    """Fetch resolved deployment history in one projection, then order exact instants."""
+    keys = resolve_seed(store, ref=ref)
+    if not keys:
+        return []
+    rows = store.query(
+        "MATCH (d:Deployment)-[e:RUNS]->(o:Occurrence) WHERE o.key IN $keys "
+        "RETURN d.cluster AS cluster, d.namespace AS namespace, o.key AS occurrence, "
+        "e.eventId AS eventId, e.sourceJson AS sourceJson, e.chart AS chart, e.chartVersion AS chartVersion, "
+        "e.recordedAt AS recordedAt, e.runUrl AS runUrl",
+        {"keys": keys},
+    )
     for row in rows:
         row["source"] = json.loads(row.pop("sourceJson"))
     return sorted(rows, key=lambda row: (_instant(row["recordedAt"]), row["eventId"]))

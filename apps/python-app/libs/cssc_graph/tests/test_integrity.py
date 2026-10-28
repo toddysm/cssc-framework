@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from copy import deepcopy
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
@@ -408,6 +409,21 @@ def test_deployment_history_sorts_offsets_and_is_environment_scoped(store: Graph
     Indexer(store).index_records([later, earlier])
     history = queries.deployment_history(store, REF)
     assert [row["cluster"] for row in history] == ["test", "another"]
+
+
+def test_repository_deployment_history_has_no_per_occurrence_query_loop(
+    store: GraphStore,
+):
+    """A repository with many occurrences needs only seed resolution and one history query."""
+    indexer = Indexer(store)
+    for number in range(10):
+        record = deployed()
+        record["image"] = {**OCCURRENCE, "digest": f"sha256:{number:064x}"}
+        indexer.index_record(record)
+    with patch.object(store, "query", wraps=store.query) as query:
+        history = queries.deployment_history(store, REF)
+        assert len(history) == 10
+        assert query.call_count == 2
 
 
 def test_equivalent_offsets_with_one_target_are_not_ambiguous(store: GraphStore):
