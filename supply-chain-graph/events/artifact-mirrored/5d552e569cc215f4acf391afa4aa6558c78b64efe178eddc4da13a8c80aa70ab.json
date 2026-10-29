@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "kind": "ArtifactMirrored",
+  "recordedAt": "2026-10-29T12:45:40Z",
+  "source": {
+    "type": "github-actions",
+    "workflow": "mirror / quarantine/node",
+    "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/40875839832",
+    "runId": "40875839832",
+    "runAttempt": "1"
+  },
+  "from": {
+    "registry": "docker.io",
+    "repository": "library/node",
+    "digest": "sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94"
+  },
+  "to": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/quarantine/node",
+    "digest": "sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94"
+  },
+  "tag": "26-alpine",
+  "id": "sha256:5d552e569cc215f4acf391afa4aa6558c78b64efe178eddc4da13a8c80aa70ab"
+}
