@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "kind": "ImageIndexObserved",
+  "recordedAt": "2026-11-06T13:17:49Z",
+  "source": {
+    "type": "github-actions",
+    "workflow": "mirror / quarantine/python",
+    "runUrl": "https://github.com/toddysm/cssc-framework/actions/runs/42224234344",
+    "runId": "42224234344",
+    "runAttempt": "1"
+  },
+  "occurrence": {
+    "registry": "ghcr.io",
+    "repository": "toddysm/quarantine/python"
+  },
+  "index": {
+    "digest": "sha256:af8a5aa14780025dbfbcfbc81bd8a91ebd87711dd5b0f48ed71090949dd7cb1d",
+    "tag": "3.14-slim"
+  },
+  "platforms": [
+    {
+      "digest": "sha256:ac25e5afbfdb4a94ff99cc24b0345719210133144481480bcba6085efa36a341",
+      "os": "linux",
+      "architecture": "amd64"
+    },
+    {
+      "digest": "sha256:cb069484035b8389f0c65cc7375ada95b2e53e168d25bcf2e76ed7c8ced73e8b",
+      "os": "linux",
+      "architecture": "arm",
+      "variant": "v5"
+    },
+    {
+      "digest": "sha256:56a838af327ba2e30a2627ebcf9a007744585574e05200e3d24d128904d09f78",
+      "os": "linux",
+      "architecture": "arm",
+      "variant": "v7"
+    },
+    {
+      "digest": "sha256:973d41424c3fd81029ac9230bcdec2580fb67b49af9004279001c301182ae868",
+      "os": "linux",
+      "architecture": "arm64",
+      "variant": "v8"
+    },
+    {
+      "digest": "sha256:e47b29276dbd93a60735d4b6d94e4f0a57b53a68fb29724ef52d828a49e9ab16",
+      "os": "linux",
+      "architecture": "386"
+    },
+    {
+      "digest": "sha256:808b7137708674ee098f56991bdd3e3f2c33947e6f0eca05fd2991e41f618192",
+      "os": "linux",
+      "architecture": "ppc64le"
+    },
+    {
+      "digest": "sha256:1459385e618ed24b4ea3e659a7e1d362ba61bc07b6daae747df956e0560123a8",
+      "os": "linux",
+      "architecture": "riscv64"
+    },
+    {
+      "digest": "sha256:6d472a01e63b949cb5532a0c56453b773544a82c1e0a0dfbd4aadc7f5e2ce81f",
+      "os": "linux",
+      "architecture": "s390x"
+    }
+  ],
+  "observedAt": "2026-11-06T13:17:49Z",
+  "id": "sha256:fbfa07dae12e91b8c76ca4982990e70ac32be2f7e64374ab28276fc01ebef4ed"
+}
